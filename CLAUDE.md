@@ -251,6 +251,16 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Requests must be authenticated with a bearer token from `external_source_access_tokens`
 - When the team replies to an external user, a webhook is sent to `external_sources.webhook_url`
 
+### Feedback Form
+
+- When `CloseTopic::execute()` closes a conversation, `SendFeedbackForm` creates a `Feedback` record (`status='awaiting_rating'`) and sends a 5-star inline-keyboard rating form to the user on their platform (Telegram/VK/Max)
+- Telegram callback_data format: `feedback_rate_{botUserId}_{feedbackId}_{score}` (score 1..5) — handled in `TelegramBotController::checkBotQuery()`
+- VK rating callbacks arrive as `type=message_event` with `payload.command` containing `feedback_rate_*` — handled in `VkBotController`
+- Max rating callbacks arrive as `update_type=message_callback` with `callback.payload` containing `feedback_rate_*` — handled in `MaxBotController`
+- On rating click: `HandleFeedbackRating` saves `rating`, sets `status='completed_no_comment'`, edits message to thank-you text. `comment` stays NULL — no comment capture is implemented
+- Every close event creates a new `Feedback` record — history accumulates
+- Feedback records are viewable in Filament admin via `FeedbackResource` (read-only: List + View) and via `FeedbacksRelationManager` on the BotUser detail page
+
 ### Manager Interface
 
 - `MANAGER_INTERFACE=telegram_group` (default) — managers work via Telegram supergroup with forum topics

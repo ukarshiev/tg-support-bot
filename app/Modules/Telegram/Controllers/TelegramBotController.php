@@ -8,6 +8,7 @@ use App\Modules\Ai\Actions\EditAiMessage;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\ShouldAiReply;
+use App\Modules\Feedback\Actions\HandleFeedbackRating;
 use App\Modules\Telegram\Actions\BannedContactMessage;
 use App\Modules\Telegram\Actions\CloseTopic;
 use App\Modules\Telegram\Actions\SendAiAnswerMessage;
@@ -81,6 +82,12 @@ class TelegramBotController
                 app(BannedContactMessage::class)->execute($this->botUser, $banStatus, $this->dataHook->messageId);
             } elseif ($this->dataHook->callbackData === 'close_topic') {
                 app(CloseTopic::class)->execute($this->botUser);
+            } elseif (str_starts_with((string) $this->dataHook->callbackData, 'feedback_rate_')) {
+                app(HandleFeedbackRating::class)->execute(
+                    callbackData: (string) $this->dataHook->callbackData,
+                    messageId: $this->dataHook->messageId,
+                    chatId: $this->dataHook->typeSource === 'private' ? $this->dataHook->chatId : null,
+                );
             }
 
             return;

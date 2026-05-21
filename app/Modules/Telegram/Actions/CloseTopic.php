@@ -3,6 +3,7 @@
 namespace App\Modules\Telegram\Actions;
 
 use App\Models\BotUser;
+use App\Modules\Feedback\Actions\SendFeedbackForm;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
@@ -50,6 +51,8 @@ class CloseTopic
             'is_closed' => true,
             'closed_at' => now(),
         ]);
+
+        app(SendFeedbackForm::class)->execute($botUser);
     }
 
     /**

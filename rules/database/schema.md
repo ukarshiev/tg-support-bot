@@ -103,11 +103,22 @@ erDiagram
         timestamps
     }
 
+    FEEDBACKS {
+        bigint id PK
+        bigint bot_user_id FK
+        smallint rating
+        text comment
+        string status
+        timestamp closed_at
+        timestamps
+    }
+
     BOT_USERS ||--o{ MESSAGES : "has many"
     MESSAGES ||--o| EXTERNAL_MESSAGES : "has one"
     BOT_USERS ||--o| EXTERNAL_USERS : "has one"
     BOT_USERS ||--o| AI_CONDITIONS : "has one"
     BOT_USERS ||--o{ AI_MESSAGES : "has many"
+    BOT_USERS ||--o{ FEEDBACKS : "has many"
     EXTERNAL_SOURCES ||--o{ EXTERNAL_SOURCE_ACCESS_TOKENS : "has many"
 ```
 
@@ -307,6 +318,35 @@ Stores AI-generated draft responses before manager review.
 **Indexes:**
 - PRIMARY on `id`
 - FOREIGN KEY `bot_user_id` → `bot_users.id` ON DELETE CASCADE
+
+---
+
+### `feedbacks`
+
+Post-close feedback records. Created when `CloseTopic::execute()` closes a conversation. One record per close event — history accumulates.
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `bigint` | No | auto | Primary key |
+| `bot_user_id` | `bigint` | No | — | FK → `bot_users.id` (cascade delete) |
+| `rating` | `smallint` | Yes | NULL | User's rating 1..5; NULL until the user rates |
+| `comment` | `text` | Yes | NULL | Optional text comment (reserved for future use) |
+| `status` | `string` | No | `awaiting_rating` | Lifecycle status (see enum below) |
+| `closed_at` | `timestamp` | Yes | NULL | Timestamp of the conversation close that triggered this record |
+| `created_at` | `timestamp` | Yes | NULL | Creation time |
+| `updated_at` | `timestamp` | Yes | NULL | Last update time |
+
+**Indexes:**
+- PRIMARY on `id`
+- FOREIGN KEY `bot_user_id` → `bot_users.id` ON DELETE CASCADE
+
+**Enums:**
+
+`feedbacks.status`
+- `awaiting_rating` — rating form was sent; user has not yet tapped a star
+- `completed_no_comment` — user submitted a rating; comment column is NULL
+
+**Migration:** `database/migrations/2026_05_20_000001_create_feedbacks_table.php`
 
 ---
 
