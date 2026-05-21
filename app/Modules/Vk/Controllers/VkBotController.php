@@ -3,6 +3,7 @@
 namespace App\Modules\Vk\Controllers;
 
 use App\Models\BotUser;
+use App\Modules\Feedback\Actions\HandleFeedbackRating;
 use App\Modules\Vk\Actions\SendBannedMessageVk;
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Modules\Vk\Services\VkEditService;
@@ -50,6 +51,15 @@ class VkBotController
 
             case 'message_edit':
                 (new VkEditService($dataHook))->handleUpdate();
+                break;
+
+            case 'message_event':
+                // VK callback button press — check if it's a feedback rating
+                $payload = $dataHook->rawData['object']['payload'] ?? [];
+                $command = $payload['command'] ?? null;
+                if ($command !== null && str_starts_with((string) $command, 'feedback_rate_')) {
+                    app(HandleFeedbackRating::class)->execute(callbackData: (string) $command);
+                }
                 break;
         }
 

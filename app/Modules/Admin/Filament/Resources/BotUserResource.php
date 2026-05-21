@@ -4,9 +4,12 @@ namespace App\Modules\Admin\Filament\Resources;
 
 use App\Models\BotUser;
 use App\Modules\Admin\Filament\Resources\BotUserResource\Pages\ListBotUsers;
+use App\Modules\Admin\Filament\Resources\BotUserResource\Pages\ViewBotUser;
+use App\Modules\Admin\Filament\Resources\BotUserResource\RelationManagers\FeedbacksRelationManager;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
+use Filament\Tables\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -54,6 +57,7 @@ class BotUserResource extends Resource
             ])
             ->filters([])
             ->actions([
+                ViewAction::make(),
                 Action::make('ban')
                     ->label('Заблокировать')
                     ->icon('heroicon-o-no-symbol')
@@ -83,6 +87,17 @@ class BotUserResource extends Resource
     {
         return [
             'index' => ListBotUsers::route('/'),
+            'view' => ViewBotUser::route('/{record}'),
+        ];
+    }
+
+    /**
+     * @return array<class-string<\Filament\Resources\RelationManagers\RelationManager>>
+     */
+    public static function getRelationManagers(): array
+    {
+        return [
+            FeedbacksRelationManager::class,
         ];
     }
 }

@@ -3,10 +3,12 @@
 namespace App\Modules\Telegram\Actions;
 
 use App\Models\BotUser;
+use App\Modules\Feedback\Actions\SendFeedbackForm;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
+use Illuminate\Support\Facades\Log;
 
 class CloseTopic
 {
@@ -50,6 +52,17 @@ class CloseTopic
             'is_closed' => true,
             'closed_at' => now(),
         ]);
+
+        try {
+            app(SendFeedbackForm::class)->execute($botUser);
+        } catch (\Throwable $e) {
+            Log::channel('loki')->error('CloseTopic: feedback form delivery failed, topic close completed regardless', [
+                'source' => 'close_topic_feedback_failed',
+                'bot_user_id' => $botUser->id,
+                'platform' => $botUser->platform,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

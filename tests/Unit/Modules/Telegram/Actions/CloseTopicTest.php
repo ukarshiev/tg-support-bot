@@ -57,7 +57,8 @@ class CloseTopicTest extends TestCase
 
         /** @phpstan-ignore-next-line */
         $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
-        $this->assertCount(3, $pushed);
+        // 4 jobs: close message to user, editForumTopic, closeForumTopic, feedback form to user
+        $this->assertCount(4, $pushed);
 
         $job = $pushed[0]['job'];
         $this->assertEquals('sendMessage', $job->queryParams->methodQuery);
@@ -72,6 +73,12 @@ class CloseTopicTest extends TestCase
         $this->assertEquals('closeForumTopic', $job->queryParams->methodQuery);
         $this->assertEquals($this->groupId, $job->queryParams->chat_id);
         $this->assertEquals($botUser->topic_id, $job->queryParams->message_thread_id);
+
+        // 4th job: SendFeedbackForm dispatches the rating form to the user
+        $job = $pushed[3]['job'];
+        $this->assertEquals('sendMessage', $job->queryParams->methodQuery);
+        $this->assertEquals($botUser->chat_id, $job->queryParams->chat_id);
+        $this->assertNotNull($job->queryParams->reply_markup);
     }
 
     public function test_close_topic_vk(): void
@@ -83,11 +90,18 @@ class CloseTopicTest extends TestCase
 
         /** @phpstan-ignore-next-line */
         $pushed = Queue::pushedJobs()[SendVkSimpleMessageJob::class] ?? [];
-        $this->assertCount(1, $pushed);
+        // 2 jobs: VK close message + SendFeedbackForm feedback form to VK user
+        $this->assertCount(2, $pushed);
 
         $job = $pushed[0]['job'];
         $this->assertEquals('messages.send', $job->queryParams->methodQuery);
         $this->assertEquals($botUser->chat_id, $job->queryParams->peer_id);
+
+        // 2nd job: SendFeedbackForm dispatches the rating form to the VK user
+        $job = $pushed[1]['job'];
+        $this->assertEquals('messages.send', $job->queryParams->methodQuery);
+        $this->assertEquals($botUser->chat_id, $job->queryParams->peer_id);
+        $this->assertNotNull($job->queryParams->keyboard);
 
         /** @phpstan-ignore-next-line */
         $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];

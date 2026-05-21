@@ -55,6 +55,12 @@ _Enforced in:_ `app/Models/BotUser.php @ getOrCreateByTelegramUpdate()`
 **BR-008** — For `external_source` platform users, an `ExternalUser` sub-record must be created or found by `external_id` + `source`.
 _Enforced in:_ `app/Models/BotUser.php @ getOrCreateExternalBotUser()`
 
+**BR-020** — When `CloseTopic::execute()` successfully closes a conversation (`is_closed = true`), a `Feedback` record with `status = 'awaiting_rating'` must be created and a rating form must be sent to the user on their platform. Every close event creates a new feedback record — history accumulates.
+_Enforced in:_ `app/Modules/Telegram/Actions/CloseTopic.php`, `app/Modules/Feedback/Actions/SendFeedbackForm.php`
+
+**BR-021** — When a user submits a feedback rating (`callback_data` prefix `feedback_rate_{botUserId}_{feedbackId}_{score}`), the `Feedback` record must be updated with `rating = score` (1..5) and `status = 'completed_no_comment'`. The original form message must be edited to a thank-you text. No comment capture is triggered — `comment` remains nullable.
+_Enforced in:_ `app/Modules/Feedback/Actions/HandleFeedbackRating.php`, `TelegramBotController::checkBotQuery()`, `VkBotController::bot_query()`, `MaxBotController::bot_query()`
+
 ---
 
 ## 4. User State Machine
@@ -115,6 +121,7 @@ The agent must use these methods to look up or create `BotUser`:
 | `messages()` | `HasMany` | `Message` |
 | `lastMessage()` | `HasOne` | `Message` (latest) |
 | `lastMessageManager()` | `HasOne` | `Message` (latest outgoing) |
+| `feedbacks()` | `HasMany` | `Feedback` |
 
 ---
 
