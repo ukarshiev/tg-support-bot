@@ -168,11 +168,10 @@ class SendFeedbackForm
     private function buildTelegramKeyboard(int $botUserId, int $feedbackId): array
     {
         $buttons = [];
-        $stars = ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
 
         for ($score = 1; $score <= 5; $score++) {
             $buttons[] = [
-                'text' => $stars[$score - 1],
+                'text' => (string) $score,
                 'callback_data' => "feedback_rate_{$botUserId}_{$feedbackId}_{$score}",
             ];
         }
@@ -191,13 +190,12 @@ class SendFeedbackForm
     private function buildVkKeyboard(int $botUserId, int $feedbackId): array
     {
         $buttons = [];
-        $stars = ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
 
         for ($score = 1; $score <= 5; $score++) {
             $buttons[] = [
                 'action' => [
                     'type' => 'callback',
-                    'label' => $stars[$score - 1],
+                    'label' => (string) $score,
                     'payload' => json_encode(['command' => "feedback_rate_{$botUserId}_{$feedbackId}_{$score}"]),
                 ],
             ];
@@ -220,12 +218,11 @@ class SendFeedbackForm
     private function buildMaxKeyboard(int $botUserId, int $feedbackId): array
     {
         $buttons = [];
-        $stars = ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
 
         for ($score = 1; $score <= 5; $score++) {
             $buttons[] = [
                 'type' => 'callback',
-                'text' => $stars[$score - 1],
+                'text' => (string) $score,
                 'payload' => "feedback_rate_{$botUserId}_{$feedbackId}_{$score}",
             ];
         }
