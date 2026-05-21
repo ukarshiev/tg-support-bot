@@ -102,6 +102,9 @@ class TelegramBotController
     public function bot_query(): void
     {
         $this->checkBotQuery();
+        if ($this->dataHook->typeQuery === 'callback_query') {
+            return;
+        }
         if ($this->dataHook->editedTopicStatus && $this->dataHook->typeSource === 'supergroup') {
             SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
                 'methodQuery' => 'deleteMessage',
