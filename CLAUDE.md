@@ -267,7 +267,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin` web panel (Filament 3)
 - Switching: change `.env` + restart the `php-fpm` container (`docker compose restart app`)
 - Does not require `php artisan migrate` or any DB changes
-- See `rules/domain/admin-panel.md` for full rules and `docs/switching-manager-interface.md` for runbook
+- See `rules/domain/admin-panel.md` for full rules
 
 ---
 
