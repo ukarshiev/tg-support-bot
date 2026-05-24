@@ -195,7 +195,7 @@
 2. Отправьте `/newbot` и следуйте инструкциям
 3. Получите токен бота → `MAX_TOKEN`
 4. Придумайте произвольный секретный ключ → `MAX_SECRET_KEY`
-5. Зарегистрируйте вебхук: подробная инструкция в [`docs/connecting-max-bot.md`](./docs/connecting-max-bot.md)
+5. Зарегистрируйте вебхук: `docker exec -it pet php artisan max-bot:set-webhook`
 
 ### Конфигурация .env
 
@@ -577,8 +577,6 @@ docker exec -it nginx certbot renew --dry-run
 ## Документация
 
 **Wiki**: [https://github.com/prog-time/tg-support-bot/wiki/](https://github.com/prog-time/tg-support-bot/wiki/)
-
-**Подключение Max**: [`docs/connecting-max-bot.md`](./docs/connecting-max-bot.md)
 
 **API Documentation**: `https://yourdomain.com/api/documentation` (Swagger)
 
