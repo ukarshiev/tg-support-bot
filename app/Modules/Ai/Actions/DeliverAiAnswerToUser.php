@@ -10,12 +10,18 @@ use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkMessageJob;
+use App\Platform\PlatformChannelRegistry;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Dispatch an AI-generated answer to the end user using the platform-specific
  * send job. Used by AI auto-reply (`SendAiReplyJob`) and AI draft accept
  * (`AiAcceptMessage`) so both flows deliver to the same set of platforms.
+ *
+ * Built-in platforms (telegram/vk/max) are handled directly. Any other platform
+ * is delegated to a {@see \App\Contracts\PlatformChannel} registered in the
+ * {@see PlatformChannelRegistry} by a pluggable module (e.g. the paid Avito
+ * package) — so the core needs no edits to support a new platform.
  */
 class DeliverAiAnswerToUser
 {
@@ -26,7 +32,8 @@ class DeliverAiAnswerToUser
      *                                          Forwarded to the platform-specific job so its saveMessage
      *                                          path keeps the same shape as a manager-driven reply.
      *
-     * @return bool true if a send job was dispatched, false if platform is unsupported
+     * @return bool true if a send job was dispatched (or a registered channel handled it),
+     *              false if platform is unsupported
      */
     public function execute(BotUser $botUser, string $text, ?TelegramUpdateDto $updateDto = null): bool
     {
@@ -79,6 +86,20 @@ class DeliverAiAnswerToUser
                 return true;
 
             default:
+                $channel = app(PlatformChannelRegistry::class)->for($botUser->platform);
+
+                if ($channel !== null) {
+                    $channel->deliverAiAnswer($botUser, $text, $updateDto);
+
+                    Log::channel('loki')->info('DeliverAiAnswerToUser: delivered via registered channel', [
+                        'source' => 'ai_deliver_registered_channel',
+                        'bot_user_id' => $botUser->id,
+                        'platform' => $botUser->platform,
+                    ]);
+
+                    return true;
+                }
+
                 Log::channel('loki')->warning('DeliverAiAnswerToUser: unsupported platform', [
                     'source' => 'ai_deliver_unsupported_platform',
                     'bot_user_id' => $botUser->id,

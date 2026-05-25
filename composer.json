@@ -29,6 +29,9 @@
         "phpstan/phpstan": "^2.1",
         "phpunit/phpunit": "^11.5.3"
     },
+    "suggest": {
+        "prog-time/tg-support-avito": "Paid Avito Messenger support channel (private package); registers the 'avito' platform via App\\Platform\\PlatformChannelRegistry. Install it in your deployment to enable Avito support."
+    },
     "autoload": {
         "psr-4": {
             "App\\": "app/",
