@@ -27,6 +27,16 @@ class SettingKeyRegistry
             'config' => 'app.manager_interface',
             'is_secret' => false,
         ],
+        'app.bot_name' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'app.bot_description' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
 
         // ── Telegram (main bot) ──────────────────────────────────────────────
         'telegram.token' => [

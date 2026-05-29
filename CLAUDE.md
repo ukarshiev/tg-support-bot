@@ -96,7 +96,7 @@ Data Layer          app/Models/ + PostgreSQL
 | Services | `app/Services/`, `app/Modules/*/Services/` | Reusable business logic |
 | Actions | `app/Actions/`, `app/Modules/*/Actions/` | Single isolated operations (one action = one thing) |
 | Telegram/VK API | `app/Modules/Telegram/Api/`, `app/Modules/Vk/Api/` | Direct API calls only |
-| Admin | `app/Modules/Admin/` | Filament resources, Livewire pages, SendReplyAction |
+| Admin | `app/Modules/Admin/` | Filament resources, Livewire pages (Filament-hosted + custom full-page), SendReplyAction, admin design system |
 | Jobs | `app/Modules/*/Jobs/` | All async operations — message sending, webhooks |
 | Models | `app/Models/` | Data operations only, no business logic, no API calls |
 
@@ -110,6 +110,7 @@ Data Layer          app/Models/ + PostgreSQL
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
 - **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
 - **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); known keys registered in `SettingKeyRegistry`
+- **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. Stage 1 covers the Settings section; other sections are being migrated progressively. During migration, Filament chrome and custom design system coexist (by design).
 
 ---
 
@@ -119,6 +120,9 @@ Data Layer          app/Models/ + PostgreSQL
 app/
 ├── Actions/          # Shared isolated operations (Ai/)
 ├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract, PlatformChannel)
+├── Livewire/
+│   └── Settings/     # Custom full-page Livewire components for Settings section
+│       └── GeneralSettingsPage.php  # /admin/settings/general (Stage 1: design system)
 ├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
 ├── Services/
@@ -130,11 +134,13 @@ app/
 ├── Logging/          # LokiHandler
 ├── Models/           # BotUser, Message, ExternalMessage, ExternalSource, AiMessage, etc.
 ├── Modules/
-│   ├── Admin/        # Filament 3 admin panel
+│   ├── Admin/        # Filament 3 admin panel + custom admin routes
 │   │   ├── Actions/  # SendReplyAction
 │   │   ├── Filament/
-│   │   │   ├── Pages/       # ConversationPage (Livewire)
-│   │   │   └── Resources/   # ConversationResource, BotUserResource, ExternalSourceResource
+│   │   │   ├── Pages/       # ConversationPage (Livewire, Filament-hosted)
+│   │   │   └── Resources/   # ConversationResource, BotUserResource, ExternalSourceResource, FeedbackResource
+│   │   ├── AdminPanelProvider.php  # Filament panel at /admin
+│   │   ├── AdminServiceProvider.php  # Custom Livewire routes (/admin/settings/*)
 │   │   └── Services/ # AdminPanelInterface (ManagerInterfaceContract implementation)
 │   ├── External/     # External Sources integration
 │   │   ├── Actions/, Controllers/, DTOs/, Jobs/, Middleware/, Services/
@@ -145,6 +151,20 @@ app/
 │       ├── Actions/, Api/, Controllers/, DTOs/, Jobs/, Middleware/, Services/
 ├── Providers/        # AppServiceProvider (binds ManagerInterfaceContract)
 └── Services/         # Shared services (Ai/, Button/, File/, Swagger/, Webhook/)
+
+resources/
+├── css/app.css        # Tailwind v4 @theme tokens: admin design system (Inter, accent, sidebar, input, …)
+├── views/
+│   ├── components/
+│   │   └── admin/    # Shared admin Blade components (Stage 1)
+│   │       ├── sidebar.blade.php, nav-item.blade.php, card.blade.php
+│   │       ├── form-field.blade.php, button-primary.blade.php
+│   │       ├── button-secondary.blade.php, toggle.blade.php
+│   ├── layouts/
+│   │   └── admin-settings.blade.php  # Dark-sidebar layout for custom settings pages
+│   └── livewire/
+│       └── settings/
+│           └── general-settings-page.blade.php  # View for GeneralSettingsPage
 ```
 
 ---
@@ -262,7 +282,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
 - Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
 - The `settings` table is empty by default — fallback to `config()` is always active until a value is explicitly saved
-- Admin UI for editing settings is in dependent tasks #144/#145/#146; wiring `ManagerInterfaceContract` and platform tokens to DB is also deferred to those tasks
+- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, and `app.manager_interface`; other settings pages (AI, integrations, etc.) are planned in subsequent tasks. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
 
 ### External Sources
 
@@ -283,9 +303,11 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 - `MANAGER_INTERFACE=telegram_group` (default) — managers work via Telegram supergroup with forum topics
 - `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin` web panel (Filament 3)
-- Switching: change `.env` + restart the `php-fpm` container (`docker compose restart app`)
-- Does not require `php artisan migrate` or any DB changes
-- See `rules/domain/admin-panel.md` for full rules
+- Switching via `.env`: change `MANAGER_INTERFACE` + `docker compose restart app`
+- Switching via admin panel: save via General Settings screen (`/admin/settings/general`, `GeneralSettingsPage`) → value written to `settings` DB table via `SettingsService` (overrides `.env` on next read); container restart still required for DI binding to take effect (`docker compose restart app`) — screen shows a persistent yellow warning notice
+- The `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` reads from `config('app.manager_interface')` at boot, NOT from `SettingsService` — this is intentional to avoid DB dependency at container startup
+- Does not require `php artisan migrate` or any DB changes (for mode switching itself)
+- See `rules/domain/admin-panel.md` for full rules (BR-001 through BR-012)
 
 ---
 
