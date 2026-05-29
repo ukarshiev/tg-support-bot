@@ -3,6 +3,7 @@
 namespace App\Modules\Max\Controllers;
 
 use App\Models\BotUser;
+use App\Modules\Feedback\Actions\HandleFeedbackRating;
 use App\Modules\Max\Actions\SendBannedMessageMax;
 use App\Modules\Max\Actions\SendStartMessageMax;
 use App\Modules\Max\DTOs\MaxUpdateDto;
@@ -55,6 +56,12 @@ class MaxBotController
 
         if ($dataHook->type === 'message_created') {
             (new MaxMessageService($dataHook))->handleUpdate();
+        } elseif ($dataHook->type === 'message_callback') {
+            // Max callback button press — check if it's a feedback rating
+            $payload = $dataHook->rawData['callback']['payload'] ?? null;
+            if ($payload !== null && str_starts_with((string) $payload, 'feedback_rate_')) {
+                app(HandleFeedbackRating::class)->execute(callbackData: (string) $payload);
+            }
         }
 
         return response('ok', 200);

@@ -248,6 +248,14 @@ class BotUser extends Model
     }
 
     /**
+     * @return HasMany
+     */
+    public function feedbacks(): HasMany
+    {
+        return $this->hasMany(Feedback::class);
+    }
+
+    /**
      * @return bool
      */
     public function isBanned(): bool

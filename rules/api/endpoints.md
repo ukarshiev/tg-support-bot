@@ -95,9 +95,27 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/admin/conversations` | session | List all conversations (`ConversationResource`) |
 | `GET` | `/admin/conversations/{id}` | session | View conversation with message history (`ViewConversation`) |
 | `GET` | `/admin/bot-users` | session | List all bot users (`BotUserResource`) |
+| `GET` | `/admin/bot-users/{id}` | session | View bot user detail with feedback history (`ViewBotUser`) |
+| `GET` | `/admin/feedbacks` | session | List all feedback records (`FeedbackResource`) |
+| `GET` | `/admin/feedbacks/{id}` | session | View single feedback record (`ViewFeedback`) |
 | `GET` | `/admin/external-sources` | session | List external sources (`ExternalSourceResource`) |
 | `GET` | `/admin/external-sources/create` | session | Create external source form |
 | `GET` | `/admin/external-sources/{id}/edit` | session | Edit external source form |
+
+### Telegram callback_data prefixes (main bot webhook)
+
+| Prefix | Handler | Description |
+|---|---|---|
+| `topic_user_ban_` | `BannedContactMessage::execute()` | Ban / unban user toggle |
+| `close_topic` | `CloseTopic::execute()` | Close conversation topic |
+| `feedback_rate_{botUserId}_{feedbackId}_{score}` | `HandleFeedbackRating::execute()` | Save user's 1..5 star rating |
+
+### VK / Max callback routing
+
+| Platform | Event type | Payload field | Handler |
+|---|---|---|---|
+| VK | `message_event` | `payload.command` | `HandleFeedbackRating` when value starts with `feedback_rate_` |
+| Max | `message_callback` | `callback.payload` | `HandleFeedbackRating` when value starts with `feedback_rate_` |
 
 ---
 

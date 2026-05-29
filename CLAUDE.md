@@ -37,7 +37,9 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 **Supported platforms:**
 - **Telegram** — main support channel (forum topics in supergroup)
 - **VK** — secondary support channel
+- **Max** — additional support channel
 - **External Sources** — third-party integrations via REST API + webhooks
+- **Pluggable platform modules** — additional channels can be shipped as separate (incl. paid, private) Composer packages that implement `App\Contracts\PlatformChannel` and self-register in `App\Platform\PlatformChannelRegistry` — no core edits required (e.g. the paid Avito module)
 
 **Key integrations:**
 - AI providers: OpenAI, DeepSeek, GigaChat (draft responses for manager review)
@@ -106,6 +108,7 @@ Data Layer          app/Models/ + PostgreSQL
 - **Queue Pattern** — all Telegram/VK API sends go through Jobs, never synchronously
 - **Middleware Pattern** — webhook validation before controller runs
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
+- **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
 
 ---
 
@@ -114,7 +117,8 @@ Data Layer          app/Models/ + PostgreSQL
 ```
 app/
 ├── Actions/          # Shared isolated operations (Ai/)
-├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract)
+├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract, PlatformChannel)
+├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
 ├── Enums/            # Enumerations (ButtonType, TelegramError, VkError)
 ├── Helpers/          # Utilities (TelegramHelper, AiHelper, DateHelper)
@@ -244,12 +248,22 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - AI system prompt lives in `resources/ai/system-prompt.blade.php` (Blade template — variables only, no `@if`/`@foreach`/`@include`/`@php`); path is configured by `config/ai.php @ system_prompt_path`
 - AI drafts NEVER write to `messages` (only to `ai_messages`); a `messages` row appears only when the message is actually sent to the user — this invariant is what makes "any outgoing row = delivered" safe for the chat-history assembler
 - AI runs across all user platforms (`telegram`, `vk`, `max`). Triggers: `TelegramBotController::maybeDispatchAi()` for TG, `VkMessageService::maybeDispatchAi()` for VK, `MaxMessageService::maybeDispatchAi()` for Max. Triggering is text-only — attachments do not start AI. Gating still goes through `ShouldAiReply` (TG-DTO and platform-agnostic variants share the same rules: AI_ENABLED, `MANAGER_INTERFACE=telegram_group`, replyable text, user active)
-- Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
+- Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. Any other platform is delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry` by a pluggable module (e.g. the paid Avito package). The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
 
 ### External Sources
 
 - Requests must be authenticated with a bearer token from `external_source_access_tokens`
 - When the team replies to an external user, a webhook is sent to `external_sources.webhook_url`
+
+### Feedback Form
+
+- When `CloseTopic::execute()` closes a conversation, `SendFeedbackForm` creates a `Feedback` record (`status='awaiting_rating'`) and sends a 5-star inline-keyboard rating form to the user on their platform (Telegram/VK/Max; other platforms are delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry`, e.g. the paid Avito module)
+- Telegram callback_data format: `feedback_rate_{botUserId}_{feedbackId}_{score}` (score 1..5) — handled in `TelegramBotController::checkBotQuery()`
+- VK rating callbacks arrive as `type=message_event` with `payload.command` containing `feedback_rate_*` — handled in `VkBotController`
+- Max rating callbacks arrive as `update_type=message_callback` with `callback.payload` containing `feedback_rate_*` — handled in `MaxBotController`
+- On rating click: `HandleFeedbackRating` saves `rating`, sets `status='completed_no_comment'`, edits message to thank-you text. `comment` stays NULL — no comment capture is implemented
+- Every close event creates a new `Feedback` record — history accumulates
+- Feedback records are viewable in Filament admin via `FeedbackResource` (read-only: List + View) and via `FeedbacksRelationManager` on the BotUser detail page
 
 ### Manager Interface
 
@@ -257,7 +271,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin` web panel (Filament 3)
 - Switching: change `.env` + restart the `php-fpm` container (`docker compose restart app`)
 - Does not require `php artisan migrate` or any DB changes
-- See `rules/domain/admin-panel.md` for full rules and `docs/switching-manager-interface.md` for runbook
+- See `rules/domain/admin-panel.md` for full rules
 
 ---
 

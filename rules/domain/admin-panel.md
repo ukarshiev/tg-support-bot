@@ -105,8 +105,6 @@ The binding is resolved at container boot time. Switching modes requires a conta
 - History in `/admin` is available in both modes (all messages in `messages` table)
 - To switch: change `MANAGER_INTERFACE` in `.env`, then `docker compose restart app`
 
-See `docs/switching-manager-interface.md` for the operational runbook.
-
 ---
 
 ## 7. Forbidden Behaviors
