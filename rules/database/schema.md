@@ -113,6 +113,15 @@ erDiagram
         timestamps
     }
 
+    SETTINGS {
+        bigint id PK
+        string key UK
+        text value
+        string type
+        boolean is_secret
+        timestamps
+    }
+
     BOT_USERS ||--o{ MESSAGES : "has many"
     MESSAGES ||--o| EXTERNAL_MESSAGES : "has one"
     BOT_USERS ||--o| EXTERNAL_USERS : "has one"
@@ -347,6 +356,36 @@ Post-close feedback records. Created when `CloseTopic::execute()` closes a conve
 - `completed_no_comment` — user submitted a rating; comment column is NULL
 
 **Migration:** `database/migrations/2026_05_20_000001_create_feedbacks_table.php`
+
+---
+
+### `settings`
+
+Persistent key-value store for runtime-editable application configuration. Created by the Settings Persistence Layer (issue #150). Admin-panel UI for editing these values is implemented in dependent issues #144/#145/#146.
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `bigint` | No | auto | Primary key |
+| `key` | `string` | No | — | Dot-notation setting key (e.g. `app.manager_interface`, `telegram.token`) — unique |
+| `value` | `text` | Yes | NULL | Stored value; plain text for non-secrets, Laravel `Crypt::encrypt()` output for secrets |
+| `type` | `string` | No | `string` | PHP type for coercion when reading: `string` \| `bool` \| `int` \| `json` |
+| `is_secret` | `boolean` | No | `false` | When `true`, `value` is encrypted by `SettingsService`; readable in plain text only via `SettingsService::get()` |
+| `created_at` | `timestamp` | Yes | NULL | Creation time |
+| `updated_at` | `timestamp` | Yes | NULL | Last update time |
+
+**Indexes:**
+- PRIMARY on `id`
+- UNIQUE on `key` — one row per setting key
+
+**Reading priority:** `SettingsService::get($key)` reads: DB row → `config()`/`.env` default (defined in `SettingKeyRegistry`) → `null`.
+
+**Known keys and types** are declared in `app/Services/Settings/SettingKeyRegistry.php`. Unknown keys are accepted but default to `type=string`, no config fallback, `is_secret=false`.
+
+**Encryption:** `SettingsService` calls `Crypt::encrypt()` before writing and `Crypt::decrypt()` after reading for keys where `is_secret=true`. The `value` column stores the raw encrypted string — do not read it directly; always go through `SettingsService`.
+
+**DB stays empty by default.** No seed data is written at first deploy. `SettingsService::get()` falls back to `config()`/`.env` for every unknown key, so the app works normally with an empty `settings` table. Values enter the DB only when saved from the admin panel.
+
+**Migration:** `database/migrations/2026_05_29_000001_create_settings_table.php`
 
 ---
 

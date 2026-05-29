@@ -289,7 +289,66 @@ Large monolithic generations are forbidden.
 
 ---
 
-## 9. Forbidden Behaviors
+## 9. Settings Access Pattern
+
+Any code that needs to read an editable application setting must use `SettingsService`, not `config()` directly.
+
+### Rule
+
+```php
+// ✅ Correct — reads via settings layer (DB → config fallback)
+$managerInterface = app(\App\Services\Settings\SettingsService::class)->get('app.manager_interface');
+
+// ❌ Incorrect in new settings-aware code — bypasses DB override layer
+$managerInterface = config('app.manager_interface');
+```
+
+### How it works
+
+```
+get($key)
+    │
+    ├─ Cache hit? ──────────────────────────────── return cached value (type-coerced)
+    │
+    ├─ DB row exists? ──── decrypt if secret ───── cache + return (type-coerced)
+    │
+    └─ No DB row ────────── config($key.path) ───── cache sentinel + return fallback
+                         └─ caller default
+                         └─ null
+```
+
+### Files
+
+| File | Role |
+|---|---|
+| `app/Services/Settings/SettingsService.php` | `get()` / `set()` / `has()` / `forget()` — single access point |
+| `app/Services/Settings/SettingKeyRegistry.php` | Registry of known keys: type, config fallback path, is_secret flag |
+| `app/Models/Setting.php` | Eloquent model for the `settings` table |
+| `database/migrations/2026_05_29_000001_create_settings_table.php` | Migration |
+
+### Adding a new setting key
+
+1. Add the key to `SettingKeyRegistry::$keys` with its `type`, `config` fallback, and `is_secret` flag.
+2. If a new `.env` variable is needed, add it to the appropriate `config/` file.
+3. No other file changes are required.
+
+### Secret handling
+
+Keys with `is_secret=true` in the registry are encrypted with `Crypt::encrypt()` before storage and decrypted transparently in `get()`. Do NOT read the `settings.value` column directly for secret keys.
+
+### Cache behaviour
+
+- Values are cached in the default cache store (Redis) under `settings.{key}` forever.
+- Cache is invalidated when `set()` or `forget()` is called.
+- A sentinel (`__settings_null__`) is cached when there is no DB row, preventing repeated DB misses.
+
+### Scope
+
+The Settings layer is a **backend foundation only**. Dependent tasks #144/#145/#146 add the Filament admin UI. Wiring `ManagerInterfaceContract` and platform module tokens to read from DB is also deferred to those tasks.
+
+---
+
+## 10. Forbidden Behaviors
 
 - ❌ Coding before design
 - ❌ Generating speculative architecture
@@ -301,7 +360,7 @@ Large monolithic generations are forbidden.
 
 ---
 
-## Checklist
+## 11. Checklist
 
 - [ ] Context files read
 - [ ] Problem defined in 1–3 sentences
