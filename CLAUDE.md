@@ -109,6 +109,7 @@ Data Layer          app/Models/ + PostgreSQL
 - **Middleware Pattern** — webhook validation before controller runs
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
 - **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
+- **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); known keys registered in `SettingKeyRegistry`
 
 ---
 
@@ -120,6 +121,8 @@ app/
 ├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract, PlatformChannel)
 ├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
+├── Services/
+│   └── Settings/     # Settings persistence layer: SettingsService, SettingKeyRegistry
 ├── Enums/            # Enumerations (ButtonType, TelegramError, VkError)
 ├── Helpers/          # Utilities (TelegramHelper, AiHelper, DateHelper)
 ├── Http/
@@ -249,6 +252,17 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - AI drafts NEVER write to `messages` (only to `ai_messages`); a `messages` row appears only when the message is actually sent to the user — this invariant is what makes "any outgoing row = delivered" safe for the chat-history assembler
 - AI runs across all user platforms (`telegram`, `vk`, `max`). Triggers: `TelegramBotController::maybeDispatchAi()` for TG, `VkMessageService::maybeDispatchAi()` for VK, `MaxMessageService::maybeDispatchAi()` for Max. Triggering is text-only — attachments do not start AI. Gating still goes through `ShouldAiReply` (TG-DTO and platform-agnostic variants share the same rules: AI_ENABLED, `MANAGER_INTERFACE=telegram_group`, replyable text, user active)
 - Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. Any other platform is delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry` by a pluggable module (e.g. the paid Avito package). The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
+
+### Settings Persistence Layer
+
+- Runtime-editable application settings are stored in the `settings` table and accessed exclusively via `SettingsService` (`app/Services/Settings/SettingsService.php`)
+- **Reading priority:** DB row → `config()`/`.env` default (declared in `SettingKeyRegistry`) → `null`
+- **Never call `config()` directly** for a setting that may be overridden at runtime — use `app(\App\Services\Settings\SettingsService::class)->get('key')` instead
+- Secret keys (`is_secret=true` in `SettingKeyRegistry`) are encrypted with `Crypt::encrypt()` before DB write and decrypted transparently in `get()` — never read the raw `settings.value` column for secret keys
+- Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
+- Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
+- The `settings` table is empty by default — fallback to `config()` is always active until a value is explicitly saved
+- Admin UI for editing settings is in dependent tasks #144/#145/#146; wiring `ManagerInterfaceContract` and platform tokens to DB is also deferred to those tasks
 
 ### External Sources
 
