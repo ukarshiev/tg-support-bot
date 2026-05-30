@@ -2,6 +2,8 @@
 
 namespace App\Modules\Admin;
 
+use App\Livewire\Settings\AiAssistantPage;
+use App\Livewire\Settings\AiProviderAccessPage;
 use App\Livewire\Settings\GeneralSettingsPage;
 use App\Livewire\Settings\IntegrationChannelPage;
 use App\Livewire\Settings\IntegrationsListPage;
@@ -45,6 +47,14 @@ class AdminServiceProvider extends ServiceProvider
                 Route::get('/integrations/{channel}', IntegrationChannelPage::class)
                     ->name('integrations.channel')
                     ->where('channel', 'telegram|vk|max');
+
+                // AI assistant settings.
+                Route::get('/ai', AiAssistantPage::class)
+                    ->name('ai');
+
+                Route::get('/ai/{provider}', AiProviderAccessPage::class)
+                    ->name('ai.provider')
+                    ->where('provider', 'openai|deepseek|gigachat');
             });
     }
 }

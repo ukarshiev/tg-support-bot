@@ -167,6 +167,79 @@ class SettingKeyRegistry
             'config' => 'ai.providers.gigachat.client_secret',
             'is_secret' => true,
         ],
+
+        // ── AI system prompt ─────────────────────────────────────────────────
+        'ai.system_prompt' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+
+        // ── OpenAI extended fields ────────────────────────────────────────────
+        'ai.openai_base_url' => [
+            'type' => 'string',
+            'config' => 'ai.providers.openai.base_url',
+            'is_secret' => false,
+        ],
+        'ai.openai_max_tokens' => [
+            'type' => 'int',
+            'config' => 'ai.providers.openai.max_tokens',
+            'is_secret' => false,
+        ],
+        'ai.openai_temperature' => [
+            'type' => 'string',
+            'config' => 'ai.providers.openai.temperature',
+            'is_secret' => false,
+        ],
+
+        // ── DeepSeek extended fields ──────────────────────────────────────────
+        'ai.deepseek_base_url' => [
+            'type' => 'string',
+            'config' => 'ai.providers.deepseek.base_url',
+            'is_secret' => false,
+        ],
+        'ai.deepseek_model' => [
+            'type' => 'string',
+            'config' => 'ai.providers.deepseek.model',
+            'is_secret' => false,
+        ],
+        'ai.deepseek_max_tokens' => [
+            'type' => 'int',
+            'config' => 'ai.providers.deepseek.max_tokens',
+            'is_secret' => false,
+        ],
+        'ai.deepseek_temperature' => [
+            'type' => 'string',
+            'config' => 'ai.providers.deepseek.temperature',
+            'is_secret' => false,
+        ],
+
+        // ── GigaChat extended fields ──────────────────────────────────────────
+        'ai.gigachat_base_url' => [
+            'type' => 'string',
+            'config' => 'ai.providers.gigachat.base_url',
+            'is_secret' => false,
+        ],
+        'ai.gigachat_model' => [
+            'type' => 'string',
+            'config' => 'ai.providers.gigachat.model',
+            'is_secret' => false,
+        ],
+        'ai.gigachat_max_tokens' => [
+            'type' => 'int',
+            'config' => 'ai.providers.gigachat.max_tokens',
+            'is_secret' => false,
+        ],
+        'ai.gigachat_temperature' => [
+            'type' => 'string',
+            'config' => 'ai.providers.gigachat.temperature',
+            'is_secret' => false,
+        ],
+        'ai.gigachat_path_cert' => [
+            'type' => 'string',
+            'config' => 'ai.providers.gigachat.path_cert',
+            'is_secret' => false,
+        ],
     ];
 
     /**
