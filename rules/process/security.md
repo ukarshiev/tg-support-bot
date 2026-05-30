@@ -144,6 +144,13 @@ $token = '1234567890:AABBcc_my_telegram_token_here';
 - `DB_PASSWORD` — Database password
 - Bearer tokens in `external_source_access_tokens` table
 
+**Secrets in the DB settings table:**
+Channel integration secrets (`telegram.token`, `telegram.secret_key`, `vk.token`, `vk.secret_key`, `vk.confirm_code`, `max.token`, `max.secret_key`) are stored encrypted via `SettingsService` (Laravel `Crypt::encrypt()`). They are surfaced in the admin UI as `<input type="password">` fields. The following rules apply:
+- Never log decrypted token values — log only non-sensitive context (URL registered, HTTP status code)
+- Blank-submission guard: if the UI field is left empty, do NOT overwrite the stored encrypted value
+- In logs, do not include any key whose `is_secret = true` in `SettingKeyRegistry`
+- `WebhookRegistrationService` reads tokens via `SettingsService::get()` — never accesses config() for secrets directly
+
 ---
 
 ## 6. File Upload Security Rules

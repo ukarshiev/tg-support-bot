@@ -1,0 +1,208 @@
+<?php
+
+namespace Tests\Unit\Livewire\Settings;
+
+use App\Livewire\Settings\IntegrationChannelPage;
+use App\Modules\Admin\Services\ChannelStatusService;
+use App\Modules\Admin\Services\WebhookRegistrationService;
+use App\Services\Settings\SettingsService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
+use Tests\TestCase;
+
+/**
+ * Unit-level tests for the IntegrationChannelPage Livewire component.
+ *
+ * Exercises mount(), save(), connect(), and cancel() in isolation using a
+ * mocked SettingsService / ChannelStatusService / WebhookRegistrationService
+ * — no DB or Livewire rendering required for the core logic assertions.
+ */
+class IntegrationChannelPageTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        Mockery::close();
+    }
+
+    /**
+     * SettingsService mock whose get() returns '' for any key by default.
+     *
+     * @return \Mockery\MockInterface&SettingsService
+     */
+    private function settingsMock(): SettingsService
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn('');
+
+        return $mock;
+    }
+
+    /**
+     * @return \Mockery\MockInterface&ChannelStatusService
+     */
+    private function statusMock(bool $telegramConnected = false): ChannelStatusService
+    {
+        /** @var \Mockery\MockInterface&ChannelStatusService $mock */
+        $mock = Mockery::mock(ChannelStatusService::class);
+        $mock->shouldReceive('all')->andReturn([
+            'telegram' => ['connected' => $telegramConnected, 'label' => 'x'],
+            'vk' => ['connected' => false, 'label' => 'x'],
+            'max' => ['connected' => false, 'label' => 'x'],
+        ]);
+
+        return $mock;
+    }
+
+    public function test_mount_loads_fields_and_connection_status(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $settings */
+        $settings = Mockery::mock(SettingsService::class);
+        $settings->shouldReceive('get')->with('telegram.group_id')->andReturn('-100123');
+        $settings->shouldReceive('get')->with('telegram.token')->andReturn('tok');
+        $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('sec');
+        $settings->shouldReceive('get')->with('vk.token')->andReturn('');
+        $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
+        $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
+        $settings->shouldReceive('get')->with('max.token')->andReturn('');
+        $settings->shouldReceive('get')->with('max.secret_key')->andReturn('');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock(true));
+
+        $this->assertSame('telegram', $component->channel);
+        $this->assertSame('-100123', $component->telegram_group_id);
+        $this->assertSame('tok', $component->telegram_token);
+        $this->assertTrue($component->channelConnected);
+    }
+
+    public function test_save_telegram_persists_group_id_and_nonempty_secrets(): void
+    {
+        $settings = $this->settingsMock();
+        $settings->shouldReceive('set')->with('telegram.group_id', '-100999')->once();
+        $settings->shouldReceive('set')->with('telegram.token', 'newtok')->once();
+        $settings->shouldReceive('set')->with('telegram.secret_key', 'newsec')->once();
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock());
+        $component->telegram_group_id = '-100999';
+        $component->telegram_token = 'newtok';
+        $component->telegram_secret_key = 'newsec';
+        $component->save($settings);
+
+        $this->assertTrue($component->saved);
+        $this->assertEmpty($component->formErrors);
+    }
+
+    public function test_save_telegram_skips_blank_secrets(): void
+    {
+        $settings = $this->settingsMock();
+        $settings->shouldReceive('set')->with('telegram.group_id', '-100')->once();
+        $settings->shouldReceive('set')->with('telegram.token', Mockery::any())->never();
+        $settings->shouldReceive('set')->with('telegram.secret_key', Mockery::any())->never();
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock());
+        $component->telegram_group_id = '-100';
+        $component->telegram_token = '';
+        $component->telegram_secret_key = '';
+        $component->save($settings);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_telegram_rejects_too_long_group_id(): void
+    {
+        $settings = $this->settingsMock();
+        $settings->shouldNotReceive('set');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock());
+        $component->telegram_group_id = str_repeat('1', 51);
+        $component->save($settings);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('telegram_group_id', $component->formErrors);
+    }
+
+    public function test_save_vk_persists_only_nonempty_fields(): void
+    {
+        $settings = $this->settingsMock();
+        $settings->shouldReceive('set')->with('vk.token', 'vktok')->once();
+        $settings->shouldReceive('set')->with('vk.secret_key', Mockery::any())->never();
+        $settings->shouldReceive('set')->with('vk.confirm_code', 'cc')->once();
+
+        $component = new IntegrationChannelPage();
+        $component->mount('vk', $settings, $this->statusMock());
+        $component->vk_token = 'vktok';
+        $component->vk_secret_key = '';
+        $component->vk_confirm_code = 'cc';
+        $component->save($settings);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_connect_saves_then_registers_webhook(): void
+    {
+        $settings = $this->settingsMock();
+        $settings->shouldReceive('set')->with('telegram.group_id', '-100')->once();
+
+        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
+        $webhook = Mockery::mock(WebhookRegistrationService::class);
+        $webhook->shouldReceive('registerTelegram')->with()->once()->andReturn(['success' => true, 'message' => 'OK']);
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock());
+        $component->telegram_group_id = '-100';
+        $component->connect($settings, $webhook);
+
+        $this->assertTrue($component->saved);
+        $this->assertTrue($component->webhookSuccess);
+        $this->assertSame('OK', $component->webhookMessage);
+    }
+
+    public function test_connect_does_not_register_webhook_when_save_fails(): void
+    {
+        $settings = $this->settingsMock();
+        $settings->shouldNotReceive('set');
+
+        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
+        $webhook = Mockery::mock(WebhookRegistrationService::class);
+        $webhook->shouldNotReceive('registerTelegram');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock());
+        $component->telegram_group_id = str_repeat('1', 51);
+        $component->connect($settings, $webhook);
+
+        $this->assertFalse($component->saved);
+        $this->assertNull($component->webhookMessage);
+    }
+
+    public function test_cancel_resets_fields_from_settings(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $settings */
+        $settings = Mockery::mock(SettingsService::class);
+        $settings->shouldReceive('get')->with('telegram.group_id')->andReturn('-100stored');
+        $settings->shouldReceive('get')->with('telegram.token')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('');
+        $settings->shouldReceive('get')->with('vk.token')->andReturn('');
+        $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
+        $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
+        $settings->shouldReceive('get')->with('max.token')->andReturn('');
+        $settings->shouldReceive('get')->with('max.secret_key')->andReturn('');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock());
+        $component->telegram_group_id = 'changed';
+        $component->saved = true;
+        $component->cancel($settings);
+
+        $this->assertSame('-100stored', $component->telegram_group_id);
+        $this->assertFalse($component->saved);
+        $this->assertEmpty($component->formErrors);
+    }
+}

@@ -37,6 +37,7 @@
 
     /* Status / badges */
     --color-bg-online: #34C759;
+    --color-text-online: #34C759;
     --color-bg-badge: #4F6EF7;
     --color-text-on-badge: #FFFFFF;
 }

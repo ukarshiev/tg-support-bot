@@ -101,6 +101,9 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/admin/external-sources` | session | List external sources (`ExternalSourceResource`) |
 | `GET` | `/admin/external-sources/create` | session | Create external source form |
 | `GET` | `/admin/external-sources/{id}/edit` | session | Edit external source form |
+| `GET` | `/admin/settings/general` | session | General settings page (`GeneralSettingsPage`, custom Livewire) — name `admin.settings.general` |
+| `GET` | `/admin/settings/integrations` | session | Integration channels list (`IntegrationsListPage`, custom Livewire) — name `admin.settings.integrations` |
+| `GET` | `/admin/settings/integrations/{channel}` | session | Per-channel config form (`IntegrationChannelPage`; channel ∈ telegram\|vk\|max) — name `admin.settings.integrations.channel` |
 
 ### Telegram callback_data prefixes (main bot webhook)
 

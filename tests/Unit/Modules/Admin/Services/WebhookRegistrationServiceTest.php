@@ -1,0 +1,190 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Modules\Admin\Services;
+
+use App\Modules\Admin\Services\WebhookRegistrationService;
+use App\Services\Settings\SettingsService;
+use Illuminate\Support\Facades\Http;
+use Mockery;
+use Tests\TestCase;
+
+/**
+ * Unit tests for WebhookRegistrationService.
+ *
+ * Uses Http::fake() to intercept outgoing API calls and a mocked SettingsService.
+ * No real network calls are made.
+ */
+class WebhookRegistrationServiceTest extends TestCase
+{
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        Mockery::close();
+    }
+
+    // ── registerTelegram() ───────────────────────────────────────────────────
+
+    public function test_register_telegram_returns_error_when_token_empty(): void
+    {
+        $settings = $this->makeSettings(['telegram.token' => '', 'telegram.secret_key' => '']);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerTelegram();
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('не задан', $result['message']);
+    }
+
+    public function test_register_telegram_returns_success_on_ok_response(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*' => Http::response([
+                'ok' => true,
+                'description' => 'Webhook was set',
+            ], 200),
+        ]);
+
+        $settings = $this->makeSettings([
+            'telegram.token' => 'bot123:token',
+            'telegram.secret_key' => 'secret',
+        ]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerTelegram();
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('зарегистрирован', $result['message']);
+    }
+
+    public function test_register_telegram_returns_error_on_api_failure(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*' => Http::response([
+                'ok' => false,
+                'description' => 'Unauthorized',
+                'error_code' => 401,
+            ], 401),
+        ]);
+
+        $settings = $this->makeSettings([
+            'telegram.token' => 'invalid_token',
+            'telegram.secret_key' => 'secret',
+        ]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerTelegram();
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('Ошибка', $result['message']);
+    }
+
+    // ── registerVk() ─────────────────────────────────────────────────────────
+
+    public function test_register_vk_returns_error_when_token_empty(): void
+    {
+        $settings = $this->makeSettings(['vk.token' => '']);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerVk();
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('не задан', $result['message']);
+    }
+
+    public function test_register_vk_returns_success_on_valid_api_response(): void
+    {
+        Http::fake([
+            'https://api.vk.com/*' => Http::response([
+                'response' => [['id' => 123, 'name' => 'Test Group']],
+            ], 200),
+        ]);
+
+        $settings = $this->makeSettings(['vk.token' => 'vk_token_abc']);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerVk();
+
+        $this->assertTrue($result['success']);
+    }
+
+    public function test_register_vk_returns_error_on_vk_api_error(): void
+    {
+        Http::fake([
+            'https://api.vk.com/*' => Http::response([
+                'error' => ['error_code' => 5, 'error_msg' => 'User authorization failed'],
+            ], 200),
+        ]);
+
+        $settings = $this->makeSettings(['vk.token' => 'vk_token_abc']);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerVk();
+
+        $this->assertFalse($result['success']);
+    }
+
+    // ── registerMax() ────────────────────────────────────────────────────────
+
+    public function test_register_max_returns_error_when_token_empty(): void
+    {
+        $settings = $this->makeSettings(['max.token' => '']);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerMax();
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('не задан', $result['message']);
+    }
+
+    public function test_register_max_returns_success_on_200_response(): void
+    {
+        Http::fake([
+            'https://platform-api.max.ru/*' => Http::response(['result' => 'ok'], 200),
+        ]);
+
+        $settings = $this->makeSettings(['max.token' => 'max_token']);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerMax();
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('зарегистрирован', $result['message']);
+    }
+
+    public function test_register_max_returns_error_on_non_200_response(): void
+    {
+        Http::fake([
+            'https://platform-api.max.ru/*' => Http::response(['error' => 'invalid token'], 401),
+        ]);
+
+        $settings = $this->makeSettings(['max.token' => 'bad_token']);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerMax();
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('401', $result['message']);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * @param array<string, mixed> $values
+     */
+    private function makeSettings(array $values): SettingsService
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+
+        foreach ($values as $key => $value) {
+            $mock->shouldReceive('get')->with($key)->andReturn($value);
+        }
+
+        // Keys not in the map return null
+        $mock->shouldReceive('get')->andReturn(null);
+
+        return $mock;
+    }
+}

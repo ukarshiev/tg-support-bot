@@ -122,7 +122,9 @@ app/
 ├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract, PlatformChannel)
 ├── Livewire/
 │   └── Settings/     # Custom full-page Livewire components for Settings section
-│       └── GeneralSettingsPage.php  # /admin/settings/general (Stage 1: design system)
+│       ├── GeneralSettingsPage.php       # /admin/settings/general
+│       ├── IntegrationsListPage.php      # /admin/settings/integrations
+│       └── IntegrationChannelPage.php   # /admin/settings/integrations/{channel}
 ├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
 ├── Services/
@@ -141,7 +143,7 @@ app/
 │   │   │   └── Resources/   # ConversationResource, BotUserResource, ExternalSourceResource, FeedbackResource
 │   │   ├── AdminPanelProvider.php  # Filament panel at /admin
 │   │   ├── AdminServiceProvider.php  # Custom Livewire routes (/admin/settings/*)
-│   │   └── Services/ # AdminPanelInterface (ManagerInterfaceContract implementation)
+│   │   └── Services/ # AdminPanelInterface + ChannelStatusService + WebhookRegistrationService
 │   ├── External/     # External Sources integration
 │   │   ├── Actions/, Controllers/, DTOs/, Jobs/, Middleware/, Services/
 │   ├── Telegram/     # Telegram bot
@@ -164,7 +166,9 @@ resources/
 │   │   └── admin-settings.blade.php  # Dark-sidebar layout for custom settings pages
 │   └── livewire/
 │       └── settings/
-│           └── general-settings-page.blade.php  # View for GeneralSettingsPage
+│           ├── general-settings-page.blade.php        # View for GeneralSettingsPage
+│           ├── integrations-list-page.blade.php       # View for IntegrationsListPage
+│           └── integration-channel-page.blade.php    # View for IntegrationChannelPage
 ```
 
 ---
@@ -282,7 +286,18 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
 - Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
 - The `settings` table is empty by default — fallback to `config()` is always active until a value is explicitly saved
-- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, and `app.manager_interface`; other settings pages (AI, integrations, etc.) are planned in subsequent tasks. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
+- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, and `app.manager_interface`. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
+
+### Channel Integrations (Settings)
+
+- The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, VK, MAX channel cards with connection status computed by `ChannelStatusService`
+- Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens and keys for each platform
+- Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `vk.*`, `max.*`
+- All secret fields (tokens, keys) are rendered as `type="password"` inputs; blank submission does not overwrite an existing stored secret
+- Webhook registration for each channel is handled by `WebhookRegistrationService` — never directly call platform API methods from the Livewire component
+- `WebhookRegistrationService` wraps: Telegram (`TelegramMethods::sendQueryTelegram('setWebhook', ...)`), VK (connectivity via `VkMethods::sendQueryVk('groups.getById', ...)`), MAX (`Http::post(...platform-api.max.ru/subscriptions...)`)
+- Tokens are never logged — only non-sensitive context (registered URL, HTTP status code)
+- See `rules/domain/admin-panel.md` (BR-013 through BR-016) and `rules/process/security.md` (Secrets in the DB settings table)
 
 ### External Sources
 
@@ -307,7 +322,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Switching via admin panel: save via General Settings screen (`/admin/settings/general`, `GeneralSettingsPage`) → value written to `settings` DB table via `SettingsService` (overrides `.env` on next read); container restart still required for DI binding to take effect (`docker compose restart app`) — screen shows a persistent yellow warning notice
 - The `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` reads from `config('app.manager_interface')` at boot, NOT from `SettingsService` — this is intentional to avoid DB dependency at container startup
 - Does not require `php artisan migrate` or any DB changes (for mode switching itself)
-- See `rules/domain/admin-panel.md` for full rules (BR-001 through BR-012)
+- See `rules/domain/admin-panel.md` for full rules (BR-001 through BR-016)
 
 ---
 
