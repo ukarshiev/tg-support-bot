@@ -2,7 +2,7 @@
 
 > **Purpose:** Define business rules, key concepts, and invariants for the Admin module (`app/Modules/Admin/`). This module implements the `admin_panel` mode of the `ManagerInterfaceContract`.
 > **Context:** Read this file before modifying anything inside `app/Modules/Admin/`, Filament resources, Livewire pages, or the `SendReplyAction`.
-> **Version:** 1.2
+> **Version:** 1.3
 
 ---
 
@@ -10,7 +10,7 @@
 
 The Admin Panel domain provides an alternative manager interface for the support team. Instead of working through a Telegram supergroup with forum topics, managers can use the `/admin` web panel (built with Filament 3) to view conversations and send replies.
 
-**This domain owns:** `ConversationResource`, `BotUserResource`, `ExternalSourceResource`, `FeedbackResource`, `ConversationPage` (Livewire, Filament-hosted), `GeneralSettingsPage` (custom Livewire full-page component at `/admin/settings/general`), admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`), `SendReplyAction`, `AdminPanelInterface`.
+**This domain owns:** `ConversationResource`, `BotUserResource`, `ExternalSourceResource`, `FeedbackResource`, `ConversationPage` (Livewire, Filament-hosted), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
 
 > **Stage 1 transition note:** The admin is in the process of being redesigned. Filament resources (Chats, Users, External Sources, Feedback) remain on default Filament chrome. `GeneralSettingsPage` is the first screen rebuilt as a fully custom Livewire/Blade component outside Filament's chrome. During this coexistence period the two UIs deliberately have different styling — this is expected until the migration completes.
 
@@ -33,6 +33,10 @@ The Admin Panel domain provides an alternative manager interface for the support
 | `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits bot name, description, and `MANAGER_INTERFACE`. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService`. Shows restart notice when `MANAGER_INTERFACE` changes |
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
 | `admin-settings` layout | Full-page layout at `resources/views/layouts/admin-settings.blade.php` — dark sidebar (280px) + main content area. Used by all custom Livewire settings screens |
+| `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX channel cards with connection status badges. Reads statuses via `ChannelStatusService`. «Виджет для сайта» shown as disabled «Скоро» placeholder |
+| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|vk\|max). Per-channel config form (read/write via `SettingsService`), webhook registration action (delegates to `WebhookRegistrationService`) |
+| `ChannelStatusService` | `app/Modules/Admin/Services/ChannelStatusService.php`. Computes `connected/label` per channel based on whether required `SettingsService` keys are non-empty. Shared by list and per-channel pages |
+| `WebhookRegistrationService` | `app/Modules/Admin/Services/WebhookRegistrationService.php`. Thin wrapper around `TelegramMethods::sendQueryTelegram('setWebhook', ...)`, `VkMethods::sendQueryVk('groups.getById', ...)`, and `Http::post(.../subscriptions, ...)` for MAX. Returns `{success: bool, message: string}`. Reads tokens via `SettingsService`. Never logs tokens |
 
 ---
 
@@ -77,6 +81,18 @@ _Enforced by:_ design review; tokens defined at `resources/css/app.css:@theme`
 
 **BR-012** — Custom Livewire settings routes MUST NOT collide with Filament's route set. Filament owns the `/admin/*` namespace but does not register `/admin/settings/*`. All new custom settings pages MUST be registered under the `admin/settings/` prefix in `AdminServiceProvider::boot()`.
 _Enforced in:_ `AdminServiceProvider::boot()` — verified against `php artisan route:list` output
+
+**BR-013** — Integration config for Telegram/VK/MAX is read and written exclusively via `SettingsService` using the registry keys `telegram.*`, `vk.*`, `max.*`. Secrets (tokens, secret keys, confirm codes) are stored encrypted (`is_secret = true` in `SettingKeyRegistry`). Never log tokens or secrets (see `rules/process/security.md`).
+_Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — calls `SettingsService::set()`; `WebhookRegistrationService` — reads tokens via `SettingsService`, logs only non-sensitive data
+
+**BR-014** — The webhook registration action in `IntegrationChannelPage` delegates to `WebhookRegistrationService` — never directly calls platform API methods or executes artisan commands from the UI. The result (success/error with a user-facing message) is surfaced via `$webhookMessage` / `$webhookSuccess` properties.
+_Enforced in:_ `IntegrationChannelPage::registerWebhook()` — match dispatch to `WebhookRegistrationService`
+
+**BR-015** — Saving a secret field (token, key) with an empty string does NOT overwrite the existing secret in the DB. This prevents accidentally blanking credentials when only non-secret fields are edited.
+_Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — `if ($field !== '') { $settings->set(...) }`
+
+**BR-016** — The «Виджет для сайта» card on the Integrations list is a disabled placeholder («Скоро»). It must not be a clickable link and must not have a route. It is rendered as a `<div>` with `cursor-not-allowed opacity-50`.
+_Enforced in:_ `resources/views/livewire/settings/integrations-list-page.blade.php`
 
 ---
 
@@ -134,7 +150,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 **Layout**: `resources/views/layouts/admin-settings.blade.php` — two-column layout with a dark sidebar (280px) + right content area (`bg-bg-secondary`).
 
-**Sidebar navigation**: 7 items. Only «Основные» is active/linked; the rest (Интеграции, ИИ-ассистент, Уведомления, API и вебхуки, Команда, Автоответы) are disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
+**Sidebar navigation**: 7 items. «Основные» and «Интеграции» are active/linked; the rest (ИИ-ассистент, Уведомления, API и вебхуки, Команда, Автоответы) are disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
 
 **Form fields** (all persisted via `SettingsService`):
 | Field | Setting key | Validation |
@@ -153,6 +169,43 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 ---
 
+## 6b. Integrations Screens (custom Livewire, `/admin/settings/integrations`)
+
+### IntegrationsListPage (`GET /admin/settings/integrations`)
+
+`app/Livewire/Settings/IntegrationsListPage.php` — shows Telegram, VK, MAX, and Widget (disabled) channel cards with connection status.
+
+**Channel status**: computed by `ChannelStatusService::all()` on `mount()`. A channel is «Подключён» when all required keys are non-empty; otherwise «Не настроен».
+
+**Required keys by channel**:
+| Channel | Required for "connected" |
+|---|---|
+| Telegram | `telegram.token`, `telegram.secret_key`, `telegram.group_id` |
+| VK | `vk.token`, `vk.secret_key`, `vk.confirm_code` |
+| MAX | `max.token`, `max.secret_key` |
+
+**Tests**: `tests/Feature/Settings/IntegrationsListPageTest.php`
+
+### IntegrationChannelPage (`GET /admin/settings/integrations/{channel}`)
+
+`app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|vk|max`.
+
+**Form fields**:
+| Channel | Fields |
+|---|---|
+| Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id`, `telegram.template_topic_name` |
+| VK | `vk.token`(secret), `vk.secret_key`(secret), `vk.confirm_code`(secret) |
+| MAX | `max.token`(secret), `max.secret_key`(secret) |
+
+**Secret fields** rendered as `type="password"` inputs with `autocomplete="new-password"`. Blank submission does not overwrite existing stored value (BR-015).
+
+**Webhook registration action** (`wire:click="registerWebhook"`): calls `WebhookRegistrationService`, shows success (green banner) or error (red banner) via `$webhookMessage` / `$webhookSuccess`.
+
+**Tests**: `tests/Feature/Settings/IntegrationChannelPageTest.php`
+- Unit tests: `tests/Unit/Modules/Admin/Services/ChannelStatusServiceTest.php`, `tests/Unit/Modules/Admin/Services/WebhookRegistrationServiceTest.php`
+
+---
+
 ## 7. Forbidden Behaviors
 
 - ❌ Calling `SendReplyAction::execute()` synchronously from a Livewire component without `Queue::fake()` in tests
@@ -168,14 +221,16 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 ## Checklist
 
-- [ ] `BR-001` through `BR-010` read and understood
+- [ ] `BR-001` through `BR-016` read and understood
 - [ ] `shouldShowReplyForm()` returns `false` in `telegram_group` mode
 - [ ] `SendReplyAction` uses queue jobs, not synchronous API calls
 - [ ] New Filament resources have feature tests in `tests/Feature/Admin/`
 - [ ] Polling interval not changed without load analysis
 - [ ] DI binding tested in `tests/Feature/Admin/ManagerInterfaceCompatibilityTest.php`
-- [ ] New custom settings Livewire page has feature test in `tests/Feature/Settings/` and unit test in `tests/Unit/Livewire/Settings/`
-- [ ] When adding form fields to GeneralSettingsPage, add the key to `SettingKeyRegistry` first
+- [ ] New custom settings Livewire page has feature test in `tests/Feature/Settings/` and unit test in `tests/Unit/Livewire/Settings/` (or `tests/Unit/Modules/Admin/Services/` for service classes)
+- [ ] When adding form fields to GeneralSettingsPage or IntegrationChannelPage, add the key to `SettingKeyRegistry` first
 - [ ] New custom Livewire routes registered in `AdminServiceProvider::boot()` under `admin/settings/` prefix
 - [ ] Admin UI uses design system token variables, not hardcoded hex values
 - [ ] New admin Blade components go under `resources/views/components/admin/`
+- [ ] Secret channel fields use `type="password"` and blank-submission guard (BR-015)
+- [ ] `WebhookRegistrationService` reads tokens from `SettingsService`, never from `config()` directly

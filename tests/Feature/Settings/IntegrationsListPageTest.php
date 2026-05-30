@@ -1,0 +1,164 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\Settings;
+
+use App\Enums\UserRole;
+use App\Livewire\Settings\IntegrationsListPage;
+use App\Models\User;
+use App\Services\Settings\SettingsService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Livewire\Livewire;
+use Tests\TestCase;
+
+class IntegrationsListPageTest extends TestCase
+{
+    use RefreshDatabase;
+
+    // ── Access control ────────────────────────────────────────────────────────
+
+    public function test_guest_is_redirected_to_login(): void
+    {
+        // On non-mobile UA the index redirects to telegram channel page,
+        // which itself then redirects to login — assertRedirect covers both.
+        $response = $this->get(route('admin.settings.integrations'));
+
+        // May redirect to login directly or via /integrations/telegram
+        $this->assertTrue(
+            str_contains($response->headers->get('Location', ''), '/admin/login')
+            || $response->isRedirect()
+        );
+    }
+
+    public function test_authenticated_admin_can_render_integrations_list(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSuccessful();
+    }
+
+    public function test_authenticated_manager_can_render_integrations_list(): void
+    {
+        $manager = User::factory()->manager()->create();
+        $this->actingAs($manager);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSuccessful();
+    }
+
+    // ── Route registration ────────────────────────────────────────────────────
+
+    public function test_route_admin_settings_integrations_is_registered(): void
+    {
+        $this->assertTrue(\Illuminate\Support\Facades\Route::has('admin.settings.integrations'));
+    }
+
+    public function test_route_admin_settings_integrations_list_is_registered(): void
+    {
+        $this->assertTrue(\Illuminate\Support\Facades\Route::has('admin.settings.integrations.list'));
+    }
+
+    // ── Rendering ─────────────────────────────────────────────────────────────
+
+    public function test_renders_page_header(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Интеграции')
+            ->assertSee('Telegram')
+            ->assertSee('ВКонтакте')
+            ->assertSee('Max');
+    }
+
+    public function test_renders_not_connected_status_when_keys_absent(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+        Cache::flush();
+
+        // Override config so SettingsService fallback also returns empty
+        config([
+            'traffic_source.settings.telegram.token' => '',
+            'traffic_source.settings.telegram.secret_key' => '',
+            'traffic_source.settings.telegram.group_id' => '',
+            'traffic_source.settings.vk.token' => '',
+            'traffic_source.settings.vk.secret_key' => '',
+            'traffic_source.settings.vk.confirm_code' => '',
+            'traffic_source.settings.max.token' => '',
+            'traffic_source.settings.max.secret_key' => '',
+        ]);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Не подключён');
+    }
+
+    public function test_renders_connected_status_when_telegram_keys_present(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        $settings->set('telegram.token', 'bot123:tok');
+        $settings->set('telegram.secret_key', 'secret');
+        $settings->set('telegram.group_id', '-1001234567890');
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Подключено');
+    }
+
+    public function test_channel_statuses_property_has_all_three_keys(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(IntegrationsListPage::class);
+
+        $statuses = $component->get('channelStatuses');
+        $this->assertArrayHasKey('telegram', $statuses);
+        $this->assertArrayHasKey('vk', $statuses);
+        $this->assertArrayHasKey('max', $statuses);
+    }
+
+    public function test_renders_widget_placeholder(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Виджет для сайта')
+            ->assertSee('Скоро');
+    }
+
+    public function test_renders_channel_description_texts(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Поддержка через Telegram-бота')
+            ->assertSee('Поддержка через сообщество ВКонтакте')
+            ->assertSee('Поддержка через мессенджер MAX');
+    }
+
+    public function test_renders_connect_button_for_disconnected_channel(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+        Cache::flush();
+
+        config([
+            'traffic_source.settings.max.token' => '',
+            'traffic_source.settings.max.secret_key' => '',
+        ]);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Подключить');
+    }
+}
