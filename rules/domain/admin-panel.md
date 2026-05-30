@@ -2,7 +2,7 @@
 
 > **Purpose:** Define business rules, key concepts, and invariants for the Admin module (`app/Modules/Admin/`). This module implements the `admin_panel` mode of the `ManagerInterfaceContract`.
 > **Context:** Read this file before modifying anything inside `app/Modules/Admin/`, Filament resources, Livewire pages, or the `SendReplyAction`.
-> **Version:** 1.3
+> **Version:** 1.4
 
 ---
 
@@ -10,7 +10,7 @@
 
 The Admin Panel domain provides an alternative manager interface for the support team. Instead of working through a Telegram supergroup with forum topics, managers can use the `/admin` web panel (built with Filament 3) to view conversations and send replies.
 
-**This domain owns:** `ConversationResource`, `BotUserResource`, `ExternalSourceResource`, `FeedbackResource`, `ConversationPage` (Livewire, Filament-hosted), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
+**This domain owns:** `ConversationResource`, `BotUserResource`, `ExternalSourceResource`, `FeedbackResource`, `ConversationPage` (Livewire, Filament-hosted), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), `AiAssistantPage` (custom Livewire full-page at `/admin/settings/ai`), `AiProviderAccessPage` (custom Livewire full-page at `/admin/settings/ai/{provider}`), admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
 
 > **Stage 1 transition note:** The admin is in the process of being redesigned. Filament resources (Chats, Users, External Sources, Feedback) remain on default Filament chrome. `GeneralSettingsPage` is the first screen rebuilt as a fully custom Livewire/Blade component outside Filament's chrome. During this coexistence period the two UIs deliberately have different styling — this is expected until the migration completes.
 
@@ -94,6 +94,15 @@ _Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — `if ($field !
 **BR-016** — The «Виджет для сайта» card on the Integrations list is a disabled placeholder («Скоро»). It must not be a clickable link and must not have a route. It is rendered as a `<div>` with `cursor-not-allowed opacity-50`.
 _Enforced in:_ `resources/views/livewire/settings/integrations-list-page.blade.php`
 
+**BR-017** — AI assistant settings (master toggle, provider, auto-reply, context limit, system prompt) are managed at `/admin/settings/ai` via `AiAssistantPage`. Values are persisted via `SettingsService`. The `ИИ-ассистент` sidebar item must link to `admin.settings.ai` and be marked active on both `admin.settings.ai` and `admin.settings.ai.provider` routes.
+_Enforced in:_ `resources/views/layouts/admin-settings.blade.php @ nav-item ИИ-ассистент`; `AdminServiceProvider::boot()` route `admin.settings.ai`
+
+**BR-018** — AI provider credentials (API keys, client IDs/secrets, base URLs, models, max tokens, temperature, cert path) are managed at `/admin/settings/ai/{provider}` via `AiProviderAccessPage`. Route constraint: `provider` ∈ `openai|deepseek|gigachat`. Secrets are encrypted in the `settings` DB table and never pre-filled in the UI form. Blank secret submission does NOT overwrite the existing stored secret.
+_Enforced in:_ `AiProviderAccessPage::saveOpenAi/DeepSeek/GigaChat()` — blank-secret guard identical to `IntegrationChannelPage` (BR-015)
+
+**BR-019** — Enabling auto-reply from `AiAssistantPage` requires an explicit user confirmation. The toggle triggers a yellow warning dialog; the user must call `confirmAutoReply()` before the setting is applied. Dismissing the dialog (`cancelAutoReply()`) leaves auto-reply disabled.
+_Enforced in:_ `AiAssistantPage::updatedAutoReply()`, `confirmAutoReply()`, `cancelAutoReply()`
+
 ---
 
 ## 4. Architecture Flow (admin_panel mode)
@@ -150,7 +159,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 **Layout**: `resources/views/layouts/admin-settings.blade.php` — two-column layout with a dark sidebar (280px) + right content area (`bg-bg-secondary`).
 
-**Sidebar navigation**: 7 items. «Основные» and «Интеграции» are active/linked; the rest (ИИ-ассистент, Уведомления, API и вебхуки, Команда, Автоответы) are disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
+**Sidebar navigation**: 7 items. «Основные», «Интеграции», and «ИИ-ассистент» are active/linked; the rest (Уведомления, API и вебхуки, Команда, Автоответы) are disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
 
 **Form fields** (all persisted via `SettingsService`):
 | Field | Setting key | Validation |
@@ -206,6 +215,35 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 ---
 
+## 6c. AI Assistant Screens (custom Livewire, `/admin/settings/ai`)
+
+### AiAssistantPage (`GET /admin/settings/ai`)
+
+`app/Livewire/Settings/AiAssistantPage.php` — main AI settings screen.
+
+**Form fields** (all persisted via `SettingsService`):
+| Field | Setting key | Validation |
+|---|---|---|
+| ИИ-ассистент (master toggle) | `ai.enabled` | bool |
+| Провайдер по умолчанию | `ai.default_provider` | required, in:openai,deepseek,gigachat |
+| Автоответ (toggle) | `ai.auto_reply` | bool, confirm dialog required |
+| Лимит контекста | `ai.max_context_tokens` | int > 0 |
+| Системный промпт | `ai.system_prompt` | string (stored in `settings` table, not Blade file) |
+
+**Auto-reply confirmation**: enabling auto-reply shows a yellow warning banner with «Включить автоответ» / «Отмена» buttons. The toggle reverts to `false` until `confirmAutoReply()` is called.
+
+**Routes**: `GET /admin/settings/ai` → name `admin.settings.ai`; `GET /admin/settings/ai/{provider}` → name `admin.settings.ai.provider` (provider ∈ openai|deepseek|gigachat). Registered in `AdminServiceProvider::boot()`.
+
+**Tests**:
+- `tests/Unit/Livewire/Settings/AiAssistantPageTest.php` — unit (12 cases)
+- `tests/Unit/Livewire/Settings/AiProviderAccessPageTest.php` — unit (17 cases)
+- `tests/Feature/Settings/AiAssistantPageTest.php` — integration (13 cases)
+- `tests/Feature/Settings/AiProviderAccessPageTest.php` — integration (14 cases)
+
+**Runtime application status**: `AiAssistantPage` and `AiProviderAccessPage` persist values to the `settings` DB table. The form reads back from `SettingsService` correctly. Full runtime wiring (AI providers / `ShouldAiReply` / `AiAssistantService` reading from `SettingsService`) is deferred to a follow-up task — those classes still read from `config('ai.*')` at runtime.
+
+---
+
 ## 7. Forbidden Behaviors
 
 - ❌ Calling `SendReplyAction::execute()` synchronously from a Livewire component without `Queue::fake()` in tests
@@ -221,7 +259,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 ## Checklist
 
-- [ ] `BR-001` through `BR-016` read and understood
+- [ ] `BR-001` through `BR-019` read and understood
 - [ ] `shouldShowReplyForm()` returns `false` in `telegram_group` mode
 - [ ] `SendReplyAction` uses queue jobs, not synchronous API calls
 - [ ] New Filament resources have feature tests in `tests/Feature/Admin/`

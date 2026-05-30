@@ -124,7 +124,9 @@ app/
 │   └── Settings/     # Custom full-page Livewire components for Settings section
 │       ├── GeneralSettingsPage.php       # /admin/settings/general
 │       ├── IntegrationsListPage.php      # /admin/settings/integrations
-│       └── IntegrationChannelPage.php   # /admin/settings/integrations/{channel}
+│       ├── IntegrationChannelPage.php   # /admin/settings/integrations/{channel}
+│       ├── AiAssistantPage.php          # /admin/settings/ai
+│       └── AiProviderAccessPage.php     # /admin/settings/ai/{provider}
 ├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
 ├── Services/
@@ -168,7 +170,9 @@ resources/
 │       └── settings/
 │           ├── general-settings-page.blade.php        # View for GeneralSettingsPage
 │           ├── integrations-list-page.blade.php       # View for IntegrationsListPage
-│           └── integration-channel-page.blade.php    # View for IntegrationChannelPage
+│           ├── integration-channel-page.blade.php    # View for IntegrationChannelPage
+│           ├── ai-assistant-page.blade.php           # View for AiAssistantPage
+│           └── ai-provider-access-page.blade.php    # View for AiProviderAccessPage
 ```
 
 ---
@@ -262,20 +266,22 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 ### AI Assistant
 
-- AI is disabled by default (`AI_ENABLED=false`)
+- AI is disabled by default (`AI_ENABLED=false`); can be toggled from the admin panel at `/admin/settings/ai`
 - AI runs through a **separate Telegram bot** (`TELEGRAM_AI_BOT_TOKEN`) that is added to the same supergroup
 - The AI bot webhook URL is `POST /api/ai-bot/webhook`, protected by `AiBotQuery` middleware (`TELEGRAM_AI_BOT_SECRET`)
 - `AI_AUTO_REPLY=false` (default): AI posts a draft with "Accept / Cancel" inline buttons; manager reviews before sending
-- `AI_AUTO_REPLY=true`: AI posts the reply directly to the topic; it is immediately sent to the user via `SendReplyAction`
+- `AI_AUTO_REPLY=true`: AI posts the reply directly to the topic; it is immediately sent to the user via `SendReplyAction`; enabling via admin panel requires explicit confirmation
 - The AI bot only replies to messages whose `from.id` equals `TELEGRAM_BOT_ID` (forwarded user messages from the main bot)
 - The AI bot does NOT reply when `MANAGER_INTERFACE=admin_panel`
-- Supported providers: OpenAI, DeepSeek, GigaChat (set via `AI_DEFAULT_PROVIDER`)
+- Supported providers: OpenAI, DeepSeek, GigaChat (set via `AI_DEFAULT_PROVIDER` or from `/admin/settings/ai`)
 - Register the AI bot webhook with: `docker exec -it pet php artisan ai-bot:set-webhook`
 - AI conversation history is sourced from the `messages` table (no Redis cache), bounded by `AI_MAX_CONTEXT_TOKENS` (default 3000) using a `mb_strlen / 4` token heuristic with sliding-window trimming
-- AI system prompt lives in `resources/ai/system-prompt.blade.php` (Blade template — variables only, no `@if`/`@foreach`/`@include`/`@php`); path is configured by `config/ai.php @ system_prompt_path`
+- AI system prompt: stored in `settings` DB under key `ai.system_prompt` (editable from `/admin/settings/ai`); the Blade fallback at `resources/ai/system-prompt.blade.php` is NOT overwritten by the admin UI
+- AI provider credentials (API keys, base URLs, models, tokens, cert path) are managed at `/admin/settings/ai/{provider}` and stored encrypted in the `settings` table via `SettingsService`
 - AI drafts NEVER write to `messages` (only to `ai_messages`); a `messages` row appears only when the message is actually sent to the user — this invariant is what makes "any outgoing row = delivered" safe for the chat-history assembler
 - AI runs across all user platforms (`telegram`, `vk`, `max`). Triggers: `TelegramBotController::maybeDispatchAi()` for TG, `VkMessageService::maybeDispatchAi()` for VK, `MaxMessageService::maybeDispatchAi()` for Max. Triggering is text-only — attachments do not start AI. Gating still goes through `ShouldAiReply` (TG-DTO and platform-agnostic variants share the same rules: AI_ENABLED, `MANAGER_INTERFACE=telegram_group`, replyable text, user active)
 - Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. Any other platform is delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry` by a pluggable module (e.g. the paid Avito package). The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
+- **Runtime application (deferred):** AI settings saved in the admin panel are persisted to the DB and displayed correctly in the UI. `ShouldAiReply`, `AiAssistantService`, and AI providers still read from `config('ai.*')` at runtime — full DB-based runtime wiring is a follow-up task
 
 ### Settings Persistence Layer
 

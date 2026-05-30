@@ -54,7 +54,10 @@
                     Интеграции
                 </x-admin.nav-item>
 
-                <x-admin.nav-item disabled>
+                <x-admin.nav-item
+                    href="{{ route('admin.settings.ai') }}"
+                    :active="request()->routeIs('admin.settings.ai') || request()->routeIs('admin.settings.ai.provider')"
+                >
                     <x-slot name="icon">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />

@@ -41,17 +41,17 @@ This domain does not own: actual message sending to the end user (see `domain/me
 
 ## 3. Business Rules
 
-**BR-001** — The AI assistant is globally disabled by default (`AI_ENABLED=false`). It must be explicitly enabled via environment configuration.
-_Enforced in:_ `config/ai.php @ enabled`
+**BR-001** — The AI assistant is globally disabled by default (`AI_ENABLED=false`). It must be explicitly enabled via the admin panel (`/admin/settings/ai`) or via `.env`. The DB-persisted value (via `SettingsService`) takes priority over `.env` on runtime reads from the admin UI form. Note: `ShouldAiReply` and `AiAssistantService` still read from `config('ai.*')` at runtime (no live DB re-read) — a container restart is not required for the *UI form* to store and display the new value, but runtime AI-flow wiring to `SettingsService` is deferred (see follow-up task).
+_Enforced in:_ `config/ai.php @ enabled`; `app/Livewire/Settings/AiAssistantPage.php`; `app/Services/Settings/SettingKeyRegistry.php @ ai.enabled`
 
-**BR-002** — Auto-reply mode (`AI_AUTO_REPLY=true`) must not be enabled in production unless explicitly approved. In auto-reply mode, AI drafts are sent to users without manager review.
-_Enforced in:_ `config/ai.php @ auto_reply`
+**BR-002** — Auto-reply mode (`AI_AUTO_REPLY=true`) must not be enabled in production unless explicitly approved. In auto-reply mode, AI drafts are sent to users without manager review. The admin panel (`/admin/settings/ai`) shows a confirmation warning before enabling auto-reply; the user must explicitly confirm.
+_Enforced in:_ `config/ai.php @ auto_reply`; `AiAssistantPage::updatedAutoReply()` — reverts toggle and shows confirmation dialog; `AiAssistantPage::confirmAutoReply()` / `cancelAutoReply()`
 
 **BR-003** — An AI draft (`AiMessage`) must be created before any response is sent from the AI path. The draft must include both `text_ai` and optionally `text_manager`.
 _Enforced in:_ `app/Actions/Ai/AiAction.php`
 
-**BR-004** — The AI provider used for a request is determined by `AI_DEFAULT_PROVIDER` config. Supported values: `openai`, `deepseek`, `gigachat`.
-_Enforced in:_ `config/ai.php @ default_provider`
+**BR-004** — The AI provider used for a request is determined by `AI_DEFAULT_PROVIDER` config. Supported values: `openai`, `deepseek`, `gigachat`. The active provider can be changed via the admin panel (`/admin/settings/ai`) without a code change; the value is persisted in the `settings` table and displayed in the UI. Runtime wiring of `AiAssistantService` to `SettingsService` is deferred.
+_Enforced in:_ `config/ai.php @ default_provider`; `app/Livewire/Settings/AiAssistantPage.php`; `app/Services/Settings/SettingKeyRegistry.php @ ai.default_provider`
 
 **BR-005** — An `AiCondition` record must exist and have `active = true` for a given `BotUser` before AI processing starts.
 _Enforced in:_ `app/Actions/Ai/AiAction.php`
@@ -65,8 +65,8 @@ _Enforced in:_ `config/ai.php @ disable_timeout` (timeout applied in AiAction fl
 **BR-008** — AI responses must never exceed the token limits defined per provider in config.
 _Enforced in:_ `config/ai.php @ providers.*.max_tokens`
 
-**BR-009** — The AI conversation context is sourced from the `messages` table by `bot_user_id` (incoming → `role: user` excluding slash-commands; any outgoing → `role: assistant`). The window is bounded by `max_context_tokens` (token budget) using a `mb_strlen / 4` heuristic with a sliding window from the newest entries; older entries that would exceed the budget are dropped. Redis-backed context (`ai_context_*`) is no longer used.
-_Enforced in:_ `app/Modules/Ai/Services/AiChatHistoryService.php`; `config/ai.php @ max_context_tokens` (default: 3000)
+**BR-009** — The AI conversation context is sourced from the `messages` table by `bot_user_id` (incoming → `role: user` excluding slash-commands; any outgoing → `role: assistant`). The window is bounded by `max_context_tokens` (token budget) using a `mb_strlen / 4` heuristic with a sliding window from the newest entries; older entries that would exceed the budget are dropped. Redis-backed context (`ai_context_*`) is no longer used. The `max_context_tokens` limit is editable from the admin panel (`/admin/settings/ai`) and persisted via `SettingsService`. Runtime wiring of `AiChatHistoryService` to `SettingsService` for this value is deferred.
+_Enforced in:_ `app/Modules/Ai/Services/AiChatHistoryService.php`; `config/ai.php @ max_context_tokens` (default: 3000); `app/Services/Settings/SettingKeyRegistry.php @ ai.max_context_tokens`
 
 **BR-010** — If AI confidence is below `confidence_threshold`, the message must be escalated to a human manager.
 _Enforced in:_ `config/ai.php @ confidence_threshold` (default: 0.8)
@@ -100,7 +100,57 @@ _Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/Se
 
 ---
 
-## 4. AI Response State Machine
+## 4. AI Settings Admin UI (`/admin/settings/ai`)
+
+The AI assistant settings are managed via custom Livewire/Blade pages at `/admin/settings/ai`.
+
+### Page: AiAssistantPage (`GET /admin/settings/ai`)
+
+`app/Livewire/Settings/AiAssistantPage.php` — main AI settings screen.
+
+**Fields** (all persisted via `SettingsService`):
+| Field | Setting key | Type | Validation |
+|---|---|---|---|
+| ИИ-ассистент (master toggle) | `ai.enabled` | bool | — |
+| Провайдер по умолчанию | `ai.default_provider` | string | in:openai,deepseek,gigachat |
+| Автоответ (toggle) | `ai.auto_reply` | bool | confirm dialog required |
+| Лимит контекста | `ai.max_context_tokens` | int | > 0 |
+| Системный промпт | `ai.system_prompt` | string | — |
+
+**Auto-reply guard**: enabling auto-reply via the toggle triggers `updatedAutoReply(true)`, which reverts the toggle to `false` and shows a yellow confirmation dialog. The user must call `confirmAutoReply()` to accept, or `cancelAutoReply()` to dismiss.
+
+**Provider cards**: provider selection rendered as 3 clickable cards (OpenAI / DeepSeek / GigaChat). Each card has a «Настроить доступ» link to the corresponding provider access page.
+
+**Runtime application (deferred)**: `ShouldAiReply`, `AiAssistantService`, `AiChatHistoryService` still read from `config('ai.*')` at runtime. The admin UI persists values to `settings` DB (displayed correctly next page load). Full runtime wiring is tracked as a follow-up task.
+
+### Pages: AiProviderAccessPage (`GET /admin/settings/ai/{provider}`)
+
+`app/Livewire/Settings/AiProviderAccessPage.php` — per-provider credentials screen. Route constraint: `provider` ∈ `openai|deepseek|gigachat`.
+
+**Fields by provider** (all persisted via `SettingsService`):
+| Provider | Fields |
+|---|---|
+| OpenAI | `ai.openai_api_key`(secret), `ai.openai_base_url`, `ai.openai_model`, `ai.openai_max_tokens`, `ai.openai_temperature` |
+| DeepSeek | `ai.deepseek_client_id`, `ai.deepseek_client_secret`(secret), `ai.deepseek_base_url`, `ai.deepseek_model`, `ai.deepseek_max_tokens`, `ai.deepseek_temperature` |
+| GigaChat | `ai.gigachat_client_id`, `ai.gigachat_client_secret`(secret), `ai.gigachat_base_url`, `ai.gigachat_model`, `ai.gigachat_max_tokens`, `ai.gigachat_temperature`, `ai.gigachat_path_cert` |
+
+**Secret fields**: rendered as `type="password"` inputs. Secret fields are never pre-filled (always `null`). Saving an empty secret field does NOT overwrite the existing stored secret (blank-secret guard, mirrors BR-015 from admin-panel.md).
+
+**System prompt storage**: the system prompt is stored in `SettingsService` under key `ai.system_prompt` (non-secret, plain text). The Blade template `resources/ai/system-prompt.blade.php` is NOT overwritten — that file is the production fallback.
+
+**Routes**: registered in `AdminServiceProvider::boot()` under `admin/settings/` prefix, names `admin.settings.ai` and `admin.settings.ai.provider`. Middleware: `['web', Filament\Http\Middleware\Authenticate::class]`.
+
+**Sidebar**: `ИИ-ассистент` nav item in `resources/views/layouts/admin-settings.blade.php` is active/linked to `admin.settings.ai`; marked active on both `admin.settings.ai` and `admin.settings.ai.provider` routes.
+
+**Tests**:
+- `tests/Unit/Livewire/Settings/AiAssistantPageTest.php` — unit tests with mocked SettingsService
+- `tests/Unit/Livewire/Settings/AiProviderAccessPageTest.php` — unit tests with mocked SettingsService
+- `tests/Feature/Settings/AiAssistantPageTest.php` — integration: access control, mount, save, auto-reply confirm flow, cancel
+- `tests/Feature/Settings/AiProviderAccessPageTest.php` — integration: access control, mount, save per provider, blank-secret guard
+
+---
+
+## 5. AI Response State Machine (was §4)
 
 ```mermaid
 stateDiagram-v2
@@ -121,7 +171,7 @@ stateDiagram-v2
 
 ---
 
-## 5. Provider Configuration
+## 6. Provider Configuration (was §5)
 
 | Provider | Env Prefix | Model Config Key | Default Model |
 |---|---|---|---|
@@ -141,7 +191,7 @@ $provider = 'openai';
 
 ---
 
-## 6. AI Bot Webhook Flow
+## 7. AI Bot Webhook Flow (was §6)
 
 ### AI Bot Controllers
 
@@ -183,7 +233,7 @@ The AI bot replies **only** when all of the following are true:
 
 ---
 
-## 7. Responsible Classes
+## 8. Responsible Classes (was §7)
 
 | Class | Responsibility |
 |---|---|
@@ -206,7 +256,7 @@ The AI bot replies **only** when all of the following are true:
 
 ---
 
-## 8. Forbidden Behaviors
+## 9. Forbidden Behaviors (was §8)
 
 - ❌ Sending AI-generated text directly to users without manager review (when auto-reply is disabled)
 - ❌ Hardcoding AI provider names outside of config

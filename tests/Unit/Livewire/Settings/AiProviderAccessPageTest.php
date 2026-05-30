@@ -1,0 +1,366 @@
+<?php
+
+namespace Tests\Unit\Livewire\Settings;
+
+use App\Livewire\Settings\AiProviderAccessPage;
+use App\Services\Settings\SettingsService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
+use Tests\TestCase;
+
+/**
+ * Unit-level tests for AiProviderAccessPage Livewire component.
+ *
+ * Covers mount(), save(), and cancel() for all three providers
+ * (openai, deepseek, gigachat). Secret fields are never pre-filled
+ * and blank values do not overwrite existing secrets.
+ */
+class AiProviderAccessPageTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        Mockery::close();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────────
+
+    /**
+     * Build a mock SettingsService that returns empty strings for all non-secret
+     * ai.* keys and null for integer keys (no stored value).
+     *
+     * @return \Mockery\MockInterface&SettingsService
+     */
+    private function makeEmptySettingsMock(): mixed
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+
+        return $mock;
+    }
+
+    // ── mount ────────────────────────────────────────────────────────────────────
+
+    public function test_mount_populates_openai_non_secret_fields(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->with('ai.openai_base_url')->andReturn('https://api.openai.com/v1');
+        $mock->shouldReceive('get')->with('ai.openai_model')->andReturn('gpt-4o');
+        $mock->shouldReceive('get')->with('ai.openai_max_tokens')->andReturn(500);
+        $mock->shouldReceive('get')->with('ai.openai_temperature')->andReturn('0.5');
+        // DeepSeek fields
+        $mock->shouldReceive('get')->with('ai.deepseek_client_id')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.deepseek_base_url')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.deepseek_model')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.deepseek_max_tokens')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.deepseek_temperature')->andReturn('');
+        // GigaChat fields
+        $mock->shouldReceive('get')->with('ai.gigachat_client_id')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_base_url')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_model')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_max_tokens')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.gigachat_temperature')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_path_cert')->andReturn('');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+
+        $this->assertSame('https://api.openai.com/v1', $component->openai_base_url);
+        $this->assertSame('gpt-4o', $component->openai_model);
+        $this->assertSame(500, $component->openai_max_tokens);
+        $this->assertSame('0.5', $component->openai_temperature);
+        // Secret field must be null
+        $this->assertNull($component->openai_api_key);
+    }
+
+    public function test_mount_sets_provider_from_argument(): void
+    {
+        $component = new AiProviderAccessPage();
+        $component->mount('deepseek', $this->makeEmptySettingsMock());
+
+        $this->assertSame('deepseek', $component->provider);
+    }
+
+    public function test_mount_secret_fields_are_always_null(): void
+    {
+        $component = new AiProviderAccessPage();
+        $component->mount('gigachat', $this->makeEmptySettingsMock());
+
+        $this->assertNull($component->gigachat_client_secret);
+        $this->assertNull($component->openai_api_key);
+        $this->assertNull($component->deepseek_client_secret);
+    }
+
+    // ── save — OpenAI ─────────────────────────────────────────────────────────────
+
+    public function test_save_openai_persists_non_secret_fields(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.openai_base_url', 'https://api.openai.com/v1')->once();
+        $mock->shouldReceive('set')->with('ai.openai_model', 'gpt-4o')->once();
+        $mock->shouldReceive('set')->with('ai.openai_temperature', '0.7')->once();
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        $component->openai_base_url = 'https://api.openai.com/v1';
+        $component->openai_model = 'gpt-4o';
+        $component->openai_temperature = '0.7';
+        $component->openai_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_openai_persists_api_key_when_non_empty(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.openai_api_key', 'sk-test123')->once();
+        $mock->shouldReceive('set')->with(Mockery::not('ai.openai_api_key'), Mockery::any());
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        $component->openai_api_key = 'sk-test123';
+        $component->openai_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_openai_does_not_overwrite_api_key_when_empty(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set')->with('ai.openai_api_key', Mockery::any());
+        $mock->shouldReceive('set')->with(Mockery::not('ai.openai_api_key'), Mockery::any());
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        $component->openai_api_key = '';
+        $component->openai_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_openai_rejects_zero_max_tokens(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        $component->openai_max_tokens = 0;
+        $component->save($mock);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('openai_max_tokens', $component->formErrors);
+    }
+
+    // ── save — DeepSeek ───────────────────────────────────────────────────────────
+
+    public function test_save_deepseek_persists_non_secret_fields(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.deepseek_client_id', 'my-client')->once();
+        $mock->shouldReceive('set')->with('ai.deepseek_base_url', 'https://api.deepseek.com')->once();
+        $mock->shouldReceive('set')->with('ai.deepseek_model', 'deepseek-chat')->once();
+        $mock->shouldReceive('set')->with('ai.deepseek_temperature', '0.8')->once();
+
+        $component = new AiProviderAccessPage();
+        $component->mount('deepseek', $mock);
+        $component->deepseek_client_id = 'my-client';
+        $component->deepseek_base_url = 'https://api.deepseek.com';
+        $component->deepseek_model = 'deepseek-chat';
+        $component->deepseek_temperature = '0.8';
+        $component->deepseek_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_deepseek_does_not_overwrite_client_secret_when_empty(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set')->with('ai.deepseek_client_secret', Mockery::any());
+        $mock->shouldReceive('set')->with(Mockery::not('ai.deepseek_client_secret'), Mockery::any());
+
+        $component = new AiProviderAccessPage();
+        $component->mount('deepseek', $mock);
+        $component->deepseek_client_secret = '';
+        $component->deepseek_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_deepseek_persists_client_secret_when_non_empty(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.deepseek_client_secret', 'secret-value')->once();
+        $mock->shouldReceive('set')->with(Mockery::not('ai.deepseek_client_secret'), Mockery::any());
+
+        $component = new AiProviderAccessPage();
+        $component->mount('deepseek', $mock);
+        $component->deepseek_client_secret = 'secret-value';
+        $component->deepseek_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_deepseek_rejects_zero_max_tokens(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('deepseek', $mock);
+        $component->deepseek_max_tokens = 0;
+        $component->save($mock);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('deepseek_max_tokens', $component->formErrors);
+    }
+
+    // ── save — GigaChat ───────────────────────────────────────────────────────────
+
+    public function test_save_gigachat_persists_all_non_secret_fields_including_path_cert(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.gigachat_client_id', 'gc-id')->once();
+        $mock->shouldReceive('set')->with('ai.gigachat_base_url', 'https://gigachat.sber.ru')->once();
+        $mock->shouldReceive('set')->with('ai.gigachat_model', 'GigaChat-Pro')->once();
+        $mock->shouldReceive('set')->with('ai.gigachat_temperature', '0.6')->once();
+        $mock->shouldReceive('set')->with('ai.gigachat_path_cert', '/etc/ssl/certs/giga.pem')->once();
+
+        $component = new AiProviderAccessPage();
+        $component->mount('gigachat', $mock);
+        $component->gigachat_client_id = 'gc-id';
+        $component->gigachat_base_url = 'https://gigachat.sber.ru';
+        $component->gigachat_model = 'GigaChat-Pro';
+        $component->gigachat_temperature = '0.6';
+        $component->gigachat_path_cert = '/etc/ssl/certs/giga.pem';
+        $component->gigachat_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_gigachat_does_not_overwrite_client_secret_when_empty(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set')->with('ai.gigachat_client_secret', Mockery::any());
+        $mock->shouldReceive('set')->with(Mockery::not('ai.gigachat_client_secret'), Mockery::any());
+
+        $component = new AiProviderAccessPage();
+        $component->mount('gigachat', $mock);
+        $component->gigachat_client_secret = '';
+        $component->gigachat_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_gigachat_persists_client_secret_when_non_empty(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.gigachat_client_secret', 'gc-secret')->once();
+        $mock->shouldReceive('set')->with(Mockery::not('ai.gigachat_client_secret'), Mockery::any());
+
+        $component = new AiProviderAccessPage();
+        $component->mount('gigachat', $mock);
+        $component->gigachat_client_secret = 'gc-secret';
+        $component->gigachat_max_tokens = null;
+        $component->save($mock);
+
+        $this->assertTrue($component->saved);
+    }
+
+    public function test_save_gigachat_rejects_zero_max_tokens(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('gigachat', $mock);
+        $component->gigachat_max_tokens = 0;
+        $component->save($mock);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('gigachat_max_tokens', $component->formErrors);
+    }
+
+    // ── save — unknown provider ───────────────────────────────────────────────────
+
+    public function test_save_sets_error_for_unknown_provider(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        // Forcibly override provider after mount
+        $component->provider = 'unknown';
+        $component->save($mock);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('provider', $component->formErrors);
+    }
+
+    // ── cancel ───────────────────────────────────────────────────────────────────
+
+    public function test_cancel_resets_to_stored_non_secret_values(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->with('ai.openai_base_url')->andReturn('https://stored.url');
+        $mock->shouldReceive('get')->with('ai.openai_model')->andReturn('gpt-4-turbo');
+        $mock->shouldReceive('get')->with('ai.openai_max_tokens')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.openai_temperature')->andReturn('0.5');
+        $mock->shouldReceive('get')->andReturn(null);
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        // Simulate unsaved changes
+        $component->openai_base_url = 'https://changed.url';
+        $component->saved = true;
+        $component->formErrors = ['openai_model' => 'Error'];
+
+        $component->cancel($mock);
+
+        $this->assertSame('https://stored.url', $component->openai_base_url);
+        $this->assertFalse($component->saved);
+        $this->assertEmpty($component->formErrors);
+        // Secret must remain null after cancel
+        $this->assertNull($component->openai_api_key);
+    }
+}
