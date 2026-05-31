@@ -96,7 +96,7 @@ Data Layer          app/Models/ + PostgreSQL
 | Services | `app/Services/`, `app/Modules/*/Services/` | Reusable business logic |
 | Actions | `app/Actions/`, `app/Modules/*/Actions/` | Single isolated operations (one action = one thing) |
 | Telegram/VK API | `app/Modules/Telegram/Api/`, `app/Modules/Vk/Api/` | Direct API calls only |
-| Admin | `app/Modules/Admin/` | Filament resources, Livewire pages (Filament-hosted + custom full-page), SendReplyAction, admin design system |
+| Admin | `app/Modules/Admin/` | Custom full-page Livewire screens (chat workspace + Settings), Filament panel for authentication only, SendReplyAction, admin design system |
 | Jobs | `app/Modules/*/Jobs/` | All async operations — message sending, webhooks |
 | Models | `app/Models/` | Data operations only, no business logic, no API calls |
 
@@ -110,7 +110,7 @@ Data Layer          app/Models/ + PostgreSQL
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
 - **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
 - **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); known keys registered in `SettingKeyRegistry`
-- **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. Stage 1 covers the Settings section; other sections are being migrated progressively. During migration, Filament chrome and custom design system coexist (by design).
+- **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. All admin content screens (chat workspace + Settings) are custom Livewire/Blade on this design system; Filament chrome remains only on the `/admin/login` page.
 
 ---
 
@@ -121,6 +121,8 @@ app/
 ├── Actions/          # Shared isolated operations (Ai/)
 ├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract, PlatformChannel)
 ├── Livewire/
+│   ├── Chat/         # Standalone full-page Livewire workspace (chrome-free)
+│   │   └── ConversationPage.php         # GET /admin/chats — full-screen 3-column manager workspace
 │   └── Settings/     # Custom full-page Livewire components for Settings section
 │       ├── GeneralSettingsPage.php       # /admin/settings/general
 │       ├── IntegrationsListPage.php      # /admin/settings/integrations
@@ -138,13 +140,10 @@ app/
 ├── Logging/          # LokiHandler
 ├── Models/           # BotUser, Message, ExternalMessage, ExternalSource, AiMessage, etc.
 ├── Modules/
-│   ├── Admin/        # Filament 3 admin panel + custom admin routes
+│   ├── Admin/        # Admin panel — custom Livewire screens (Filament kept for authentication only)
 │   │   ├── Actions/  # SendReplyAction
-│   │   ├── Filament/
-│   │   │   ├── Pages/       # ConversationPage (Livewire, Filament-hosted)
-│   │   │   └── Resources/   # ConversationResource, BotUserResource, ExternalSourceResource, FeedbackResource
-│   │   ├── AdminPanelProvider.php  # Filament panel at /admin
-│   │   ├── AdminServiceProvider.php  # Custom Livewire routes (/admin/settings/*)
+│   │   ├── AdminPanelProvider.php    # Filament panel: login only; /admin → /admin/chats; nav via navigationItems()
+│   │   ├── AdminServiceProvider.php  # Custom Livewire routes (/admin/chats, /admin/settings/*)
 │   │   └── Services/ # AdminPanelInterface + ChannelStatusService + WebhookRegistrationService
 │   ├── External/     # External Sources integration
 │   │   ├── Actions/, Controllers/, DTOs/, Jobs/, Middleware/, Services/
@@ -165,8 +164,11 @@ resources/
 │   │       ├── form-field.blade.php, button-primary.blade.php
 │   │       ├── button-secondary.blade.php, toggle.blade.php
 │   ├── layouts/
-│   │   └── admin-settings.blade.php  # Dark-sidebar layout for custom settings pages
+│   │   ├── admin-settings.blade.php  # Dark-sidebar layout for custom settings pages
+│   │   └── admin-chat.blade.php      # Minimal full-screen layout for the chat workspace (no Filament chrome)
 │   └── livewire/
+│       ├── chat/
+│       │   └── conversation-page.blade.php            # View for App\Livewire\Chat\ConversationPage
 │       └── settings/
 │           ├── general-settings-page.blade.php        # View for GeneralSettingsPage
 │           ├── integrations-list-page.blade.php       # View for IntegrationsListPage
@@ -318,12 +320,12 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Max rating callbacks arrive as `update_type=message_callback` with `callback.payload` containing `feedback_rate_*` — handled in `MaxBotController`
 - On rating click: `HandleFeedbackRating` saves `rating`, sets `status='completed_no_comment'`, edits message to thank-you text. `comment` stays NULL — no comment capture is implemented
 - Every close event creates a new `Feedback` record — history accumulates
-- Feedback records are viewable in Filament admin via `FeedbackResource` (read-only: List + View) and via `FeedbacksRelationManager` on the BotUser detail page
+- `Feedback` records persist in the DB; the legacy Filament admin UI for them was removed (a redesigned screen is pending)
 
 ### Manager Interface
 
 - `MANAGER_INTERFACE=telegram_group` (default) — managers work via Telegram supergroup with forum topics
-- `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin` web panel (Filament 3)
+- `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin/chats` workspace (full-screen, chrome-free, `App\Livewire\Chat\ConversationPage`)
 - Switching via `.env`: change `MANAGER_INTERFACE` + `docker compose restart app`
 - Switching via admin panel: save via General Settings screen (`/admin/settings/general`, `GeneralSettingsPage`) → value written to `settings` DB table via `SettingsService` (overrides `.env` on next read); container restart still required for DI binding to take effect (`docker compose restart app`) — screen shows a persistent yellow warning notice
 - The `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` reads from `config('app.manager_interface')` at boot, NOT from `SettingsService` — this is intentional to avoid DB dependency at container startup

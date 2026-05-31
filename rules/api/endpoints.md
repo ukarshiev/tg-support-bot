@@ -88,22 +88,18 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/admin` | session | Admin panel home (redirects to first resource) |
+| `GET` | `/admin` | session | Panel root — redirects to `/admin/chats` (no dashboard; `filament.admin.home`) |
 | `GET` | `/admin/login` | — | Login form |
 | `POST` | `/admin/login` | — | Authenticate manager |
 | `POST` | `/admin/logout` | session | Log out |
-| `GET` | `/admin/conversations` | session | List all conversations (`ConversationResource`) |
-| `GET` | `/admin/conversations/{id}` | session | View conversation with message history (`ViewConversation`) |
-| `GET` | `/admin/bot-users` | session | List all bot users (`BotUserResource`) |
-| `GET` | `/admin/bot-users/{id}` | session | View bot user detail with feedback history (`ViewBotUser`) |
-| `GET` | `/admin/feedbacks` | session | List all feedback records (`FeedbackResource`) |
-| `GET` | `/admin/feedbacks/{id}` | session | View single feedback record (`ViewFeedback`) |
-| `GET` | `/admin/external-sources` | session | List external sources (`ExternalSourceResource`) |
-| `GET` | `/admin/external-sources/create` | session | Create external source form |
-| `GET` | `/admin/external-sources/{id}/edit` | session | Edit external source form |
+| `GET` | `/admin/chats` | session | Chat workspace (`App\Livewire\Chat\ConversationPage`, custom Livewire full-page) — name `admin.chats` |
 | `GET` | `/admin/settings/general` | session | General settings page (`GeneralSettingsPage`, custom Livewire) — name `admin.settings.general` |
 | `GET` | `/admin/settings/integrations` | session | Integration channels list (`IntegrationsListPage`, custom Livewire) — name `admin.settings.integrations` |
 | `GET` | `/admin/settings/integrations/{channel}` | session | Per-channel config form (`IntegrationChannelPage`; channel ∈ telegram\|vk\|max) — name `admin.settings.integrations.channel` |
+| `GET` | `/admin/settings/ai` | session | AI assistant settings (`AiAssistantPage`, custom Livewire) — name `admin.settings.ai` |
+| `GET` | `/admin/settings/ai/{provider}` | session | Per-provider access settings (`AiProviderAccessPage`) — name `admin.settings.ai.provider` |
+
+> The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens. The underlying models, services, and artisan commands are unchanged.
 
 ### Telegram callback_data prefixes (main bot webhook)
 

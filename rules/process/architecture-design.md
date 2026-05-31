@@ -269,8 +269,7 @@ class AiAnswerMessageSender
 | Jobs | `PascalCaseJob`, `handle()` | `SendTelegramMessageJob` |
 | DTOs | `PascalCaseDto`, static `fromRequest()` | `TelegramUpdateDto::fromRequest()` |
 | Models | `PascalCase`, Eloquent conventions | `BotUser`, `AiMessage` |
-| Filament Resources | `PascalCaseResource`, extends `Resource` | `ConversationResource` |
-| Filament Pages | `PascalCase`, extends `Page` or `ViewRecord` | `ConversationPage`, `ViewConversation` |
+| Livewire full-page components | `PascalCase[Page]`, `#[Layout(...)]` | `GeneralSettingsPage`, `App\Livewire\Chat\ConversationPage` |
 | Contracts | `PascalCaseContract` or `PascalCaseInterface` | `ManagerInterfaceContract` |
 
 ---
