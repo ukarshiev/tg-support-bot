@@ -2,6 +2,7 @@
 
 namespace App\Modules\Admin;
 
+use App\Livewire\Chat\ConversationPage;
 use App\Livewire\Settings\AiAssistantPage;
 use App\Livewire\Settings\AiProviderAccessPage;
 use App\Livewire\Settings\GeneralSettingsPage;
@@ -22,6 +23,14 @@ class AdminServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // ── Chat workspace route ───────────────────────────────────────────────
+        // Full-screen standalone Livewire route at /admin/chats.
+        // This is the primary manager entry point when MANAGER_INTERFACE=admin_panel.
+        // Middleware mirrors the settings routes: web session + Filament Authenticate.
+        Route::middleware(['web', Authenticate::class])
+            ->get('/admin/chats', ConversationPage::class)
+            ->name('admin.chats');
+
         // Custom Livewire Settings routes.
         // Prefix: /admin/settings — verified not claimed by Filament's panel.
         // Middleware: 'web' session stack + Filament's Authenticate guard so

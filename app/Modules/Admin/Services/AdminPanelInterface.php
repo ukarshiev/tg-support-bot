@@ -39,7 +39,7 @@ class AdminPanelInterface implements ManagerInterfaceContract
 
     /**
      * In admin_panel mode a Telegram forum topic is not required.
-     * Conversations are visible via ConversationResource using BotUser model.
+     * Conversations are visible in the chat workspace (/admin/chats) using the BotUser model.
      *
      * @param int $botUserId New user ID
      *
@@ -47,6 +47,6 @@ class AdminPanelInterface implements ManagerInterfaceContract
      */
     public function createConversation(int $botUserId): void
     {
-        // No-op: conversation is automatically visible in ConversationResource.
+        // No-op: the conversation appears automatically in the chat workspace (/admin/chats).
     }
 }

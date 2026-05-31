@@ -6,11 +6,10 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages;
+use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -32,6 +31,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->homeUrl(fn (): string => route('admin.chats'))
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -43,16 +43,17 @@ class AdminPanelProvider extends PanelProvider
                 in: app_path('Modules/Admin/Filament/Pages'),
                 for: 'App\\Modules\\Admin\\Filament\\Pages'
             )
-            ->pages([
-                Pages\Dashboard::class,
-            ])
-            ->discoverWidgets(
-                in: app_path('Modules/Admin/Filament/Widgets'),
-                for: 'App\\Modules\\Admin\\Filament\\Widgets'
-            )
-            ->widgets([
-                Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+            ->navigationItems([
+                NavigationItem::make('Диалоги')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->url(fn (): string => route('admin.chats'))
+                    ->isActiveWhen(fn (): bool => request()->routeIs('admin.chats'))
+                    ->sort(1),
+                NavigationItem::make('Настройки')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->url(fn (): string => route('admin.settings.general'))
+                    ->isActiveWhen(fn (): bool => request()->routeIs('admin.settings.*'))
+                    ->sort(2),
             ])
             ->middleware([
                 EncryptCookies::class,

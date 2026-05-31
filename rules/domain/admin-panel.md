@@ -2,7 +2,7 @@
 
 > **Purpose:** Define business rules, key concepts, and invariants for the Admin module (`app/Modules/Admin/`). This module implements the `admin_panel` mode of the `ManagerInterfaceContract`.
 > **Context:** Read this file before modifying anything inside `app/Modules/Admin/`, Filament resources, Livewire pages, or the `SendReplyAction`.
-> **Version:** 1.4
+> **Version:** 1.5
 
 ---
 
@@ -10,9 +10,9 @@
 
 The Admin Panel domain provides an alternative manager interface for the support team. Instead of working through a Telegram supergroup with forum topics, managers can use the `/admin` web panel (built with Filament 3) to view conversations and send replies.
 
-**This domain owns:** `ConversationResource`, `BotUserResource`, `ExternalSourceResource`, `FeedbackResource`, `ConversationPage` (Livewire, Filament-hosted), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), `AiAssistantPage` (custom Livewire full-page at `/admin/settings/ai`), `AiProviderAccessPage` (custom Livewire full-page at `/admin/settings/ai/{provider}`), admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
+**This domain owns:** `App\Livewire\Chat\ConversationPage` (standalone Livewire chat workspace, chrome-free, at `/admin/chats`), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), `AiAssistantPage` (custom Livewire full-page at `/admin/settings/ai`), `AiProviderAccessPage` (custom Livewire full-page at `/admin/settings/ai/{provider}`), the Filament panel + navigation (`AdminPanelProvider`), the admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`, `resources/views/layouts/admin-chat.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
 
-> **Stage 1 transition note:** The admin is in the process of being redesigned. Filament resources (Chats, Users, External Sources, Feedback) remain on default Filament chrome. `GeneralSettingsPage` is the first screen rebuilt as a fully custom Livewire/Blade component outside Filament's chrome. During this coexistence period the two UIs deliberately have different styling — this is expected until the migration completes.
+> **Redesign note:** The legacy Filament resources (Conversations, Bot Users, External Sources, Feedback, Users) have been **removed**. The admin now consists of fully custom Livewire/Blade screens — the chat workspace (`/admin/chats`) and the Settings section (`/admin/settings/*`) — built on the admin design system, outside Filament's default chrome. The Filament panel is retained only for authentication (the `/admin/login` page) — it registers no resources, pages, widgets or dashboard. The panel root `/admin` redirects to the chat workspace, and login lands there too (`Filament::getUrl()` resolves to the first navigation item, «Диалоги»). Navigation to the custom screens is registered via `AdminPanelProvider::navigationItems()`. The underlying models, services, flows and artisan commands (bot users, external sources, feedback, users) are unchanged — only their Filament admin UI was removed (their redesigned screens are pending).
 
 **This domain does not own:** message routing logic (see `domain/messaging.md`), user banning (see `domain/bot-users.md`), external source registration (see `domain/external-sources.md`).
 
@@ -24,11 +24,15 @@ The Admin Panel domain provides an alternative manager interface for the support
 |---|---|
 | `ManagerInterfaceContract` | Interface that decouples manager UI from business logic. Implementations: `TelegramGroupInterface`, `AdminPanelInterface` |
 | `AdminPanelInterface` | Implementation of `ManagerInterfaceContract` for `admin_panel` mode. Both methods are no-ops — messages arrive via DB, UI updates via Livewire polling |
-| `ConversationResource` | Filament resource showing all `BotUser` records as conversations. Replaces the Telegram forum topic list |
-| `ViewConversation` | Filament `ViewRecord` page. Shows message history for one `BotUser`. Conditionally shows reply form |
-| `ConversationPage` | Standalone Livewire page for viewing a conversation. Separate from `ViewConversation` |
+| `App\Livewire\Chat\ConversationPage` | **Primary manager workspace** — standalone full-page Livewire component at `GET /admin/chats`. Full-screen, chrome-free (no Filament top-nav/sidebar). Uses `layouts.admin-chat` layout. 3-column layout: left sidebar 360px dark (header + search + pill-filter tabs + dialog list), center chat area (header + message thread + input bar with quick-reply chips), right user info panel 300px (profile + Блок/Закрыть buttons + ИНФОРМАЦИЯ rows + МЕДИАФАЙЛЫ grid). Self-contained — no `botUserId` route param. Dialog selection via `selectChat(int $botUserId)`. Protected by `Filament\Http\Middleware\Authenticate` |
+| Filament navigation | The Filament panel keeps no resources, pages, widgets or dashboard — it serves only login. Links to the custom screens are registered in `AdminPanelProvider::navigationItems()`: «Диалоги» → `route('admin.chats')` (sort 1) and «Настройки» → `route('admin.settings.general')` (sort 2). `->homeUrl()` and the first nav item both point at `/admin/chats`, so `/admin` and post-login both land on «Диалоги» |
+| Dialog list ordering | `ConversationPage::loadDialogList()` uses a raw correlated subquery to order by `MAX(messages.created_at) DESC` because `BotUser::messages()` has swapped FK args. Do not switch to `withMax()` without fixing the model relation |
+| Quick replies | Static list from `config('chat.quick_replies')` — clicking a chip calls `insertQuickReply($text)` which sets `$replyText`. No DB table |
+| Unread badge heuristic | First iteration: a dialog is flagged unread if `lastMessage->message_type === 'incoming'`. No DB counter — a proper unread field is deferred |
+| `chat-item` component | `resources/views/components/chat-item.blade.php` — anonymous Blade component for the dialog list card. Avatar: 44×44 circle, initials, deterministic color from `crc32(chat_id) % 8` (8 hex colours). Platform badge: small pill with platform hex colour. Unread: accent pill when `hasUnread`. Matches design node `WyN0x` |
+| Media gallery | Right panel shows image/sticker `MessageAttachment`s for the active dialog via `ConversationPage::getImageAttachments()`. Reuses the Alpine.js lightbox |
 | `SendReplyAction` | Static action that dispatches the correct queue job (Telegram, VK, or Webhook) based on `botUser->platform` |
-| Livewire Polling | `ConversationPage` and `ViewConversation` refresh message list every 5 seconds via Livewire polling |
+| Livewire Polling | `ConversationPage` refreshes every 5 seconds via `getPollingInterval(): '5s'` |
 | `MANAGER_INTERFACE` | Config key. Values: `telegram_group` (default) or `admin_panel`. Readable from `.env` OR from the `settings` DB table via `SettingsService` (DB row overrides env) |
 | `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits bot name, description, and `MANAGER_INTERFACE`. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService`. Shows restart notice when `MANAGER_INTERFACE` changes |
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
@@ -45,8 +49,8 @@ The Admin Panel domain provides an alternative manager interface for the support
 **BR-001** — The `/admin` panel is accessible only to authenticated users from the `users` table (Laravel Filament auth). Unauthenticated requests are redirected to `/admin/login`.
 _Enforced in:_ `app/Modules/Admin/AdminPanelProvider.php`
 
-**BR-002** — In `telegram_group` mode, the reply form in `ConversationPage` and `ViewConversation` must be hidden. Read-only view of messages is available in both modes.
-_Enforced in:_ `ConversationPage::shouldShowReplyForm()`, `ViewConversation::shouldShowReplyForm()` — both return `config('app.manager_interface') === 'admin_panel'`
+**BR-002** — In `telegram_group` mode, the reply form in `ConversationPage` must be hidden. Read-only view of messages is available in both modes.
+_Enforced in:_ `App\Livewire\Chat\ConversationPage::shouldShowReplyForm()` — returns `config('app.manager_interface') === 'admin_panel'`
 
 **BR-003** — `SendReplyAction::execute()` must determine the user's platform from `botUser->platform` and dispatch the correct job via queue. Never send synchronously.
 - `telegram` → `SendTelegramSimpleQueryJob`
@@ -56,7 +60,7 @@ _Enforced in:_ `ConversationPage::shouldShowReplyForm()`, `ViewConversation::sho
 _Enforced in:_ `app/Modules/Admin/Actions/SendReplyAction.php`
 
 **BR-004** — Livewire polling interval is 5 seconds (`getPollingInterval(): '5s'`). Do not change without load analysis — each open browser tab generates a DB query every 5 seconds.
-_Enforced in:_ `ConversationPage::getPollingInterval()`, `ViewConversation::getPollingInterval()`
+_Enforced in:_ `App\Livewire\Chat\ConversationPage::getPollingInterval()`
 
 **BR-005** — Every reply sent via `SendReplyAction` must be persisted to the `messages` table as `message_type = 'outgoing'` before dispatching the queue job.
 _Enforced in:_ `SendReplyAction::execute()` — `Message::create([..., 'message_type' => 'outgoing', ...])`
@@ -64,7 +68,7 @@ _Enforced in:_ `SendReplyAction::execute()` — `Message::create([..., 'message_
 **BR-006** — In `admin_panel` mode, `AdminPanelInterface::notifyIncomingMessage()` saves the incoming message (and optional attachment) directly to the `messages` table. No Telegram group forwarding is performed. Livewire polling picks up new messages automatically.
 _Enforced in:_ `AdminPanelInterface::notifyIncomingMessage()` — creates `Message` + `MessageAttachment` records
 
-**BR-007** — In `admin_panel` mode, `AdminPanelInterface::createConversation()` is a no-op. No Telegram forum topic is created. The conversation is visible in `ConversationResource` automatically once the `BotUser` record exists.
+**BR-007** — In `admin_panel` mode, `AdminPanelInterface::createConversation()` is a no-op. No Telegram forum topic is created. The conversation appears automatically in the chat workspace (`/admin/chats`) once the `BotUser` record exists.
 _Enforced in:_ `AdminPanelInterface::createConversation()` — empty body
 
 **BR-008** — The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) requires an authenticated user. Unauthenticated visitors are redirected to `/admin/login` by Filament's `Authenticate` middleware applied in `AdminServiceProvider::boot()`. The route does not add a separate admin-role guard at the middleware layer — access is open to any authenticated user; role enforcement can be added to `mount()` if needed in future.
@@ -79,7 +83,7 @@ _Enforced in:_ `GeneralSettingsPage::save()` — detects interface change (old v
 **BR-011** — Admin Design System tokens are declared in `resources/css/app.css @theme` (Tailwind v4). All custom admin screens MUST use the token variables (`bg-sidebar`, `text-accent`, `bg-bg-input`, etc.) — never hardcode hex values in Blade. Blade components under `resources/views/components/admin/` are the single source for reusable UI primitives.
 _Enforced by:_ design review; tokens defined at `resources/css/app.css:@theme`
 
-**BR-012** — Custom Livewire settings routes MUST NOT collide with Filament's route set. Filament owns the `/admin/*` namespace but does not register `/admin/settings/*`. All new custom settings pages MUST be registered under the `admin/settings/` prefix in `AdminServiceProvider::boot()`.
+**BR-012** — Custom Livewire routes MUST NOT collide with Filament's route set. The chat workspace is registered as `GET /admin/chats` (name `admin.chats`) — this path is not claimed by Filament's panel. Settings pages are registered under `admin/settings/` prefix. All custom routes use `Filament\Http\Middleware\Authenticate` so unauthenticated visitors are redirected to `/admin/login`.
 _Enforced in:_ `AdminServiceProvider::boot()` — verified against `php artisan route:list` output
 
 **BR-013** — Integration config for Telegram/VK/MAX is read and written exclusively via `SettingsService` using the registry keys `telegram.*`, `vk.*`, `max.*`. Secrets (tokens, secret keys, confirm codes) are stored encrypted (`is_secret = true` in `SettingKeyRegistry`). Never log tokens or secrets (see `rules/process/security.md`).
@@ -102,6 +106,15 @@ _Enforced in:_ `AiProviderAccessPage::saveOpenAi/DeepSeek/GigaChat()` — blank-
 
 **BR-019** — Enabling auto-reply from `AiAssistantPage` requires an explicit user confirmation. The toggle triggers a yellow warning dialog; the user must call `confirmAutoReply()` before the setting is applied. Dismissing the dialog (`cancelAutoReply()`) leaves auto-reply disabled.
 _Enforced in:_ `AiAssistantPage::updatedAutoReply()`, `confirmAutoReply()`, `cancelAutoReply()`
+
+**BR-020** — The Filament panel registers no resources; navigation to the custom screens is declared in `AdminPanelProvider::navigationItems()`. The "Диалоги" item (icon `heroicon-o-chat-bubble-left-right`, sort `1`) links to `route('admin.chats')`; the "Настройки" item (icon `heroicon-o-cog-6-tooth`, sort `2`) links to `route('admin.settings.general')`. The real workspace (`App\Livewire\Chat\ConversationPage`) mounts with an empty dialog list and populates on `selectChat()`.
+_Enforced in:_ `AdminPanelProvider::panel()` → `->navigationItems([...])`
+
+**BR-021** — The dialog list in `ConversationPage` is ordered by the most recent message date descending. Because `BotUser::messages()` has swapped FK args (`hasMany(Message::class, 'id', 'bot_user_id')`), `withMax()` produces a wrong query. Use a raw correlated subquery: `COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.bot_user_id = bot_users.id), '1970-01-01') DESC`. Do not use `withMax('messages', 'created_at')` until the model relation is corrected.
+_Enforced in:_ `ConversationPage::loadDialogList()`
+
+**BR-022** — Quick replies are a static list from `config('chat.quick_replies', [])` (`config/chat.php`). Clicking a chip calls `insertQuickReply(string $text)` which sets `$replyText` — it does NOT auto-submit. No DB table for quick replies.
+_Enforced in:_ `ConversationPage::insertQuickReply()`; `config/chat.php`
 
 ---
 
@@ -254,12 +267,15 @@ The binding is resolved at container boot time from `config()`. The binding does
 - ❌ Making `AdminPanelInterface` dispatch `TopicCreateJob` — this is `telegram_group` mode only
 - ❌ Reading the DI-bound `ManagerInterfaceContract` implementation at runtime to check the current mode — use `SettingsService::get('app.manager_interface')` or `config('app.manager_interface')` instead
 - ❌ Routing the `ManagerInterfaceContract` DI binding through `SettingsService` at boot — this would add a DB dependency to the container boot cycle, breaking environments where the DB is not yet available
+- ❌ Using `ConversationPage` with a `botUserId` route param — the workspace is self-contained; dialog selection is done via `selectChat(int $botUserId)`
+- ❌ Using `withMax('messages', 'created_at')` on `BotUser` for ordering — the `messages()` relation has swapped FK args; use raw correlated subquery per BR-021
+- ❌ Re-introducing Filament resources for conversations/bot users/feedback/external sources — these were removed; navigation lives in `AdminPanelProvider::navigationItems()` and screens are custom Livewire pages
 
 ---
 
 ## Checklist
 
-- [ ] `BR-001` through `BR-019` read and understood
+- [ ] `BR-001` through `BR-022` read and understood
 - [ ] `shouldShowReplyForm()` returns `false` in `telegram_group` mode
 - [ ] `SendReplyAction` uses queue jobs, not synchronous API calls
 - [ ] New Filament resources have feature tests in `tests/Feature/Admin/`
