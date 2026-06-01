@@ -53,6 +53,12 @@ class TeamPage extends Component
      */
     public ?string $inviteError = null;
 
+    /**
+     * Generated password revealed once when the invitation email could not be sent,
+     * so the admin can hand it to the operator manually (null when mail was sent).
+     */
+    public ?string $invitedPassword = null;
+
     // ── Delete confirmation ────────────────────────────────────────────────────
 
     /**
@@ -149,6 +155,7 @@ class TeamPage extends Component
     {
         $this->inviteSuccess = null;
         $this->inviteError = null;
+        $this->invitedPassword = null;
 
         $this->validate([
             'inviteEmail' => ['required', 'email', Rule::unique('users', 'email')],
@@ -162,20 +169,38 @@ class TeamPage extends Component
         ]);
 
         try {
-            InviteOperator::execute(
+            $result = InviteOperator::execute(
                 $this->inviteEmail,
                 UserRole::from($this->inviteRole),
             );
         } catch (\Throwable) {
-            $this->inviteError = 'Не удалось отправить приглашение. Попробуйте ещё раз.';
+            $this->inviteError = 'Не удалось создать оператора. Попробуйте ещё раз.';
 
             return;
         }
 
-        $this->inviteSuccess = "Приглашение отправлено на {$this->inviteEmail}.";
+        $email = $this->inviteEmail;
         $this->inviteEmail = '';
         $this->inviteRole = '';
         $this->resetValidation();
+
+        if ($result['mail_sent']) {
+            $this->inviteSuccess = "Приглашение отправлено на {$email}.";
+
+            return;
+        }
+
+        // Mail could not be delivered — operator is created; reveal the password once.
+        $this->inviteSuccess = "Оператор {$email} создан, но письмо отправить не удалось (проверьте настройки SMTP). Передайте пароль вручную:";
+        $this->invitedPassword = $result['password'];
+    }
+
+    /**
+     * Hide the one-time revealed password.
+     */
+    public function dismissInvitedPassword(): void
+    {
+        $this->invitedPassword = null;
     }
 
     // ── Delete ─────────────────────────────────────────────────────────────────

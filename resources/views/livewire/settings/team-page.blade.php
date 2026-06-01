@@ -10,13 +10,35 @@
     <div class="mb-6 rounded-xl border border-border-light bg-bg-primary p-6 lg:px-7">
         <h2 class="mb-4 text-base font-semibold text-text-primary">Пригласить оператора</h2>
 
-        {{-- Success notice --}}
+        {{-- Success / mail-failure notice --}}
         @if ($inviteSuccess)
-            <div class="mb-4 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" style="color:#059669" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <span class="text-sm text-green-800">{{ $inviteSuccess }}</span>
+            <div class="mb-4 rounded-lg border px-4 py-3 {{ $invitedPassword ? 'border-yellow-200 bg-yellow-50' : 'border-green-200 bg-green-50' }}">
+                <div class="flex items-start gap-2">
+                    @if ($invitedPassword)
+                        <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    @else
+                        <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-4 w-4 shrink-0" style="color:#059669" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                    @endif
+                    <div class="min-w-0 flex-1">
+                        <span class="text-sm {{ $invitedPassword ? 'text-yellow-800' : 'text-green-800' }}">{{ $inviteSuccess }}</span>
+                        @if ($invitedPassword)
+                            <div class="mt-2 flex flex-wrap items-center gap-2">
+                                <code class="select-all rounded bg-yellow-100 px-2 py-1 font-mono text-sm text-yellow-900">{{ $invitedPassword }}</code>
+                                <button type="button"
+                                        x-data
+                                        @click="navigator.clipboard && navigator.clipboard.writeText('{{ $invitedPassword }}')"
+                                        class="text-xs font-medium text-yellow-700 underline transition hover:text-yellow-900">Копировать</button>
+                                <button type="button"
+                                        wire:click="dismissInvitedPassword"
+                                        class="text-xs font-medium text-yellow-600 transition hover:text-yellow-800">Скрыть</button>
+                            </div>
+                        @endif
+                    </div>
+                </div>
             </div>
         @endif
 
