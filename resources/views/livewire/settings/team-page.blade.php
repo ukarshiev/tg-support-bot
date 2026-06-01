@@ -27,50 +27,54 @@
             </div>
         @endif
 
-        {{-- Form row: email + role + button — desktop side-by-side, mobile stacked --}}
+        {{-- Form row: [email | role] equal-width fields + button (matches design Ojlxx) --}}
         <div class="flex flex-col gap-4 sm:flex-row sm:items-end">
-            {{-- Email field --}}
-            <div class="flex-1 space-y-1.5">
-                <label for="inviteEmail" class="block text-[13px] font-medium text-text-primary">Email</label>
-                <input
-                    id="inviteEmail"
-                    type="email"
-                    wire:model="inviteEmail"
-                    wire:keydown.enter="invite"
-                    placeholder="operator@example.com"
-                    autocomplete="off"
-                    class="block w-full rounded-lg border bg-bg-primary px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 {{ $errors->has('inviteEmail') ? 'border-red-400' : 'border-border-light' }}"
-                />
-                @error('inviteEmail')
-                    <p class="text-xs text-red-500">{{ $message }}</p>
-                @enderror
+
+            {{-- Fields group: email + role, equal width --}}
+            <div class="flex flex-1 flex-col gap-4 sm:flex-row">
+                {{-- Email field --}}
+                <div class="flex-1 space-y-1.5">
+                    <label for="inviteEmail" class="block text-[13px] font-medium text-text-primary">Email</label>
+                    <input
+                        id="inviteEmail"
+                        type="email"
+                        wire:model="inviteEmail"
+                        wire:keydown.enter="invite"
+                        placeholder="operator@example.com"
+                        autocomplete="off"
+                        class="block h-[42px] w-full rounded-lg border bg-bg-primary px-3.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 {{ $errors->has('inviteEmail') ? 'border-red-400' : 'border-border-light' }}"
+                    />
+                    @error('inviteEmail')
+                        <p class="text-xs text-red-500">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                {{-- Role select --}}
+                <div class="flex-1 space-y-1.5">
+                    <label for="inviteRole" class="block text-[13px] font-medium text-text-primary">Роль</label>
+                    <select
+                        id="inviteRole"
+                        wire:model="inviteRole"
+                        class="block h-[42px] w-full rounded-lg border bg-bg-primary px-3.5 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 {{ $errors->has('inviteRole') ? 'border-red-400' : 'border-border-light' }}"
+                    >
+                        <option value="">Выберите роль</option>
+                        @foreach (\App\Enums\UserRole::options() as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                    @error('inviteRole')
+                        <p class="text-xs text-red-500">{{ $message }}</p>
+                    @enderror
+                </div>
             </div>
 
-            {{-- Role select --}}
-            <div class="w-full space-y-1.5 sm:w-48">
-                <label for="inviteRole" class="block text-[13px] font-medium text-text-primary">Роль</label>
-                <select
-                    id="inviteRole"
-                    wire:model="inviteRole"
-                    class="block w-full rounded-lg border bg-bg-primary px-3.5 py-2.5 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 {{ $errors->has('inviteRole') ? 'border-red-400' : 'border-border-light' }}"
-                >
-                    <option value="">Выберите роль</option>
-                    @foreach (\App\Enums\UserRole::options() as $value => $label)
-                        <option value="{{ $value }}">{{ $label }}</option>
-                    @endforeach
-                </select>
-                @error('inviteRole')
-                    <p class="text-xs text-red-500">{{ $message }}</p>
-                @enderror
-            </div>
-
-            {{-- Send button --}}
+            {{-- Send button — full width on mobile, natural on desktop, level with inputs --}}
             <x-admin.button-primary
                 type="button"
                 wire:click="invite"
                 wire:loading.attr="disabled"
                 wire:target="invite"
-                class="shrink-0"
+                class="h-[42px] w-full shrink-0 sm:w-auto"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" class="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
