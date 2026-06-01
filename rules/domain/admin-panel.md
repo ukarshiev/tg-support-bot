@@ -187,7 +187,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 **Tests**:
 - `tests/Feature/Settings/GeneralSettingsPageTest.php` — Livewire-level integration: access control, mount, save, cancel, restart notice, route registration
-- `tests/Unit/Livewire/Settings/GeneralSettingsPageTest.php` — unit tests using mocked SettingsService (required by `find_test.sh`)
+- `tests/Unit/Livewire/Settings/GeneralSettingsPageTest.php` — unit tests using mocked SettingsService
 
 ---
 

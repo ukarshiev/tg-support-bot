@@ -52,7 +52,7 @@ Follow these steps strictly and in order.
 - Run: `docker exec -it pet ./vendor/bin/phpstan analyse` (static analysis, level 6)
 - Run: `docker exec -it pet php artisan test` (all tests)
 - Fix all PHPStan errors before proceeding
-- Do not skip pre-commit hooks
+- Do not skip the pre-push hook
 
 ### Step 5 — Document
 
