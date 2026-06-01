@@ -19,9 +19,18 @@ class ExternalSourceAccessTokens extends Model
     protected $fillable = [
         'external_source_id',
         'token',
-        'token',
         'active',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'active' => 'boolean',
+        ];
+    }
 
     /**
      * @return BelongsTo

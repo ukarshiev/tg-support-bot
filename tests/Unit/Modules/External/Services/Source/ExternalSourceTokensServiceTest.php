@@ -34,7 +34,7 @@ class ExternalSourceTokensServiceTest extends TestCase
         ]);
 
         $token = ExternalSourceAccessTokens::where('external_source_id', $this->source->id)->first();
-        $this->assertEquals(60, strlen($token->token));
+        $this->assertEquals(64, strlen($token->token));
     }
 
     public function test_updates_token_for_existing_source(): void
