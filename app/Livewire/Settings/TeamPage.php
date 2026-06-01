@@ -184,14 +184,9 @@ class TeamPage extends Component
         $this->inviteRole = '';
         $this->resetValidation();
 
-        if ($result['mail_sent']) {
-            $this->inviteSuccess = "Приглашение отправлено на {$email}.";
-
-            return;
-        }
-
-        // Mail could not be delivered — operator is created; reveal the password once.
-        $this->inviteSuccess = "Оператор {$email} создан, но письмо отправить не удалось (проверьте настройки SMTP). Передайте пароль вручную:";
+        // Operator is created immediately. No email is sent — reveal the generated
+        // password once so the admin can hand it to the operator.
+        $this->inviteSuccess = "Оператор {$email} добавлен. Передайте ему пароль:";
         $this->invitedPassword = $result['password'];
     }
 

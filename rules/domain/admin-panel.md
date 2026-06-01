@@ -131,8 +131,8 @@ _Enforced in:_ `ConversationPage::insertQuickReply()`; `config/chat.php`
 **BR-026** — The «Команда» screen (`TeamPage`, `/admin/settings/team`) is restricted to admin-role users only. Non-admin authenticated users are redirected to `admin.settings.general` in `mount()` via `Auth::user()->isAdmin()`. Guests are blocked by the Filament `Authenticate` route middleware.
 _Enforced in:_ `TeamPage::mount()`
 
-**BR-027** — Inviting a new operator creates a `User` record immediately (no invite-token flow). `InviteOperator::execute(email, role)` generates a 16-character secure password (`Str::password(16)`), creates the user (password is stored hashed via the model's `hashed` cast), and queues `OperatorInvitationMail` containing the plain-text password and the login URL. The plain-text password MUST NOT be logged at any point. The mail driver is `log` locally — queuing must not fail if SMTP is unavailable.
-_Enforced in:_ `App\Modules\Admin\Actions\InviteOperator::execute()`; `App\Mail\OperatorInvitationMail`
+**BR-027** — Inviting a new operator creates a `User` record immediately (no invite-token flow, **no email is sent**). `InviteOperator::execute(email, role)` generates a 16-character secure password (`Str::password(16)`), creates the user (password is stored hashed via the model's `hashed` cast), and returns `['user' => User, 'password' => string]`. `TeamPage::invite()` then reveals the generated plain-text password to the admin once (green notice with copy/dismiss) so it can be handed to the operator manually. The plain-text password MUST NOT be logged at any point.
+_Enforced in:_ `App\Modules\Admin\Actions\InviteOperator::execute()`; `App\Livewire\Settings\TeamPage::invite()` (sets `invitedPassword`)
 
 **BR-028** — An admin cannot delete their own account from the Team screen (self-lockout protection). `deleteMember()` checks `Auth::id() === $confirmDeleteId` before calling `delete()`. If the check fails, a user-visible error is set and the action is aborted. The delete button for the current user's own row is hidden in the view (not rendered) as an additional UX guard. The delete requires a two-step confirmation: `confirmDelete(userId)` sets `$confirmDeleteId`, and only then `deleteMember()` executes the deletion.
 _Enforced in:_ `TeamPage::deleteMember()`
@@ -355,15 +355,13 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 
 **Avatar color** (`avatarColor(User)`): deterministic, derived from `crc32($user->email) % 8`; 8-color palette matching the chat-item component.
 
-**Invite action** (`App\Modules\Admin\Actions\InviteOperator`): static `execute(string $email, UserRole $role): User`. Creates user, queues mail. Never logs the plain-text password (BR-027).
-
-**Mail** (`App\Mail\OperatorInvitationMail` implements `ShouldQueue`): Blade view at `resources/views/mail/operator-invitation.blade.php`. Subject: «Приглашение в команду поддержки». Contains email, generated password, and `/admin/login` URL.
+**Invite action** (`App\Modules\Admin\Actions\InviteOperator`): static `execute(string $email, UserRole $role): array{user: User, password: string}`. Generates a 16-char password, creates the user (password hashed on store), and returns the user together with the plain-text password for one-time reveal. **No email is sent.** Never logs the plain-text password (BR-027).
 
 **Route**: `GET /admin/settings/team` → name `admin.settings.team`; registered in `AdminServiceProvider::boot()`.
 
 **Tests**:
-- `tests/Unit/Livewire/Settings/TeamPageTest.php` — 28 cases: access (admin/manager/guest), heading, members display, invite happy path + validation, delete happy path, self-lockout, avatar helpers.
-- `tests/Unit/Modules/Admin/Actions/InviteOperatorTest.php` — 7 cases: user creation, role assignment, password hashing, mail queued to correct address, count, password length, persisted user.
+- `tests/Unit/Livewire/Settings/TeamPageTest.php` — access (admin/manager/guest), heading, members display, invite happy path + password reveal/dismiss + validation, delete happy path, self-lockout, avatar helpers.
+- `tests/Unit/Modules/Admin/Actions/InviteOperatorTest.php` — user creation, role assignment, password hashing, returned plain password (length + matches stored hash), persisted user.
 
 ---
 
@@ -398,5 +396,5 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 - [ ] New admin Blade components go under `resources/views/components/admin/`
 - [ ] Secret channel fields use `type="password"` and blank-submission guard (BR-015)
 - [ ] `WebhookRegistrationService` reads tokens from `SettingsService`, never from `config()` directly
-- [ ] Team screen `InviteOperator` action: never log plain-text password; always queue `OperatorInvitationMail` (BR-027)
+- [ ] Team screen `InviteOperator` action: never log plain-text password; reveal it once to the admin (no email sent) (BR-027)
 - [ ] Team screen delete: self-lockout guard present in `deleteMember()` and delete button hidden for own row (BR-028)

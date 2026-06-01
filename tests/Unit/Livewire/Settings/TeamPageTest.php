@@ -6,7 +6,6 @@ namespace Tests\Unit\Livewire\Settings;
 
 use App\Enums\UserRole;
 use App\Livewire\Settings\TeamPage;
-use App\Mail\OperatorInvitationMail;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
@@ -147,21 +146,37 @@ class TeamPageTest extends TestCase
         ]);
     }
 
-    public function test_invite_queues_invitation_mail(): void
+    public function test_invite_reveals_generated_password(): void
     {
-        Mail::fake();
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
 
+        $component = Livewire::test(TeamPage::class)
+            ->set('inviteEmail', 'reveal@example.com')
+            ->set('inviteRole', 'manager')
+            ->call('invite');
+
+        $password = $component->get('invitedPassword');
+        $this->assertNotNull($password);
+        $this->assertSame(16, strlen($password));
+
+        // The revealed password must match the stored hash.
+        $user = User::where('email', 'reveal@example.com')->firstOrFail();
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check($password, $user->password));
+    }
+
+    public function test_dismiss_invited_password_clears_reveal(): void
+    {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'mail@example.com')
-            ->set('inviteRole', 'admin')
-            ->call('invite');
-
-        Mail::assertQueued(OperatorInvitationMail::class, function (OperatorInvitationMail $mail): bool {
-            return $mail->hasTo('mail@example.com');
-        });
+            ->set('inviteEmail', 'dismiss@example.com')
+            ->set('inviteRole', 'manager')
+            ->call('invite')
+            ->assertNotSet('invitedPassword', null)
+            ->call('dismissInvitedPassword')
+            ->assertSet('invitedPassword', null);
     }
 
     public function test_invite_shows_success_notice_and_resets_form(): void

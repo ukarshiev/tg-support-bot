@@ -316,9 +316,8 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 ### Team Screen (`/admin/settings/team`)
 
 - The Team screen (`app/Livewire/Settings/TeamPage.php`) is admin-only — non-admins are redirected to `admin.settings.general` in `mount()` (see `rules/domain/admin-panel.md` BR-026)
-- Inviting a new operator calls `App\Modules\Admin\Actions\InviteOperator::execute(email, role)`: creates the `User` immediately with a 16-char secure password (`Str::password(16)`), queues `OperatorInvitationMail` with the plain-text password and login URL (see BR-027)
-- The plain-text password is NEVER logged — it is passed only to the Mailable constructor and discarded after serialisation
-- Mail driver is `log` locally (no SMTP needed); queuing must not fail if SMTP is unavailable
+- Inviting a new operator calls `App\Modules\Admin\Actions\InviteOperator::execute(email, role)`: creates the `User` immediately with a 16-char secure password (`Str::password(16)`) and returns `['user', 'password']` — **no email is sent** (see BR-027)
+- `TeamPage::invite()` reveals the generated password to the admin once (copy/dismiss) so it can be handed to the operator; the plain-text password is NEVER logged
 - Delete requires a two-step confirmation (`confirmDelete(userId)` → `deleteMember()`). Admins cannot delete themselves — `deleteMember()` guards against `Auth::id() === $confirmDeleteId` (see BR-028)
 - Online status: v1 stub — renders a «—» placeholder badge. No `last_seen_at` column or tracking middleware. Real online-tracking is a separate future task
 - Avatar initials: deterministic, derived from user name (two-word: first letters; single-word: first 2 chars) or email local-part fallback; color: `crc32(email) % 8` from 8-color palette
