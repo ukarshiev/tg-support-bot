@@ -128,6 +128,15 @@ _Enforced in:_ `ConversationPage::loadDialogList()`
 **BR-022** — Quick replies are a static list from `config('chat.quick_replies', [])` (`config/chat.php`). Clicking a chip calls `insertQuickReply(string $text)` which sets `$replyText` — it does NOT auto-submit. No DB table for quick replies.
 _Enforced in:_ `ConversationPage::insertQuickReply()`; `config/chat.php`
 
+**BR-026** — The «Команда» screen (`TeamPage`, `/admin/settings/team`) is restricted to admin-role users only. Non-admin authenticated users are redirected to `admin.settings.general` in `mount()` via `Auth::user()->isAdmin()`. Guests are blocked by the Filament `Authenticate` route middleware.
+_Enforced in:_ `TeamPage::mount()`
+
+**BR-027** — Inviting a new operator creates a `User` record immediately (no invite-token flow). `InviteOperator::execute(email, role)` generates a 16-character secure password (`Str::password(16)`), creates the user (password is stored hashed via the model's `hashed` cast), and queues `OperatorInvitationMail` containing the plain-text password and the login URL. The plain-text password MUST NOT be logged at any point. The mail driver is `log` locally — queuing must not fail if SMTP is unavailable.
+_Enforced in:_ `App\Modules\Admin\Actions\InviteOperator::execute()`; `App\Mail\OperatorInvitationMail`
+
+**BR-028** — An admin cannot delete their own account from the Team screen (self-lockout protection). `deleteMember()` checks `Auth::id() === $confirmDeleteId` before calling `delete()`. If the check fails, a user-visible error is set and the action is aborted. The delete button for the current user's own row is hidden in the view (not rendered) as an additional UX guard. The delete requires a two-step confirmation: `confirmDelete(userId)` sets `$confirmDeleteId`, and only then `deleteMember()` executes the deletion.
+_Enforced in:_ `TeamPage::deleteMember()`
+
 ---
 
 ## 4. Architecture Flow (admin_panel mode)
@@ -184,7 +193,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 **Layout**: `resources/views/layouts/admin-settings.blade.php` — two-column layout with a dark sidebar (280px) + right content area (`bg-bg-secondary`).
 
-**Sidebar navigation**: 7 items. «Основные», «Интеграции», «ИИ-ассистент», and «API и вебхуки» are active/linked; the rest (Уведомления, Команда, Автоответы) are disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
+**Sidebar navigation**: 7 items. «Основные», «Интеграции», «ИИ-ассистент», «API и вебхуки», and «Команда» are active/linked; «Уведомления» and «Автоответы» remain disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
 
 **Form fields** (all persisted via `SettingsService`):
 | Field | Setting key | Validation |
@@ -321,6 +330,43 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 
 ---
 
+## 6e. Team Screen (custom Livewire, `/admin/settings/team`)
+
+`app/Livewire/Settings/TeamPage.php` — admin-only screen for managing operators and their roles.
+
+**Access**: admin-role only (BR-026). Non-admins redirected to `admin.settings.general` in `mount()`.
+
+**Layout**: `#[Layout('layouts.admin-settings')]` — same shared settings layout as all other settings pages.
+
+**Two sections**:
+
+1. **«Пригласить оператора» card** — inline form: Email (`inviteEmail`) + Role select (`inviteRole`, populated from `UserRole::options()`). Submitting calls `InviteOperator::execute()` (BR-027). On success: `$inviteSuccess` notice, form fields reset, member list refreshes on next render. On validation error: Livewire validation messages shown inline.
+
+2. **«Участники команды» table** — lists all users ordered by role (admin first) then name. Columns:
+   - **Участник**: deterministic avatar initials circle (color from `avatarColor(User)`, initials from `avatarInitials(User)`) + name + email.
+   - **Роль**: role label from `UserRole::label()`.
+   - **Статус**: v1 stub — renders a muted «—» placeholder badge. No `last_seen_at` column, no real online tracking yet. The placeholder is consistent with `ApiWebhookSourcePage`'s design-stub pattern.
+   - **Действия**: delete button (hidden for the current user's own row). Two-step: `confirmDelete(userId)` shows inline confirm/cancel; `deleteMember()` executes deletion (BR-028 self-lockout guard).
+
+**Avatar initials logic** (`avatarInitials(User)`):
+- Two-word name → first letter of each word uppercased.
+- Single-word name → first two letters uppercased.
+- Empty name → first two characters of email local-part uppercased.
+
+**Avatar color** (`avatarColor(User)`): deterministic, derived from `crc32($user->email) % 8`; 8-color palette matching the chat-item component.
+
+**Invite action** (`App\Modules\Admin\Actions\InviteOperator`): static `execute(string $email, UserRole $role): User`. Creates user, queues mail. Never logs the plain-text password (BR-027).
+
+**Mail** (`App\Mail\OperatorInvitationMail` implements `ShouldQueue`): Blade view at `resources/views/mail/operator-invitation.blade.php`. Subject: «Приглашение в команду поддержки». Contains email, generated password, and `/admin/login` URL.
+
+**Route**: `GET /admin/settings/team` → name `admin.settings.team`; registered in `AdminServiceProvider::boot()`.
+
+**Tests**:
+- `tests/Unit/Livewire/Settings/TeamPageTest.php` — 28 cases: access (admin/manager/guest), heading, members display, invite happy path + validation, delete happy path, self-lockout, avatar helpers.
+- `tests/Unit/Modules/Admin/Actions/InviteOperatorTest.php` — 7 cases: user creation, role assignment, password hashing, mail queued to correct address, count, password length, persisted user.
+
+---
+
 ## 7. Forbidden Behaviors
 
 - ❌ Calling `SendReplyAction::execute()` synchronously from a Livewire component without `Queue::fake()` in tests
@@ -339,7 +385,7 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 
 ## Checklist
 
-- [ ] `BR-001` through `BR-022` read and understood
+- [ ] `BR-001` through `BR-028` read and understood
 - [ ] `shouldShowReplyForm()` returns `false` in `telegram_group` mode
 - [ ] `SendReplyAction` uses queue jobs, not synchronous API calls
 - [ ] New Filament resources have feature tests in `tests/Feature/Admin/`
@@ -352,3 +398,5 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 - [ ] New admin Blade components go under `resources/views/components/admin/`
 - [ ] Secret channel fields use `type="password"` and blank-submission guard (BR-015)
 - [ ] `WebhookRegistrationService` reads tokens from `SettingsService`, never from `config()` directly
+- [ ] Team screen `InviteOperator` action: never log plain-text password; always queue `OperatorInvitationMail` (BR-027)
+- [ ] Team screen delete: self-lockout guard present in `deleteMember()` and delete button hidden for own row (BR-028)

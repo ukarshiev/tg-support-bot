@@ -130,7 +130,8 @@ app/
 │       ├── AiAssistantPage.php          # /admin/settings/ai
 │       ├── AiProviderAccessPage.php     # /admin/settings/ai/{provider}
 │       ├── ApiWebhooksPage.php          # /admin/settings/api-webhooks (admin-only, source card list)
-│       └── ApiWebhookSourcePage.php     # /admin/settings/api-webhooks/{source} (per-source edit)
+│       ├── ApiWebhookSourcePage.php     # /admin/settings/api-webhooks/{source} (per-source edit)
+│       └── TeamPage.php                 # /admin/settings/team (admin-only, operator management)
 ├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
 ├── Services/
@@ -143,7 +144,7 @@ app/
 ├── Models/           # BotUser, Message, ExternalMessage, ExternalSource, AiMessage, etc.
 ├── Modules/
 │   ├── Admin/        # Admin panel — custom Livewire screens (Filament kept for authentication only)
-│   │   ├── Actions/  # SendReplyAction
+│   │   ├── Actions/  # SendReplyAction, InviteOperator
 │   │   ├── AdminPanelProvider.php    # Filament panel: login only; /admin → /admin/chats; nav via navigationItems()
 │   │   ├── AdminServiceProvider.php  # Custom Livewire routes (/admin/chats, /admin/settings/*)
 │   │   └── Services/ # AdminPanelInterface + ChannelStatusService + WebhookRegistrationService
@@ -178,7 +179,8 @@ resources/
 │           ├── ai-assistant-page.blade.php           # View for AiAssistantPage
 │           ├── ai-provider-access-page.blade.php    # View for AiProviderAccessPage
 │           ├── api-webhooks-page.blade.php          # View for ApiWebhooksPage (source card list)
-│           └── api-webhook-source-page.blade.php   # View for ApiWebhookSourcePage (per-source edit)
+│           ├── api-webhook-source-page.blade.php   # View for ApiWebhookSourcePage (per-source edit)
+│           └── team-page.blade.php                 # View for TeamPage (operator management)
 ```
 
 ---
@@ -310,6 +312,16 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - `WebhookRegistrationService` wraps: Telegram (`TelegramMethods::sendQueryTelegram('setWebhook', ...)`), VK (connectivity via `VkMethods::sendQueryVk('groups.getById', ...)`), MAX (`Http::post(...platform-api.max.ru/subscriptions...)`)
 - Tokens are never logged — only non-sensitive context (registered URL, HTTP status code)
 - See `rules/domain/admin-panel.md` (BR-013 through BR-016) and `rules/process/security.md` (Secrets in the DB settings table)
+
+### Team Screen (`/admin/settings/team`)
+
+- The Team screen (`app/Livewire/Settings/TeamPage.php`) is admin-only — non-admins are redirected to `admin.settings.general` in `mount()` (see `rules/domain/admin-panel.md` BR-026)
+- Inviting a new operator calls `App\Modules\Admin\Actions\InviteOperator::execute(email, role)`: creates the `User` immediately with a 16-char secure password (`Str::password(16)`), queues `OperatorInvitationMail` with the plain-text password and login URL (see BR-027)
+- The plain-text password is NEVER logged — it is passed only to the Mailable constructor and discarded after serialisation
+- Mail driver is `log` locally (no SMTP needed); queuing must not fail if SMTP is unavailable
+- Delete requires a two-step confirmation (`confirmDelete(userId)` → `deleteMember()`). Admins cannot delete themselves — `deleteMember()` guards against `Auth::id() === $confirmDeleteId` (see BR-028)
+- Online status: v1 stub — renders a «—» placeholder badge. No `last_seen_at` column or tracking middleware. Real online-tracking is a separate future task
+- Avatar initials: deterministic, derived from user name (two-word: first letters; single-word: first 2 chars) or email local-part fallback; color: `crc32(email) % 8` from 8-color palette
 
 ### External Sources
 
