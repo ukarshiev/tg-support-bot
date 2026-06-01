@@ -1,0 +1,248 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Livewire\Settings;
+
+use App\Enums\UserRole;
+use App\Livewire\Settings\ApiWebhookSourcePage;
+use App\Models\ExternalSource;
+use App\Models\ExternalSourceAccessTokens;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
+use Tests\TestCase;
+
+class ApiWebhookSourcePageTest extends TestCase
+{
+    use RefreshDatabase;
+
+    // ── Access control ────────────────────────────────────────────────────────
+
+    public function test_guest_is_redirected_to_login(): void
+    {
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        $response = $this->get(route('admin.settings.api-webhooks.source', $source->id));
+
+        $response->assertRedirectContains('/admin/login');
+    }
+
+    public function test_authenticated_admin_can_render_page(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->assertSuccessful();
+    }
+
+    public function test_non_admin_is_redirected_on_mount(): void
+    {
+        $manager = User::factory()->manager()->create();
+        $this->actingAs($manager);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->assertRedirect(route('admin.settings.general'));
+    }
+
+    public function test_missing_source_redirects_to_list(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => 99999])
+            ->assertRedirect(route('admin.settings.api-webhooks'));
+    }
+
+    // ── Rendering ──────────────────────────────────────────────────────────────
+
+    public function test_renders_source_name_and_key_sections(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'My Integration']);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->assertSee('My Integration')
+            ->assertSee('API и вебхуки')   // breadcrumb
+            ->assertSee('Ключ API')
+            ->assertSee('URL вебхука')
+            ->assertSee('Секретный ключ')
+            ->assertSee('События')
+            ->assertSee('REST API')
+            ->assertSee('Swagger');
+    }
+
+    public function test_renders_masked_token_when_token_exists(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+        ExternalSourceAccessTokens::factory()->create([
+            'external_source_id' => $source->id,
+            'token' => str_repeat('a', 58) . 'XYZ012',
+            'active' => true,
+        ]);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->assertSee('XYZ012');
+    }
+
+    public function test_renders_no_token_placeholder_when_no_token(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->assertSee('токен не выпущен');
+    }
+
+    // ── Token regeneration ─────────────────────────────────────────────────────
+
+    public function test_regenerate_token_creates_record_and_sets_new_token_prop(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->call('regenerateToken');
+
+        $this->assertDatabaseHas('external_source_access_tokens', [
+            'external_source_id' => $source->id,
+            'active' => true,
+        ]);
+
+        $newToken = $component->get('newToken');
+        $this->assertNotNull($newToken);
+        $this->assertSame(64, strlen($newToken));
+    }
+
+    public function test_regenerate_token_replaces_existing_token(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+        ExternalSourceAccessTokens::factory()->create([
+            'external_source_id' => $source->id,
+            'token' => str_repeat('a', 64),
+            'active' => true,
+        ]);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->call('regenerateToken');
+
+        // Still only one record (upsert behaviour).
+        $this->assertSame(1, ExternalSourceAccessTokens::where('external_source_id', $source->id)->count());
+
+        // Token value changed.
+        $tokenRecord = ExternalSourceAccessTokens::where('external_source_id', $source->id)->first();
+        $this->assertNotEquals(str_repeat('a', 64), $tokenRecord->token);
+
+        // New token surfaced in prop.
+        $newToken = $component->get('newToken');
+        $this->assertSame(64, strlen($newToken));
+    }
+
+    public function test_dismiss_new_token_clears_reveal(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->call('regenerateToken')
+            ->call('dismissNewToken');
+
+        $this->assertNull($component->get('newToken'));
+    }
+
+    // ── Webhook URL ────────────────────────────────────────────────────────────
+
+    public function test_save_webhook_url_persists_valid_url(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create([
+            'name' => 'Source',
+            'webhook_url' => null,
+        ]);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('webhookUrl', 'https://example.com/webhook')
+            ->call('saveWebhookUrl')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('external_sources', [
+            'id' => $source->id,
+            'webhook_url' => 'https://example.com/webhook',
+        ]);
+    }
+
+    public function test_save_webhook_url_clears_on_empty(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create([
+            'name' => 'Source',
+            'webhook_url' => 'https://old.example.com/hook',
+        ]);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('webhookUrl', '')
+            ->call('saveWebhookUrl')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('external_sources', [
+            'id' => $source->id,
+            'webhook_url' => null,
+        ]);
+    }
+
+    public function test_save_webhook_url_rejects_invalid_url(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('webhookUrl', 'not-a-valid-url')
+            ->call('saveWebhookUrl');
+
+        $this->assertNotNull($component->get('webhookError'));
+
+        $this->assertDatabaseMissing('external_sources', [
+            'id' => $source->id,
+            'webhook_url' => 'not-a-valid-url',
+        ]);
+    }
+
+    public function test_save_webhook_url_sets_saved_flag(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('webhookUrl', 'https://example.com/hook')
+            ->call('saveWebhookUrl');
+
+        $this->assertTrue($component->get('saved'));
+    }
+}

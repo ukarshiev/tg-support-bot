@@ -128,7 +128,9 @@ app/
 │       ├── IntegrationsListPage.php      # /admin/settings/integrations
 │       ├── IntegrationChannelPage.php   # /admin/settings/integrations/{channel}
 │       ├── AiAssistantPage.php          # /admin/settings/ai
-│       └── AiProviderAccessPage.php     # /admin/settings/ai/{provider}
+│       ├── AiProviderAccessPage.php     # /admin/settings/ai/{provider}
+│       ├── ApiWebhooksPage.php          # /admin/settings/api-webhooks (admin-only, source card list)
+│       └── ApiWebhookSourcePage.php     # /admin/settings/api-webhooks/{source} (per-source edit)
 ├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
 ├── Services/
@@ -174,7 +176,9 @@ resources/
 │           ├── integrations-list-page.blade.php       # View for IntegrationsListPage
 │           ├── integration-channel-page.blade.php    # View for IntegrationChannelPage
 │           ├── ai-assistant-page.blade.php           # View for AiAssistantPage
-│           └── ai-provider-access-page.blade.php    # View for AiProviderAccessPage
+│           ├── ai-provider-access-page.blade.php    # View for AiProviderAccessPage
+│           ├── api-webhooks-page.blade.php          # View for ApiWebhooksPage (source card list)
+│           └── api-webhook-source-page.blade.php   # View for ApiWebhookSourcePage (per-source edit)
 ```
 
 ---
@@ -311,6 +315,11 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 - Requests must be authenticated with a bearer token from `external_source_access_tokens`
 - When the team replies to an external user, a webhook is sent to `external_sources.webhook_url`
+- Bearer tokens are managed in the admin panel at `/admin/settings/api-webhooks` (`ApiWebhooksPage`) — admin-only
+- Token length: 64 characters (`Str::random(64)` in `ExternalSourceTokensService::generateToken()`)
+- Token active flag: `external_source_access_tokens.active` — inactive tokens (`active=false`) are rejected by `ApiQuery` middleware with 401
+- Token values are never logged or displayed in full — only a one-time reveal after regeneration, followed by dismissal
+- See `rules/domain/admin-panel.md` (BR-023, BR-024, BR-025) and `rules/domain/external-sources.md`
 
 ### Feedback Form
 
@@ -330,7 +339,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Switching via admin panel: save via General Settings screen (`/admin/settings/general`, `GeneralSettingsPage`) → value written to `settings` DB table via `SettingsService` (overrides `.env` on next read); container restart still required for DI binding to take effect (`docker compose restart app`) — screen shows a persistent yellow warning notice
 - The `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` reads from `config('app.manager_interface')` at boot, NOT from `SettingsService` — this is intentional to avoid DB dependency at container startup
 - Does not require `php artisan migrate` or any DB changes (for mode switching itself)
-- See `rules/domain/admin-panel.md` for full rules (BR-001 through BR-016)
+- See `rules/domain/admin-panel.md` for full rules (BR-001 through BR-025)
 
 ---
 

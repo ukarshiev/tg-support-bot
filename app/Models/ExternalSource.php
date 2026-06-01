@@ -39,4 +39,17 @@ class ExternalSource extends Model
     {
         return $this->hasMany(ExternalSourceAccessTokens::class, 'external_source_id');
     }
+
+    /**
+     * Return the single active access token record for this source, or null.
+     *
+     * @return ExternalSourceAccessTokens|null
+     */
+    public function activeToken(): ?ExternalSourceAccessTokens
+    {
+        /** @var ExternalSourceAccessTokens|null */
+        return ExternalSourceAccessTokens::where('external_source_id', $this->id)
+            ->where('active', true)
+            ->first();
+    }
 }

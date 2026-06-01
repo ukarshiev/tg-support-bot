@@ -10,7 +10,7 @@
 
 The Admin Panel domain provides an alternative manager interface for the support team. Instead of working through a Telegram supergroup with forum topics, managers can use the `/admin` web panel (built with Filament 3) to view conversations and send replies.
 
-**This domain owns:** `App\Livewire\Chat\ConversationPage` (standalone Livewire chat workspace, chrome-free, at `/admin/chats`), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), `AiAssistantPage` (custom Livewire full-page at `/admin/settings/ai`), `AiProviderAccessPage` (custom Livewire full-page at `/admin/settings/ai/{provider}`), the Filament panel + navigation (`AdminPanelProvider`), the admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`, `resources/views/layouts/admin-chat.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
+**This domain owns:** `App\Livewire\Chat\ConversationPage` (standalone Livewire chat workspace, chrome-free, at `/admin/chats`), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), `AiAssistantPage` (custom Livewire full-page at `/admin/settings/ai`), `AiProviderAccessPage` (custom Livewire full-page at `/admin/settings/ai/{provider}`), `ApiWebhooksPage` (custom Livewire full-page at `/admin/settings/api-webhooks` — source card list), `ApiWebhookSourcePage` (custom Livewire full-page at `/admin/settings/api-webhooks/{source}` — per-source edit page), the Filament panel + navigation (`AdminPanelProvider`), the admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`, `resources/views/layouts/admin-chat.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
 
 > **Redesign note:** The legacy Filament resources (Conversations, Bot Users, External Sources, Feedback, Users) have been **removed**. The admin now consists of fully custom Livewire/Blade screens — the chat workspace (`/admin/chats`) and the Settings section (`/admin/settings/*`) — built on the admin design system, outside Filament's default chrome. The Filament panel is retained only for authentication (the `/admin/login` page) — it registers no resources, pages, widgets or dashboard. The panel root `/admin` redirects to the chat workspace, and login lands there too (`Filament::getUrl()` resolves to the first navigation item, «Диалоги»). Navigation to the custom screens is registered via `AdminPanelProvider::navigationItems()`. The underlying models, services, flows and artisan commands (bot users, external sources, feedback, users) are unchanged — only their Filament admin UI was removed (their redesigned screens are pending).
 
@@ -110,6 +110,18 @@ _Enforced in:_ `AiAssistantPage::updatedAutoReply()`, `confirmAutoReply()`, `can
 **BR-020** — The Filament panel registers no resources; navigation to the custom screens is declared in `AdminPanelProvider::navigationItems()`. The "Диалоги" item (icon `heroicon-o-chat-bubble-left-right`, sort `1`) links to `route('admin.chats')`; the "Настройки" item (icon `heroicon-o-cog-6-tooth`, sort `2`) links to `route('admin.settings.general')`. The real workspace (`App\Livewire\Chat\ConversationPage`) mounts with an empty dialog list and populates on `selectChat()`.
 _Enforced in:_ `AdminPanelProvider::panel()` → `->navigationItems([...])`
 
+**BR-023** — The "API и вебхуки" section consists of two pages, both restricted to admin-role users only. Non-admin authenticated users are redirected to `admin.settings.general` in `mount()` via `Auth::user()->isAdmin()`.
+- **List page** (`/admin/settings/api-webhooks`, `ApiWebhooksPage`): shows External Source cards with token/webhook status; "Добавить источник" creates a source and redirects to the edit page.
+- **Edit page** (`/admin/settings/api-webhooks/{source}`, `ApiWebhookSourcePage`): per-source configuration — bearer token regeneration (one-time reveal, 64 chars, never logged), webhook URL editing, design-placeholder fields (secret key + events).
+Token values are never logged or displayed in full — only a one-time reveal banner shown immediately after regeneration, stored in `$newToken` and cleared on dismiss.
+_Enforced in:_ `ApiWebhooksPage::mount()` and `ApiWebhookSourcePage::mount()` — `isAdmin()` check; `ApiWebhookSourcePage::regenerateToken()` — stores raw token in `$newToken` only, never logged
+
+**BR-024** — Bearer token active/inactive state is stored in `external_source_access_tokens.active`. A token with `active = false` fails `ApiQuery` middleware authentication and is treated as if it does not exist for API access purposes. The flag can be flipped via `ExternalSourceTokensService::setTokenActive()`. Note: the «API и вебхуки» screen does not currently surface an active toggle (it follows the design mockup, which has none) — the service method remains available for programmatic/future use.
+_Enforced in:_ `App\Modules\External\Middleware\ApiQuery` — checks `active = true`; `ExternalSourceTokensService::setTokenActive()`
+
+**BR-025** — Token generation uses `Str::random(64)` (64-character alphanumeric string). This matches the `external_source_access_tokens.token` column `varchar(64)` defined in the migration. The prior value `Str::random(60)` has been corrected to 64.
+_Enforced in:_ `ExternalSourceTokensService::generateToken()`
+
 **BR-021** — The dialog list in `ConversationPage` is ordered by the most recent message date descending. Because `BotUser::messages()` has swapped FK args (`hasMany(Message::class, 'id', 'bot_user_id')`), `withMax()` produces a wrong query. Use a raw correlated subquery: `COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.bot_user_id = bot_users.id), '1970-01-01') DESC`. Do not use `withMax('messages', 'created_at')` until the model relation is corrected.
 _Enforced in:_ `ConversationPage::loadDialogList()`
 
@@ -172,7 +184,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 **Layout**: `resources/views/layouts/admin-settings.blade.php` — two-column layout with a dark sidebar (280px) + right content area (`bg-bg-secondary`).
 
-**Sidebar navigation**: 7 items. «Основные», «Интеграции», and «ИИ-ассистент» are active/linked; the rest (Уведомления, API и вебхуки, Команда, Автоответы) are disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
+**Sidebar navigation**: 7 items. «Основные», «Интеграции», «ИИ-ассистент», and «API и вебхуки» are active/linked; the rest (Уведомления, Команда, Автоответы) are disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
 
 **Form fields** (all persisted via `SettingsService`):
 | Field | Setting key | Validation |
@@ -254,6 +266,58 @@ The binding is resolved at container boot time from `config()`. The binding does
 - `tests/Feature/Settings/AiProviderAccessPageTest.php` — integration (14 cases)
 
 **Runtime application status**: `AiAssistantPage` and `AiProviderAccessPage` persist values to the `settings` DB table. The form reads back from `SettingsService` correctly. Full runtime wiring (AI providers / `ShouldAiReply` / `AiAssistantService` reading from `SettingsService`) is deferred to a follow-up task — those classes still read from `config('ai.*')` at runtime.
+
+---
+
+---
+
+## 6d. API and Webhooks Screens (custom Livewire, `/admin/settings/api-webhooks`)
+
+The API и вебхуки section follows the same two-page pattern as Integrations: a list page shows cards, each card links to a per-source edit page.
+
+### ApiWebhooksPage (`GET /admin/settings/api-webhooks`)
+
+`app/Livewire/Settings/ApiWebhooksPage.php` — admin-only list screen for External Sources.
+
+**Access**: admin-role only (`user->isAdmin()` check in `mount()`). Non-admins are redirected to `admin.settings.general`.
+
+**Layout**: common settings-screen design (`p-6 lg:p-8` wrapper, `text-2xl font-bold` title + subtitle), with a primary «+ Добавить источник» action on the right.
+
+**Source cards**: vertical stack of link cards mirroring the Integrations list channel cards — each is a `<a>` with icon tile, source name, token status line ("Токен активен" green-dot / "Нет токена"), webhook status line ("Вебхук настроен" / "Вебхук не задан"), and a right chevron. Clicking navigates to the per-source edit page.
+
+**Add source**: «+ Добавить источник» opens an inline form (name only). Submitting calls `ExternalSourceService::create()` (persists the `ExternalSource` + auto-issues initial token) then **redirects** to the per-source edit page (`admin.settings.api-webhooks.source`) where the one-time token reveal is shown. Name is required, ≤255 chars, unique.
+
+**Routes**: `GET /admin/settings/api-webhooks` → name `admin.settings.api-webhooks`; registered in `AdminServiceProvider::boot()`.
+
+**Tests**: `tests/Unit/Livewire/Settings/ApiWebhooksPageTest.php`
+
+---
+
+### ApiWebhookSourcePage (`GET /admin/settings/api-webhooks/{source}`)
+
+`app/Livewire/Settings/ApiWebhookSourcePage.php` — admin-only per-source edit page, mirroring `IntegrationChannelPage` UX exactly.
+
+**Access**: admin-role only. Missing source redirects to the list.
+
+**Layout**: `#[Layout('layouts.admin-settings')]`. Two-column body (`lg:grid-cols-[1fr_320px]`):
+- **Left form card**: source name header + Bearer token block (masked display, one-time reveal on regenerate, Скопировать + Сгенерировать новый) + URL вебхука field + Секретный ключ (disabled placeholder "скоро") + События (4 disabled toggle rows, "скоро") + Отмена / Сохранить actions.
+- **Right panel**: "REST API" header + base URL + endpoint list for this source ID + auth note + Swagger UI link.
+
+**Top breadcrumb bar**: back arrow + "API и вебхуки" link + chevron + source name.
+
+**Token**: `regenerateToken(ExternalSourceTokensService)` calls `setAccessToken()`, stores raw result in `$newToken` (one-time reveal only, never logged). `dismissNewToken()` clears it.
+
+**Webhook URL**: `saveWebhookUrl()` — empty clears, non-empty must pass `FILTER_VALIDATE_URL`. `cancel()` reloads from DB.
+
+**Design placeholders** (no DB backing): Секретный ключ disabled input, Events (4 disabled toggles).
+
+**Route**: `GET /admin/settings/api-webhooks/{source}` → name `admin.settings.api-webhooks.source`; constraint `source` ∈ `[0-9]+`; registered in `AdminServiceProvider::boot()`.
+
+**Token rules** (see BR-023, BR-024, BR-025):
+- Token length: 64 characters (`Str::random(64)`).
+- `external_source_access_tokens.active` gates `ApiQuery` and can be flipped via `ExternalSourceTokensService::setTokenActive()`, but the toggle is not surfaced in the UI.
+
+**Tests**: `tests/Unit/Livewire/Settings/ApiWebhookSourcePageTest.php` — access (admin/non-admin/guest), missing source redirect, render (source name, breadcrumb, all field labels, REST API panel, Swagger), token regeneration (one-time reveal, length 64, replace), dismissNewToken, saveWebhookUrl (valid, empty, invalid, saved flag).
 
 ---
 

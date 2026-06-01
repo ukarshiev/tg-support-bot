@@ -5,6 +5,8 @@ namespace App\Modules\Admin;
 use App\Livewire\Chat\ConversationPage;
 use App\Livewire\Settings\AiAssistantPage;
 use App\Livewire\Settings\AiProviderAccessPage;
+use App\Livewire\Settings\ApiWebhookSourcePage;
+use App\Livewire\Settings\ApiWebhooksPage;
 use App\Livewire\Settings\GeneralSettingsPage;
 use App\Livewire\Settings\IntegrationChannelPage;
 use App\Livewire\Settings\IntegrationsListPage;
@@ -64,6 +66,14 @@ class AdminServiceProvider extends ServiceProvider
                 Route::get('/ai/{provider}', AiProviderAccessPage::class)
                     ->name('ai.provider')
                     ->where('provider', 'openai|deepseek|gigachat');
+
+                // API and webhooks — External Sources token and webhook management.
+                Route::get('/api-webhooks', ApiWebhooksPage::class)
+                    ->name('api-webhooks');
+
+                Route::get('/api-webhooks/{source}', ApiWebhookSourcePage::class)
+                    ->name('api-webhooks.source')
+                    ->where('source', '[0-9]+');
             });
     }
 }

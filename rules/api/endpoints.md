@@ -98,6 +98,8 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/admin/settings/integrations/{channel}` | session | Per-channel config form (`IntegrationChannelPage`; channel ∈ telegram\|vk\|max) — name `admin.settings.integrations.channel` |
 | `GET` | `/admin/settings/ai` | session | AI assistant settings (`AiAssistantPage`, custom Livewire) — name `admin.settings.ai` |
 | `GET` | `/admin/settings/ai/{provider}` | session | Per-provider access settings (`AiProviderAccessPage`) — name `admin.settings.ai.provider` |
+| `GET` | `/admin/settings/api-webhooks` | session (admin only) | API and webhooks list (`ApiWebhooksPage`, custom Livewire) — name `admin.settings.api-webhooks` |
+| `GET` | `/admin/settings/api-webhooks/{source}` | session (admin only) | Per-source config (`ApiWebhookSourcePage`; source ∈ `[0-9]+`) — name `admin.settings.api-webhooks.source` |
 
 > The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens. The underlying models, services, and artisan commands are unchanged.
 
