@@ -2,6 +2,7 @@
 
 namespace App\Modules\Max\Actions;
 
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use MaxBotApi\Config;
@@ -33,7 +34,7 @@ class UploadFileMax
             }
 
             $client = new MaxClient(new Config(
-                token: config('traffic_source.settings.max.token'),
+                token: (string) app(SettingsService::class)->get('max.token'),
             ));
 
             $uploadResult = $client->uploads->getUploadUrl($type);

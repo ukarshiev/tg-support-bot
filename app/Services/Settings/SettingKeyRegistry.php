@@ -41,130 +41,150 @@ class SettingKeyRegistry
         // ── Telegram (main bot) ──────────────────────────────────────────────
         'telegram.token' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.telegram.token',
+            'config' => null,
             'is_secret' => true,
         ],
         'telegram.secret_key' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.telegram.secret_key',
+            'config' => null,
             'is_secret' => true,
         ],
         'telegram.group_id' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.telegram.group_id',
-            'is_secret' => false,
-        ],
-        'telegram.bot_id' => [
-            'type' => 'int',
-            'config' => 'traffic_source.settings.telegram.bot_id',
+            'config' => null,
             'is_secret' => false,
         ],
         'telegram.template_topic_name' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.telegram.template_topic_name',
+            'config' => null,
             'is_secret' => false,
         ],
 
         // ── Telegram AI bot ──────────────────────────────────────────────────
         'telegram_ai.token' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.telegram_ai.token',
+            'config' => null,
             'is_secret' => true,
         ],
         'telegram_ai.secret' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.telegram_ai.secret',
+            'config' => null,
             'is_secret' => true,
-        ],
-        'telegram_ai.id' => [
-            'type' => 'int',
-            'config' => 'traffic_source.settings.telegram_ai.id',
-            'is_secret' => false,
         ],
         'telegram_ai.username' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.telegram_ai.username',
+            'config' => null,
             'is_secret' => false,
         ],
 
         // ── VK ───────────────────────────────────────────────────────────────
         'vk.token' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.vk.token',
+            'config' => null,
             'is_secret' => true,
         ],
         'vk.secret_key' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.vk.secret_key',
+            'config' => null,
             'is_secret' => true,
         ],
         'vk.confirm_code' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.vk.confirm_code',
+            'config' => null,
             'is_secret' => true,
         ],
 
         // ── Max ──────────────────────────────────────────────────────────────
         'max.token' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.max.token',
+            'config' => null,
             'is_secret' => true,
         ],
         'max.secret_key' => [
             'type' => 'string',
-            'config' => 'traffic_source.settings.max.secret_key',
+            'config' => null,
             'is_secret' => true,
         ],
 
         // ── AI assistant ─────────────────────────────────────────────────────
         'ai.enabled' => [
             'type' => 'bool',
-            'config' => 'ai.enabled',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.auto_reply' => [
             'type' => 'bool',
-            'config' => 'ai.auto_reply',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.default_provider' => [
             'type' => 'string',
-            'config' => 'ai.default_provider',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.max_context_tokens' => [
             'type' => 'int',
-            'config' => 'ai.max_context_tokens',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.confidence_threshold' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.disable_timeout' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.auto_escalation' => [
+            'type' => 'bool',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.enable_logging' => [
+            'type' => 'bool',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.rate_limit.requests_per_minute' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.rate_limit.requests_per_hour' => [
+            'type' => 'int',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.openai_api_key' => [
             'type' => 'string',
-            'config' => 'ai.providers.openai.api_key',
+            'config' => null,
             'is_secret' => true,
         ],
         'ai.openai_model' => [
             'type' => 'string',
-            'config' => 'ai.providers.openai.model',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.deepseek_client_id' => [
             'type' => 'string',
-            'config' => 'ai.providers.deepseek.client_id',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.deepseek_client_secret' => [
             'type' => 'string',
-            'config' => 'ai.providers.deepseek.client_secret',
+            'config' => null,
             'is_secret' => true,
         ],
         'ai.gigachat_client_id' => [
             'type' => 'string',
-            'config' => 'ai.providers.gigachat.client_id',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.gigachat_client_secret' => [
             'type' => 'string',
-            'config' => 'ai.providers.gigachat.client_secret',
+            'config' => null,
             'is_secret' => true,
         ],
 
@@ -178,66 +198,66 @@ class SettingKeyRegistry
         // ── OpenAI extended fields ────────────────────────────────────────────
         'ai.openai_base_url' => [
             'type' => 'string',
-            'config' => 'ai.providers.openai.base_url',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.openai_max_tokens' => [
             'type' => 'int',
-            'config' => 'ai.providers.openai.max_tokens',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.openai_temperature' => [
             'type' => 'string',
-            'config' => 'ai.providers.openai.temperature',
+            'config' => null,
             'is_secret' => false,
         ],
 
         // ── DeepSeek extended fields ──────────────────────────────────────────
         'ai.deepseek_base_url' => [
             'type' => 'string',
-            'config' => 'ai.providers.deepseek.base_url',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.deepseek_model' => [
             'type' => 'string',
-            'config' => 'ai.providers.deepseek.model',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.deepseek_max_tokens' => [
             'type' => 'int',
-            'config' => 'ai.providers.deepseek.max_tokens',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.deepseek_temperature' => [
             'type' => 'string',
-            'config' => 'ai.providers.deepseek.temperature',
+            'config' => null,
             'is_secret' => false,
         ],
 
         // ── GigaChat extended fields ──────────────────────────────────────────
         'ai.gigachat_base_url' => [
             'type' => 'string',
-            'config' => 'ai.providers.gigachat.base_url',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.gigachat_model' => [
             'type' => 'string',
-            'config' => 'ai.providers.gigachat.model',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.gigachat_max_tokens' => [
             'type' => 'int',
-            'config' => 'ai.providers.gigachat.max_tokens',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.gigachat_temperature' => [
             'type' => 'string',
-            'config' => 'ai.providers.gigachat.temperature',
+            'config' => null,
             'is_secret' => false,
         ],
         'ai.gigachat_path_cert' => [
             'type' => 'string',
-            'config' => 'ai.providers.gigachat.path_cert',
+            'config' => null,
             'is_secret' => false,
         ],
     ];

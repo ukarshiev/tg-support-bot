@@ -12,6 +12,7 @@ use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class SendAiTelegramMessageJob extends AbstractSendMessageJob
@@ -57,7 +58,7 @@ class SendAiTelegramMessageJob extends AbstractSendMessageJob
                 message: $managerTextMessage,
                 userId: $this->botUserId,
                 platform: 'telegram',
-                provider: config('ai.default_provider'),
+                provider: (string) app(SettingsService::class)->get('ai.default_provider'),
                 forceEscalation: false
             ));
 
@@ -66,11 +67,11 @@ class SendAiTelegramMessageJob extends AbstractSendMessageJob
             }
 
             $response = $telegramMethods->sendQueryTelegram('sendMessage', [
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_thread_id' => $botUser->topic_id,
                 'text' => AiHelper::preparedAiAnswer($this->managerTextMessage, $this->aiTextMessage),
                 'parse_mode' => 'html',
-            ], config('traffic_source.settings.telegram_ai.token'));
+            ], (string) app(SettingsService::class)->get('telegram_ai.token'));
 
             if ($response->ok === true) {
                 $this->saveMessage($botUser, $response);
@@ -79,10 +80,10 @@ class SendAiTelegramMessageJob extends AbstractSendMessageJob
                     $botUser->id,
                     $this->updateDto,
                     TGTextMessageDto::from([
-                        'token' => config('traffic_source.settings.telegram_ai.token'),
+                        'token' => (string) app(SettingsService::class)->get('telegram_ai.token'),
                         'methodQuery' => 'editMessageText',
                         'typeSource' => 'supergroup',
-                        'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                        'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                         'message_id' => $response->message_id,
                         'message_thread_id' => $response->message_thread_id,
                         'text' => $response->text,

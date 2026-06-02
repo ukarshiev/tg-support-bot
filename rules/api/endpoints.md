@@ -95,7 +95,7 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/admin/chats` | session | Chat workspace (`App\Livewire\Chat\ConversationPage`, custom Livewire full-page) — name `admin.chats` |
 | `GET` | `/admin/settings/general` | session | General settings page (`GeneralSettingsPage`, custom Livewire) — name `admin.settings.general` |
 | `GET` | `/admin/settings/integrations` | session | Integration channels list (`IntegrationsListPage`, custom Livewire) — name `admin.settings.integrations` |
-| `GET` | `/admin/settings/integrations/{channel}` | session | Per-channel config form (`IntegrationChannelPage`; channel ∈ telegram\|vk\|max) — name `admin.settings.integrations.channel` |
+| `GET` | `/admin/settings/integrations/{channel}` | session | Per-channel config form (`IntegrationChannelPage`; channel ∈ telegram\|telegram_ai\|vk\|max) — name `admin.settings.integrations.channel` |
 | `GET` | `/admin/settings/ai` | session | AI assistant settings (`AiAssistantPage`, custom Livewire) — name `admin.settings.ai` |
 | `GET` | `/admin/settings/ai/{provider}` | session | Per-provider access settings (`AiProviderAccessPage`) — name `admin.settings.ai.provider` |
 | `GET` | `/admin/settings/api-webhooks` | session (admin only) | API and webhooks list (`ApiWebhooksPage`, custom Livewire) — name `admin.settings.api-webhooks` |

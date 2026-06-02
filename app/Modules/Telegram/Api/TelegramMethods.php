@@ -3,6 +3,7 @@
 namespace App\Modules\Telegram\Api;
 
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
+use App\Services\Settings\SettingsService;
 
 class TelegramMethods
 {
@@ -17,7 +18,7 @@ class TelegramMethods
     public static function sendQueryTelegram(string $methodQuery, ?array $dataQuery = null, ?string $token = null): TelegramAnswerDto
     {
         try {
-            $token = $token ?? config('traffic_source.settings.telegram.token');
+            $token = $token ?? (string) app(SettingsService::class)->get('telegram.token');
 
             $domainQuery = 'https://api.telegram.org/bot' . $token . '/';
             $urlQuery = $domainQuery . $methodQuery;

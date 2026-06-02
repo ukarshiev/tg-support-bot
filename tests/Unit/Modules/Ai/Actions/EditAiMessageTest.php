@@ -30,8 +30,8 @@ class EditAiMessageTest extends TestCase
 
         $this->groupId = time();
 
-        config(['traffic_source.settings.telegram_ai.token' => 'test_token']);
-        config(['traffic_source.settings.telegram.group_id' => $this->groupId]);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', 'test_token');
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.group_id', (string) $this->groupId);
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 123;
@@ -40,7 +40,7 @@ class EditAiMessageTest extends TestCase
 
     public function test_edit_ai_message(): void
     {
-        config(['traffic_source.settings.telegram_ai.token' => 'test_token']);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', 'test_token');
         $aiTextMessage = 'Тестовое сообщение от AI';
         $managerTextMessage = 'Сообщение от менеджера';
 
@@ -61,7 +61,7 @@ class EditAiMessageTest extends TestCase
 
         // Создание сообщения с командой на редактирование
         $editMessage = 'Новый ответ от AI';
-        $usernameBot = config('traffic_source.settings.telegram_ai.username');
+        $usernameBot = app(\App\Services\Settings\SettingsService::class)->get('telegram_ai.username');
         $newMessage = "@{$usernameBot} ai_message_edit_{$messageData->id} \n {$editMessage}";
 
         $dataParams = TelegramUpdateDto_GroupMock::getDtoParams();

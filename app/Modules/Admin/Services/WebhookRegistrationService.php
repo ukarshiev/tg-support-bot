@@ -29,6 +29,111 @@ class WebhookRegistrationService
     }
 
     /**
+     * Verify a Telegram bot token by calling getMe.
+     *
+     * Accepts an explicit token so verification can run against the form-entered
+     * value before the setting is persisted. Never logs the token.
+     *
+     * @param string      $token   Bot token to verify.
+     * @param string|null $groupId Optional Telegram group/chat ID — when provided (non-empty),
+     *                             also verifies the bot can access that chat via getChat.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function verifyTelegram(string $token, ?string $groupId = null): array
+    {
+        if ($token === '') {
+            return ['success' => false, 'message' => 'Токен Telegram не задан.'];
+        }
+
+        try {
+            $result = TelegramMethods::sendQueryTelegram('getMe', [], $token);
+
+            if ($result->ok !== true) {
+                return ['success' => false, 'message' => 'Неверный токен Telegram.'];
+            }
+
+            // Optionally verify the bot has access to the configured group.
+            if ($groupId !== null && $groupId !== '') {
+                $chat = TelegramMethods::sendQueryTelegram('getChat', ['chat_id' => $groupId], $token);
+
+                if ($chat->ok !== true) {
+                    return ['success' => false, 'message' => 'Неверный ID группы или бот не добавлен в группу.'];
+                }
+            }
+
+            return ['success' => true, 'message' => 'Токен Telegram прошёл проверку.'];
+        } catch (\Throwable) {
+            return ['success' => false, 'message' => 'Не удалось связаться с API платформы.'];
+        }
+    }
+
+    /**
+     * Verify a VK community access token by calling groups.getById.
+     *
+     * Accepts an explicit token so verification can run against the form-entered
+     * value before the setting is persisted. Never logs the token.
+     *
+     * @param string $token VK access token to verify.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function verifyVk(string $token): array
+    {
+        if ($token === '') {
+            return ['success' => false, 'message' => 'Токен VK не задан.'];
+        }
+
+        try {
+            $result = VkMethods::sendQueryVk('groups.getById', [], $token);
+
+            if ($result->response_code !== 500 && empty($result->error_message)) {
+                return ['success' => true, 'message' => 'Токен VK прошёл проверку.'];
+            }
+
+            $errMsg = $result->error_message ?? 'неизвестная ошибка';
+
+            return ['success' => false, 'message' => 'Ошибка VK API: ' . $errMsg];
+        } catch (\Throwable) {
+            return ['success' => false, 'message' => 'Не удалось связаться с API платформы.'];
+        }
+    }
+
+    /**
+     * Verify a MAX bot token by calling GET /me on the platform API.
+     *
+     * Accepts an explicit token so verification can run against the form-entered
+     * value before the setting is persisted. Uses a 10 s timeout. Never logs the
+     * token.
+     *
+     * @param string $token MAX bot token to verify.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function verifyMax(string $token): array
+    {
+        if ($token === '') {
+            return ['success' => false, 'message' => 'Токен MAX не задан.'];
+        }
+
+        try {
+            $baseUrl = 'https://platform-api.max.ru';
+
+            $response = Http::withHeaders(['Authorization' => $token])
+                ->timeout(10)
+                ->get("{$baseUrl}/me");
+
+            if ($response->successful()) {
+                return ['success' => true, 'message' => 'Токен MAX прошёл проверку.'];
+            }
+
+            return ['success' => false, 'message' => 'Неверный токен MAX (HTTP ' . $response->status() . ').'];
+        } catch (\Throwable) {
+            return ['success' => false, 'message' => 'Не удалось связаться с API платформы.'];
+        }
+    }
+
+    /**
      * Register the Telegram main-bot webhook.
      *
      * @return array{success: bool, message: string}

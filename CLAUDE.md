@@ -109,7 +109,7 @@ Data Layer          app/Models/ + PostgreSQL
 - **Middleware Pattern** — webhook validation before controller runs
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
 - **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
-- **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); known keys registered in `SettingKeyRegistry`
+- **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → optional `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); all channel/AI keys have `config => null` (DB-only, no .env fallback); known keys registered in `SettingKeyRegistry`
 - **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. All admin content screens (chat workspace + Settings) are custom Livewire/Blade on this design system; Filament chrome remains only on the `/admin/login` page.
 
 ---
@@ -274,42 +274,46 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 ### AI Assistant
 
-- AI is disabled by default (`AI_ENABLED=false`); can be toggled from the admin panel at `/admin/settings/ai`
-- AI runs through a **separate Telegram bot** (`TELEGRAM_AI_BOT_TOKEN`) that is added to the same supergroup
-- The AI bot webhook URL is `POST /api/ai-bot/webhook`, protected by `AiBotQuery` middleware (`TELEGRAM_AI_BOT_SECRET`)
-- `AI_AUTO_REPLY=false` (default): AI posts a draft with "Accept / Cancel" inline buttons; manager reviews before sending
-- `AI_AUTO_REPLY=true`: AI posts the reply directly to the topic; it is immediately sent to the user via `SendReplyAction`; enabling via admin panel requires explicit confirmation
-- The AI bot only replies to messages whose `from.id` equals `TELEGRAM_BOT_ID` (forwarded user messages from the main bot)
+- AI is disabled by default (`ai.enabled = false` in settings DB); can be toggled from the admin panel at `/admin/settings/ai`
+- AI runs through a **separate Telegram bot** (token stored as `telegram_ai.token` in settings DB) that is added to the same supergroup
+- The AI bot webhook URL is `POST /api/ai-bot/webhook`, protected by `AiBotQuery` middleware (secret stored as `telegram_ai.secret` in settings DB)
+- `ai.auto_reply = false` (default): AI posts a draft with "Accept / Cancel" inline buttons; manager reviews before sending
+- `ai.auto_reply = true`: AI posts the reply directly to the topic; it is immediately sent to the user; enabling via admin panel requires explicit confirmation
+- The AI bot processes updates arriving at `POST /api/ai-bot/webhook`; `ShouldAiReply` gates replies on AI enabled, `MANAGER_INTERFACE=telegram_group`, private-chat source, message type, replyable text, and active user — no configured bot ID comparison is used
 - The AI bot does NOT reply when `MANAGER_INTERFACE=admin_panel`
-- Supported providers: OpenAI, DeepSeek, GigaChat (set via `AI_DEFAULT_PROVIDER` or from `/admin/settings/ai`)
+- Supported providers: OpenAI, DeepSeek, GigaChat (set via `ai.default_provider` in settings DB or from `/admin/settings/ai`)
 - Register the AI bot webhook with: `docker exec -it pet php artisan ai-bot:set-webhook`
-- AI conversation history is sourced from the `messages` table (no Redis cache), bounded by `AI_MAX_CONTEXT_TOKENS` (default 3000) using a `mb_strlen / 4` token heuristic with sliding-window trimming
+- AI conversation history is sourced from the `messages` table (no Redis cache), bounded by `ai.max_context_tokens` (default 3000, stored in settings DB) using a `mb_strlen / 4` token heuristic with sliding-window trimming
 - AI system prompt: stored in `settings` DB under key `ai.system_prompt` (editable from `/admin/settings/ai`); the Blade fallback at `resources/ai/system-prompt.blade.php` is NOT overwritten by the admin UI
 - AI provider credentials (API keys, base URLs, models, tokens, cert path) are managed at `/admin/settings/ai/{provider}` and stored encrypted in the `settings` table via `SettingsService`
+- AI behaviour settings (`ai.confidence_threshold`, `ai.rate_limit.*`, `ai.disable_timeout`, `ai.auto_escalation`, `ai.enable_logging`) are managed from `/admin/settings/ai`
 - AI drafts NEVER write to `messages` (only to `ai_messages`); a `messages` row appears only when the message is actually sent to the user — this invariant is what makes "any outgoing row = delivered" safe for the chat-history assembler
 - AI runs across all user platforms (`telegram`, `vk`, `max`). Triggers: `TelegramBotController::maybeDispatchAi()` for TG, `VkMessageService::maybeDispatchAi()` for VK, `MaxMessageService::maybeDispatchAi()` for Max. Triggering is text-only — attachments do not start AI. Gating still goes through `ShouldAiReply` (TG-DTO and platform-agnostic variants share the same rules: AI_ENABLED, `MANAGER_INTERFACE=telegram_group`, replyable text, user active)
 - Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. Any other platform is delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry` by a pluggable module (e.g. the paid Avito package). The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
-- **Runtime application (deferred):** AI settings saved in the admin panel are persisted to the DB and displayed correctly in the UI. `ShouldAiReply`, `AiAssistantService`, and AI providers still read from `config('ai.*')` at runtime — full DB-based runtime wiring is a follow-up task
+- All channel credentials, AI provider credentials, and AI behaviour settings are stored exclusively in the `settings` DB table (no `.env`/`config()` fallback for these keys — `config => null` in registry). Values must be entered via the admin UI. There is **no env-to-DB seeding command** — configure everything from `/admin/settings/*`.
 
 ### Settings Persistence Layer
 
 - Runtime-editable application settings are stored in the `settings` table and accessed exclusively via `SettingsService` (`app/Services/Settings/SettingsService.php`)
-- **Reading priority:** DB row → `config()`/`.env` default (declared in `SettingKeyRegistry`) → `null`
+- **Reading priority:** DB row → `config()` default (declared in `SettingKeyRegistry`) → `null`. Channel credentials and AI settings have `config => null` (no fallback) — they return `null` until explicitly saved.
 - **Never call `config()` directly** for a setting that may be overridden at runtime — use `app(\App\Services\Settings\SettingsService::class)->get('key')` instead
 - Secret keys (`is_secret=true` in `SettingKeyRegistry`) are encrypted with `Crypt::encrypt()` before DB write and decrypted transparently in `get()` — never read the raw `settings.value` column for secret keys
 - Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
 - Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
-- The `settings` table is empty by default — fallback to `config()` is always active until a value is explicitly saved
-- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, and `app.manager_interface`. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
+- In-scope keys with `config => null`: all `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`, all `ai.*` credentials and behaviour settings. Infrastructure keys (`app.manager_interface`) retain their `config()` fallback.
+- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, `telegram.template_topic_name` (Telegram topic-name template) and `app.manager_interface`. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
 
 ### Channel Integrations (Settings)
 
-- The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, VK, MAX channel cards with connection status computed by `ChannelStatusService`
-- Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens and keys for each platform
-- Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `vk.*`, `max.*`
+- The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, Telegram AI bot, VK, MAX channel cards with connection status computed by `ChannelStatusService`
+- Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens, keys, and identifiers for each platform. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`
+- Telegram channel page (`channel=telegram`) covers: `telegram.group_id`, `telegram.token`, `telegram.secret_key`. The `telegram.template_topic_name` field moved to the General settings screen; the `telegram.bot_id` setting was removed (unused at runtime)
+- Telegram AI bot page (`channel=telegram_ai`) covers: `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.username`. Action is save-only — webhook registration uses `php artisan ai-bot:set-webhook` (shown in the instruction panel)
+- Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`
 - All secret fields (tokens, keys) are rendered as `type="password"` inputs; blank submission does not overwrite an existing stored secret
-- Webhook registration for each channel is handled by `WebhookRegistrationService` — never directly call platform API methods from the Livewire component
-- `WebhookRegistrationService` wraps: Telegram (`TelegramMethods::sendQueryTelegram('setWebhook', ...)`), VK (connectivity via `VkMethods::sendQueryVk('groups.getById', ...)`), MAX (`Http::post(...platform-api.max.ru/subscriptions...)`)
+- The primary action button is **«Сохранить»** and follows a **verify-before-save** flow: (1) field validation, (2) resolve verification token (entered value or stored fallback), (3) call `WebhookRegistrationService::verifyX($token)` — if it fails, show error and do NOT persist anything; (4) on success, persist via `SettingsService`, then register webhook (telegram|vk|max) or show success notice (telegram_ai)
+- `WebhookRegistrationService` provides `verifyTelegram/verifyVk/verifyMax($token)` (pre-save platform check, explicit token) and `registerTelegram/registerVk/registerMax()` (webhook registration, reads from `SettingsService`)
+- Verify methods: Telegram uses `getMe`, VK uses `groups.getById`, MAX uses `GET /me` — all with a 10 s timeout, catch exceptions → `success=false`
 - Tokens are never logged — only non-sensitive context (registered URL, HTTP status code)
 - See `rules/domain/admin-panel.md` (BR-013 through BR-016) and `rules/process/security.md` (Secrets in the DB settings table)
 

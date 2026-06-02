@@ -27,6 +27,9 @@ class GeneralSettingsPage extends Component
     /** @var string */
     public string $manager_interface = 'telegram_group';
 
+    /** @var string|null Telegram forum topic name template */
+    public ?string $template_topic_name = null;
+
     /** @var bool Show the restart-required notice */
     public bool $showRestartNotice = false;
 
@@ -44,6 +47,7 @@ class GeneralSettingsPage extends Component
         $this->bot_name = (string) ($settings->get('app.bot_name') ?? '');
         $this->bot_description = (string) ($settings->get('app.bot_description') ?? '');
         $this->manager_interface = (string) ($settings->get('app.manager_interface') ?? 'telegram_group');
+        $this->template_topic_name = (string) ($settings->get('telegram.template_topic_name') ?? '');
     }
 
     /**
@@ -64,6 +68,10 @@ class GeneralSettingsPage extends Component
             $this->formErrors['bot_description'] = 'Максимальная длина — 1000 символов.';
         }
 
+        if (strlen((string) $this->template_topic_name) > 255) {
+            $this->formErrors['template_topic_name'] = 'Максимальная длина — 255 символов.';
+        }
+
         if (! in_array($this->manager_interface, ['telegram_group', 'admin_panel'], true)) {
             $this->formErrors['manager_interface'] = 'Выберите допустимое значение.';
         }
@@ -80,6 +88,7 @@ class GeneralSettingsPage extends Component
         $settings->set('app.bot_name', $this->bot_name ?? '');
         $settings->set('app.bot_description', $this->bot_description ?? '');
         $settings->set('app.manager_interface', $this->manager_interface);
+        $settings->set('telegram.template_topic_name', $this->template_topic_name ?? '');
 
         $this->saved = true;
         $this->showRestartNotice = $interfaceChanged;
@@ -96,6 +105,7 @@ class GeneralSettingsPage extends Component
         $this->bot_name = (string) ($settings->get('app.bot_name') ?? '');
         $this->bot_description = (string) ($settings->get('app.bot_description') ?? '');
         $this->manager_interface = (string) ($settings->get('app.manager_interface') ?? 'telegram_group');
+        $this->template_topic_name = (string) ($settings->get('telegram.template_topic_name') ?? '');
     }
 
     /**

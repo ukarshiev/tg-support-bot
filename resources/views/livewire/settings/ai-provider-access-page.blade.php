@@ -29,17 +29,6 @@
         </div>
     </div>
 
-    {{-- ── Success notice ───────────────────────────────────────────────────────── --}}
-    @if ($saved)
-        <div class="mx-8 mt-6 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
-                 fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            Настройки доступа сохранены.
-        </div>
-    @endif
-
     {{-- ── Two-column body ──────────────────────────────────────────────────────── --}}
     <div class="grid grid-cols-1 gap-7 p-8 lg:grid-cols-[1fr_320px]">
 
@@ -383,20 +372,29 @@
                             />
                         </x-admin.form-field>
 
-                        {{-- Path to certificate --}}
+                        {{-- Certificate file upload --}}
                         <x-admin.form-field
-                            label="Путь к сертификату (path_cert)"
-                            for="gigachat_path_cert"
-                            hint="Путь к файлу сертификата на сервере (только текстовый путь, не загрузка файла)"
-                            :error="$formErrors['gigachat_path_cert'] ?? null"
+                            label="Сертификат (CA)"
+                            for="gigachat_cert_file"
+                            hint="Загрузите CA-сертификат (.crt / .pem). Файл сохраняется как storage/certs/russian_trusted_root_ca_pem.crt"
+                            :error="$formErrors['gigachat_cert_file'] ?? null"
                         >
                             <input
-                                id="gigachat_path_cert"
-                                type="text"
-                                wire:model="gigachat_path_cert"
-                                placeholder="/etc/ssl/certs/gigachat.pem"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                id="gigachat_cert_file"
+                                type="file"
+                                wire:model="gigachat_cert_file"
+                                accept=".crt,.pem,.cer"
+                                class="block w-full cursor-pointer rounded-lg border border-border-light bg-bg-input text-sm text-text-secondary outline-none file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-white hover:file:opacity-90"
                             />
+                            <div wire:loading wire:target="gigachat_cert_file" class="mt-1.5 text-xs text-text-secondary">Загрузка файла…</div>
+                            @if ($gigachat_cert_uploaded)
+                                <p class="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-green-700">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Сертификат уже загружен. Загрузите новый файл, чтобы заменить его.
+                                </p>
+                            @endif
                         </x-admin.form-field>
 
                     </div>
@@ -413,6 +411,17 @@
                         <span wire:loading wire:target="save">Сохранение...</span>
                     </x-admin.button-primary>
                 </div>
+
+                {{-- Success notice --}}
+                @if ($saved)
+                    <div class="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Настройки доступа сохранены.
+                    </div>
+                @endif
 
             </form>
         </div>
@@ -455,15 +464,26 @@
                     </li>
                 </ul>
 
-                @if ($provider === 'gigachat')
-                    <div class="mt-5 rounded-lg border border-border-light bg-bg-secondary p-3">
-                        <p class="text-[12px] leading-relaxed text-text-secondary">
-                            <strong class="font-semibold text-text-primary">path_cert</strong> — путь к CA-сертификату
-                            GigaChat на сервере. Укажите абсолютный путь, например
-                            <code class="rounded bg-bg-input px-1 font-mono text-[11px]">/etc/ssl/certs/russian_trusted_root_ca.pem</code>.
-                        </p>
-                    </div>
-                @endif
+                @php
+                    $docsUrl = match ($provider) {
+                        'openai' => 'https://docs.tg-support-bot.ru/docs/ai-openai.html',
+                        'deepseek' => 'https://docs.tg-support-bot.ru/docs/ai-deepseek.html',
+                        'gigachat' => 'https://docs.tg-support-bot.ru/docs/ai-gigachat.html',
+                        default => 'https://docs.tg-support-bot.ru/',
+                    };
+                @endphp
+                <a href="{{ $docsUrl }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="mt-5 flex items-center gap-2 rounded-lg px-3.5 py-3 text-xs font-medium text-accent transition hover:opacity-80"
+                   style="background:#F0F4FF">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none"
+                         viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Подробнее в документации
+                </a>
 
             </div>
         </div>

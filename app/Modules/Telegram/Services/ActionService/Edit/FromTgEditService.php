@@ -4,6 +4,7 @@ namespace App\Modules\Telegram\Services\ActionService\Edit;
 
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Services\Settings\SettingsService;
 use phpDocumentor\Reflection\Exception;
 
 /**
@@ -24,7 +25,7 @@ abstract class FromTgEditService extends TemplateEditService
             case 'private':
                 $this->typeMessage = 'incoming';
 
-                $groupId = config('traffic_source.settings.telegram.group_id');
+                $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
                 $queryParams = [
                     'chat_id' => $groupId,
                     'message_thread_id' => $this->botUser->topic_id,

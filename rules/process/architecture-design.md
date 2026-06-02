@@ -343,7 +343,7 @@ Keys with `is_secret=true` in the registry are encrypted with `Crypt::encrypt()`
 
 ### Scope
 
-The Settings layer is a **backend foundation only**. Dependent tasks #144/#145/#146 add the Filament admin UI. Wiring `ManagerInterfaceContract` and platform module tokens to read from DB is also deferred to those tasks.
+The Settings layer backs the custom admin Settings screens (`/admin/settings/*`). All channel/AI access credentials and AI behaviour settings are now read from the DB via `SettingsService` at runtime (no `config()`/`.env` fallback for those keys). The only intentional exception is `app.manager_interface`: the `ManagerInterfaceContract` DI binding still reads `config('app.manager_interface')` at container boot (to avoid a DB dependency during boot), so switching the manager interface still requires a restart.
 
 ---
 

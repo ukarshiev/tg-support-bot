@@ -30,11 +30,10 @@ class SendAiDraftJobTest extends TestCase
         $this->aiToken = 'ai_test_token_456';
         $this->groupId = -100987654321;
 
-        config([
-            'traffic_source.settings.telegram_ai.token' => $this->aiToken,
-            'traffic_source.settings.telegram.group_id' => $this->groupId,
-            'ai.default_provider' => 'openai',
-        ]);
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('telegram_ai.token', $this->aiToken);
+        $settings->set('telegram.group_id', (string) $this->groupId);
+        $settings->set('ai.default_provider', 'openai');
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 77;

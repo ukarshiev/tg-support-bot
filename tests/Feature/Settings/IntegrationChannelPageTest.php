@@ -42,6 +42,15 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertTrue(\Illuminate\Support\Facades\Route::has('admin.settings.integrations.channel'));
     }
 
+    public function test_authenticated_admin_can_render_telegram_ai_channel_page(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
+            ->assertSuccessful();
+    }
+
     // ── Mount / initial state ────────────────────────────────────────────────
 
     public function test_mount_loads_telegram_fields_from_settings_service(): void
@@ -78,13 +87,11 @@ class IntegrationChannelPageTest extends TestCase
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
-        // Ensure no config fallback provides values
+        // Remove settings seeded by TestCase::setUp() so the channel appears disconnected
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->forget('telegram.token');
+        $settings->forget('telegram.secret_key');
         \Illuminate\Support\Facades\Cache::flush();
-        config([
-            'traffic_source.settings.telegram.token' => '',
-            'traffic_source.settings.telegram.secret_key' => '',
-            'traffic_source.settings.telegram.group_id' => '',
-        ]);
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
             ->assertSet('channelConnected', false);
@@ -101,7 +108,21 @@ class IntegrationChannelPageTest extends TestCase
             ->assertSee('Токен бота')
             ->assertSee('Секретный ключ Webhook')
             ->assertSee('ID группы')
-            ->assertSee('Подключить');
+            ->assertDontSee('ID бота')
+            ->assertDontSee('Telegram AI-бот')
+            ->assertSee('Сохранить');
+    }
+
+    public function test_renders_telegram_ai_form_fields(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
+            ->assertSee('Токен AI-бота')
+            ->assertSee('Секретный ключ Webhook')
+            ->assertSee('Username AI-бота')
+            ->assertSee('Сохранить');
     }
 
     public function test_renders_vk_form_fields(): void
@@ -112,7 +133,7 @@ class IntegrationChannelPageTest extends TestCase
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'vk'])
             ->assertSee('Токен')
             ->assertSee('Код подтверждения')
-            ->assertSee('Подключить');
+            ->assertSee('Сохранить');
     }
 
     public function test_renders_max_form_fields(): void
@@ -123,7 +144,7 @@ class IntegrationChannelPageTest extends TestCase
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'max'])
             ->assertSee('Токен')
             ->assertSee('Секретный ключ Webhook')
-            ->assertSee('Подключить');
+            ->assertSee('Сохранить');
     }
 
     public function test_renders_instruction_panel_for_telegram(): void
@@ -135,6 +156,17 @@ class IntegrationChannelPageTest extends TestCase
             ->assertSee('Инструкция')
             ->assertSee('Создайте группу в Telegram')
             ->assertSee('Добавьте бота как администратора')
+            ->assertSee('Подробнее в документации');
+    }
+
+    public function test_renders_instruction_panel_for_telegram_ai(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
+            ->assertSee('Инструкция')
+            ->assertSee('ai-bot:set-webhook')
             ->assertSee('Подробнее в документации');
     }
 
@@ -205,6 +237,54 @@ class IntegrationChannelPageTest extends TestCase
 
         // The pre-existing token must still be in DB (as encrypted value)
         $this->assertDatabaseHas('settings', ['key' => 'telegram.token']);
+    }
+
+    public function test_save_telegram_ai_persists_id_and_username(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
+            ->set('telegram_ai_username', '@my_ai_bot')
+            ->call('save')
+            ->assertSet('saved', true)
+            ->assertSet('formErrors', []);
+
+        $this->assertDatabaseHas('settings', ['key' => 'telegram_ai.username', 'value' => '@my_ai_bot']);
+    }
+
+    public function test_save_telegram_ai_does_not_overwrite_token_when_blank(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        $settings->set('telegram_ai.token', 'existing_ai_tok');
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
+            ->set('telegram_ai_token', '')   // blank — should NOT overwrite
+            ->call('save')
+            ->assertSet('saved', true);
+
+        $this->assertDatabaseHas('settings', ['key' => 'telegram_ai.token']);
+    }
+
+    public function test_connect_telegram_ai_saves_without_webhook_registration(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true, 'first_name' => 'AI Bot']], 200),
+        ]);
+
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
+            ->set('telegram_ai_token', 'ai-bot-token:valid')
+            ->set('telegram_ai_username', '@bot')
+            ->call('connect')
+            ->assertSet('saved', true)
+            ->assertSet('webhookSuccess', true);
     }
 
     public function test_save_vk_persists_credentials(): void
@@ -282,8 +362,9 @@ class IntegrationChannelPageTest extends TestCase
 
     public function test_connect_saves_and_registers_webhook_for_telegram(): void
     {
+        // Both getMe (verify) and setWebhook (register) return ok=true.
         Http::fake([
-            'https://api.telegram.org/*' => Http::response(['ok' => true, 'description' => 'Webhook set'], 200),
+            'https://api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true]], 200),
         ]);
 
         $admin = User::factory()->create(['role' => UserRole::Admin]);
@@ -311,8 +392,9 @@ class IntegrationChannelPageTest extends TestCase
             ->assertSet('webhookMessage', null);
     }
 
-    public function test_connect_shows_webhook_error_when_api_fails(): void
+    public function test_connect_does_not_save_when_token_verification_fails(): void
     {
+        // getMe returns ok=false — verification fails → the entered token must NOT be persisted.
         Http::fake([
             'https://api.telegram.org/*' => Http::response(['ok' => false, 'description' => 'Unauthorized'], 401),
         ]);
@@ -322,14 +404,114 @@ class IntegrationChannelPageTest extends TestCase
 
         /** @var SettingsService $settings */
         $settings = app(SettingsService::class);
-        $settings->set('telegram.token', 'bad_token');
+        // Store a sentinel value that must remain unchanged after the failed connect.
+        $settings->set('telegram.token', 'original_token');
+        \Illuminate\Support\Facades\Cache::flush();
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
             ->set('telegram_group_id', '-100123')
-            ->set('telegram_token', 'bad_token')
+            ->set('telegram_token', 'bad_token')  // different value — must NOT be saved
+            ->call('connect')
+            ->assertSet('saved', false)
+            ->assertSet('webhookSuccess', false);
+
+        // The original stored token must still be the sentinel (not overwritten with 'bad_token').
+        $stored = app(SettingsService::class)->get('telegram.token');
+        $this->assertNotSame('bad_token', $stored);
+    }
+
+    // ── Verify-before-save — VK ───────────────────────────────────────────────
+
+    public function test_connect_vk_does_not_save_when_token_verification_fails(): void
+    {
+        Http::fake([
+            'https://api.vk.com/*' => Http::response([
+                'error' => ['error_code' => 5, 'error_msg' => 'User authorization failed'],
+            ], 200),
+        ]);
+
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        $settings->set('vk.token', 'original_vk_token');
+        \Illuminate\Support\Facades\Cache::flush();
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'vk'])
+            ->set('vk_token', 'bad_vk_token')  // must NOT be saved
+            ->call('connect')
+            ->assertSet('saved', false)
+            ->assertSet('webhookSuccess', false);
+
+        // The original stored token must still be the sentinel (not overwritten).
+        $stored = app(SettingsService::class)->get('vk.token');
+        $this->assertNotSame('bad_vk_token', $stored);
+    }
+
+    public function test_connect_vk_saves_when_verification_succeeds(): void
+    {
+        Http::fake([
+            'https://api.vk.com/*' => Http::response([
+                'response' => [['id' => 1, 'name' => 'Test Group']],
+            ], 200),
+        ]);
+
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'vk'])
+            ->set('vk_token', 'vk1.a.valid_token')
             ->call('connect')
             ->assertSet('saved', true)
+            ->assertSet('webhookSuccess', true);
+
+        $this->assertDatabaseHas('settings', ['key' => 'vk.token']);
+    }
+
+    // ── Verify-before-save — stored token fallback ────────────────────────────
+
+    public function test_connect_telegram_uses_stored_token_when_form_is_blank(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true]], 200),
+        ]);
+
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        $settings->set('telegram.token', 'stored_token');
+        $settings->set('telegram.secret_key', 'sec');
+        \Illuminate\Support\Facades\Cache::flush();
+
+        // Leave telegram_token blank — should fall back to stored token for verification.
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
+            ->set('telegram_group_id', '-100123')
+            ->call('connect')
+            ->assertSet('saved', true)
+            ->assertSet('webhookSuccess', true);
+    }
+
+    public function test_connect_sets_error_when_no_token_available(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        // Ensure no telegram token is stored.
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->forget('telegram.token');
+        \Illuminate\Support\Facades\Cache::flush();
+
+        $component = Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
+            ->set('telegram_group_id', '-100123')
+            ->set('telegram_token', '')
+            ->call('connect')
+            ->assertSet('saved', false)
             ->assertSet('webhookSuccess', false);
+
+        $this->assertStringContainsString('Введите токен', (string) $component->get('webhookMessage'));
     }
 
     // ── Webhook registration (standalone, backward-compat) ────────────────────

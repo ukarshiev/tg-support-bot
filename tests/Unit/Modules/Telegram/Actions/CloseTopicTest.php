@@ -21,7 +21,7 @@ class CloseTopicTest extends TestCase
         parent::setUp();
 
         $this->groupId = time();
-        config(['traffic_source.settings.telegram.group_id' => $this->groupId]);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.group_id', (string) $this->groupId);
 
         Queue::fake();
     }

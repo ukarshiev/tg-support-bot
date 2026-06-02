@@ -7,6 +7,7 @@ use App\Models\ExternalUser;
 use App\Modules\Telegram\Actions\GetChat;
 use App\Modules\Telegram\Actions\SendContactMessage;
 use App\Modules\Telegram\Api\TelegramMethods;
+use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -52,7 +53,7 @@ class TopicCreateJob implements ShouldQueue
             $topicName = $this->generateNameTopic($this->botUser);
 
             $response = $this->telegramMethods->sendQueryTelegram('createForumTopic', [
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'name' => $topicName,
                 'icon_custom_emoji_id' => __('icons.incoming'),
             ]);
@@ -95,7 +96,7 @@ class TopicCreateJob implements ShouldQueue
                 return "#{$botUser->chat_id} ({$source})";
             }
 
-            $templateTopicName = config('traffic_source.settings.telegram.template_topic_name');
+            $templateTopicName = (string) app(SettingsService::class)->get('telegram.template_topic_name');
             if (empty($templateTopicName)) {
                 throw new \Exception('Template not found');
             }

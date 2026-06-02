@@ -26,7 +26,7 @@ class AiAcceptMessageTest extends TestCase
         Message::truncate();
         Queue::fake();
 
-        config(['traffic_source.settings.telegram_ai.token' => 'test_token']);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', 'test_token');
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 123;
@@ -35,7 +35,7 @@ class AiAcceptMessageTest extends TestCase
 
     public function test_accept_ai_message(): void
     {
-        config(['traffic_source.settings.telegram_ai.token' => 'test_token']);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', 'test_token');
         $aiTextMessage = 'Тестовое сообщение от AI';
         $managerTextMessage = 'Сообщение от менеджера';
 
@@ -68,7 +68,7 @@ class AiAcceptMessageTest extends TestCase
         $firstJob = $pushed[0]['job'];
 
         $this->assertEquals($this->botUser->id, $firstJob->botUserId);
-        $this->assertEquals(config('traffic_source.settings.telegram.group_id'), $firstJob->queryParams->chat_id);
+        $this->assertEquals('-100000000000', $firstJob->queryParams->chat_id);
         $this->assertEquals('editMessageText', $firstJob->queryParams->methodQuery);
         $this->assertEquals($aiTextMessage, $firstJob->queryParams->text);
 

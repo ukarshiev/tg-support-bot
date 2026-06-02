@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Modules\Telegram\Api\TelegramMethods;
+use App\Services\Settings\SettingsService;
 use Illuminate\Console\Command;
 
 class AiBotSetWebhook extends Command
@@ -20,8 +21,9 @@ class AiBotSetWebhook extends Command
     {
         $appUrl = config('app.url');
         $url = $appUrl . '/api/ai-bot/webhook';
-        $token = config('traffic_source.settings.telegram_ai.token');
-        $secret = config('traffic_source.settings.telegram_ai.secret');
+        $settingsService = app(SettingsService::class);
+        $token = (string) $settingsService->get('telegram_ai.token');
+        $secret = (string) $settingsService->get('telegram_ai.secret');
 
         if (empty($token)) {
             $this->error('TELEGRAM_AI_BOT_TOKEN is not set.');

@@ -194,19 +194,46 @@ class AiProviderAccessPageTest extends TestCase
 
     // ── Save — GigaChat ───────────────────────────────────────────────────────
 
-    public function test_save_gigachat_persists_path_cert(): void
+    public function test_save_gigachat_uploads_certificate_file(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
+        $target = storage_path('certs/russian_trusted_root_ca_pem.crt');
+        @unlink($target);
+
+        $cert = \Illuminate\Http\UploadedFile::fake()->createWithContent(
+            'my-ca.crt',
+            "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"
+        );
+
         Livewire::test(AiProviderAccessPage::class, ['provider' => 'gigachat'])
-            ->set('gigachat_path_cert', '/etc/ssl/certs/giga.pem')
+            ->set('gigachat_cert_file', $cert)
             ->call('save')
             ->assertSet('saved', true);
 
         /** @var SettingsService $settings */
         $settings = app(SettingsService::class);
-        $this->assertSame('/etc/ssl/certs/giga.pem', (string) $settings->get('ai.gigachat_path_cert'));
+        // The stored path is the fixed storage-relative location used by GigaChatProvider (storage_path()).
+        $this->assertSame('certs/russian_trusted_root_ca_pem.crt', (string) $settings->get('ai.gigachat_path_cert'));
+        $this->assertFileExists($target);
+
+        @unlink($target);
+    }
+
+    public function test_save_gigachat_rejects_non_certificate_file(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $bad = \Illuminate\Http\UploadedFile::fake()->create('notes.txt', 1);
+
+        $component = Livewire::test(AiProviderAccessPage::class, ['provider' => 'gigachat'])
+            ->set('gigachat_cert_file', $bad)
+            ->call('save')
+            ->assertSet('saved', false);
+
+        $this->assertArrayHasKey('gigachat_cert_file', $component->get('formErrors'));
     }
 
     public function test_save_gigachat_does_not_overwrite_blank_client_secret(): void

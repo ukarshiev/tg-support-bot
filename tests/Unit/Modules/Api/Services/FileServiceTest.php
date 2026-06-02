@@ -3,14 +3,16 @@
 namespace Tests\Unit\Modules\Api\Services;
 
 use App\Modules\Api\Services\FileService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Response as LaravelResponse;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\TestCase;
 
 class FileServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
     private FileService $service;
 
     private string $tgToken;
@@ -20,7 +22,7 @@ class FileServiceTest extends TestCase
         parent::setUp();
 
         $this->tgToken = '9MUF3Q6Bq88kFBN1';
-        Config::set('traffic_source.settings.telegram.token', $this->tgToken);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.token', $this->tgToken);
 
         $this->service = new FileService();
     }

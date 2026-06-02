@@ -16,6 +16,7 @@ use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Vk\DTOs\VkUpdateDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -69,7 +70,7 @@ abstract class AbstractSendMessageJob implements ShouldQueue
     {
         SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
             'methodQuery' => 'editForumTopic',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $botUser->topic_id,
             'icon_custom_emoji_id' => __('icons.' . $typeMessage),
         ]));

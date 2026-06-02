@@ -18,7 +18,7 @@ class CloseTopicFeedbackTest extends TestCase
     {
         parent::setUp();
 
-        config(['traffic_source.settings.telegram.group_id' => -100123456789]);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.group_id', '-100123456789');
         config(['icons.outgoing' => '']);
         Queue::fake();
     }

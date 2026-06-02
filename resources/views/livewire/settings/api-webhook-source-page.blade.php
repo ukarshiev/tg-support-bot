@@ -24,16 +24,6 @@
     </div>
 
     {{-- ── Notices ───────────────────────────────────────────────────────────── --}}
-    @if ($saved)
-        <div class="mx-8 mt-6 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
-                 fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            URL вебхука сохранён.
-        </div>
-    @endif
-
     @if ($tokenError)
         <div class="mx-8 mt-6 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500"
@@ -207,6 +197,17 @@
                     <span wire:loading wire:target="saveWebhookUrl">Сохранение...</span>
                 </x-admin.button-primary>
             </div>
+
+            {{-- Webhook save result notice --}}
+            @if ($saved)
+                <div class="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
+                         fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    URL вебхука сохранён.
+                </div>
+            @endif
 
         </div>
 

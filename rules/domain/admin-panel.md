@@ -34,13 +34,13 @@ The Admin Panel domain provides an alternative manager interface for the support
 | `SendReplyAction` | Static action that dispatches the correct queue job (Telegram, VK, or Webhook) based on `botUser->platform` |
 | Livewire Polling | `ConversationPage` refreshes every 5 seconds via `getPollingInterval(): '5s'` |
 | `MANAGER_INTERFACE` | Config key. Values: `telegram_group` (default) or `admin_panel`. Readable from `.env` OR from the `settings` DB table via `SettingsService` (DB row overrides env) |
-| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits bot name, description, and `MANAGER_INTERFACE`. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService`. Shows restart notice when `MANAGER_INTERFACE` changes |
+| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits bot name, description, the Telegram topic-name template (`telegram.template_topic_name`), and `MANAGER_INTERFACE`. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService`. Shows restart notice when `MANAGER_INTERFACE` changes |
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
 | `admin-settings` layout | Full-page layout at `resources/views/layouts/admin-settings.blade.php` — dark sidebar (280px) + main content area. Used by all custom Livewire settings screens |
 | `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX channel cards with connection status badges. Reads statuses via `ChannelStatusService`. «Виджет для сайта» shown as disabled «Скоро» placeholder |
-| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|vk\|max). Per-channel config form (read/write via `SettingsService`), webhook registration action (delegates to `WebhookRegistrationService`) |
+| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max). Per-channel config form (read/write via `SettingsService`). Primary action button is **«Сохранить»** — runs a **verify-before-save** flow: (1) field validation, (2) token verification via `WebhookRegistrationService::verifyX($token)` (entered value or stored fallback), (3) persist settings only on verification success, (4) register webhook (telegram\|vk\|max) or show success notice (telegram_ai — no webhook registration via UI; uses `php artisan ai-bot:set-webhook`) |
 | `ChannelStatusService` | `app/Modules/Admin/Services/ChannelStatusService.php`. Computes `connected/label` per channel based on whether required `SettingsService` keys are non-empty. Shared by list and per-channel pages |
-| `WebhookRegistrationService` | `app/Modules/Admin/Services/WebhookRegistrationService.php`. Thin wrapper around `TelegramMethods::sendQueryTelegram('setWebhook', ...)`, `VkMethods::sendQueryVk('groups.getById', ...)`, and `Http::post(.../subscriptions, ...)` for MAX. Returns `{success: bool, message: string}`. Reads tokens via `SettingsService`. Never logs tokens |
+| `WebhookRegistrationService` | `app/Modules/Admin/Services/WebhookRegistrationService.php`. Provides **verify** methods (`verifyTelegram`, `verifyVk`, `verifyMax`) that accept an explicit token and call the platform API to confirm validity before any data is persisted (returns `{success: bool, message: string}`), and **register** methods (`registerTelegram`, `registerVk`, `registerMax`) that read tokens from `SettingsService` and perform the actual webhook registration. Never logs tokens |
 
 ---
 
@@ -74,7 +74,7 @@ _Enforced in:_ `AdminPanelInterface::createConversation()` — empty body
 **BR-008** — The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) requires an authenticated user. Unauthenticated visitors are redirected to `/admin/login` by Filament's `Authenticate` middleware applied in `AdminServiceProvider::boot()`. The route does not add a separate admin-role guard at the middleware layer — access is open to any authenticated user; role enforcement can be added to `mount()` if needed in future.
 _Enforced in:_ `AdminServiceProvider::boot()` — `Route::middleware(['web', Authenticate::class])->prefix('admin/settings')...`
 
-**BR-009** — Settings editable from the General Settings screen (`app.bot_name`, `app.bot_description`, `app.manager_interface`) are persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults.
+**BR-009** — Settings editable from the General Settings screen (`app.bot_name`, `app.bot_description`, `telegram.template_topic_name`, `app.manager_interface`) are persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults. (`telegram.template_topic_name` lives in General settings, not the Telegram integration screen.)
 _Enforced in:_ `GeneralSettingsPage::save()` — calls `SettingsService::set()` for each field; `GeneralSettingsPage::mount()` — loads via `SettingsService::get()`
 
 **BR-010** — Changing `MANAGER_INTERFACE` from the General Settings screen saves the new value to the DB, but the `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` is resolved from `config('app.manager_interface')` at container boot time. The change takes full effect only after `docker compose restart app`. Upon save, the screen must display a persistent yellow notice: "Изменение применится после перезапуска контейнера: `docker compose restart app`".
@@ -86,11 +86,11 @@ _Enforced by:_ design review; tokens defined at `resources/css/app.css:@theme`
 **BR-012** — Custom Livewire routes MUST NOT collide with Filament's route set. The chat workspace is registered as `GET /admin/chats` (name `admin.chats`) — this path is not claimed by Filament's panel. Settings pages are registered under `admin/settings/` prefix. All custom routes use `Filament\Http\Middleware\Authenticate` so unauthenticated visitors are redirected to `/admin/login`.
 _Enforced in:_ `AdminServiceProvider::boot()` — verified against `php artisan route:list` output
 
-**BR-013** — Integration config for Telegram/VK/MAX is read and written exclusively via `SettingsService` using the registry keys `telegram.*`, `vk.*`, `max.*`. Secrets (tokens, secret keys, confirm codes) are stored encrypted (`is_secret = true` in `SettingKeyRegistry`). Never log tokens or secrets (see `rules/process/security.md`).
-_Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — calls `SettingsService::set()`; `WebhookRegistrationService` — reads tokens via `SettingsService`, logs only non-sensitive data
+**BR-013** — Integration config for Telegram/Telegram AI/VK/MAX is read and written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`. Secrets (tokens, secret keys, confirm codes) are stored encrypted (`is_secret = true` in `SettingKeyRegistry`). Never log tokens or secrets (see `rules/process/security.md`). The `telegram.bot_id` key was removed — it is unused at runtime.
+_Enforced in:_ `IntegrationChannelPage::saveTelegram/TelegramAi/Vk/Max()` — calls `SettingsService::set()`; `WebhookRegistrationService` — reads tokens via `SettingsService`, logs only non-sensitive data
 
-**BR-014** — The webhook registration action in `IntegrationChannelPage` delegates to `WebhookRegistrationService` — never directly calls platform API methods or executes artisan commands from the UI. The result (success/error with a user-facing message) is surfaced via `$webhookMessage` / `$webhookSuccess` properties.
-_Enforced in:_ `IntegrationChannelPage::registerWebhook()` — match dispatch to `WebhookRegistrationService`
+**BR-014** — The primary «Сохранить» action in `IntegrationChannelPage` follows a **verify-before-save** sequence: (1) validate form fields; (2) resolve the token (form value if non-empty, otherwise stored fallback — so re-entering the secret is not required on edit); (3) call `WebhookRegistrationService::verifyX($token)` — if verification fails, set `$webhookMessage` / `$webhookSuccess = false` and **return without saving** any settings; (4) on success, persist via `saveX()`, then register the webhook (telegram|vk|max) or show a success notice (telegram_ai). The webhook registration and verification methods in `WebhookRegistrationService` never log tokens.
+_Enforced in:_ `IntegrationChannelPage::connect()` → `resolveVerificationToken()` + `validateFields()` + `WebhookRegistrationService::verifyX/registerX()`
 
 **BR-015** — Saving a secret field (token, key) with an empty string does NOT overwrite the existing secret in the DB. This prevents accidentally blanking credentials when only non-secret fields are edited.
 _Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — `if ($field !== '') { $settings->set(...) }`
@@ -101,7 +101,7 @@ _Enforced in:_ `resources/views/livewire/settings/integrations-list-page.blade.p
 **BR-017** — AI assistant settings (master toggle, provider, auto-reply, context limit, system prompt) are managed at `/admin/settings/ai` via `AiAssistantPage`. Values are persisted via `SettingsService`. The `ИИ-ассистент` sidebar item must link to `admin.settings.ai` and be marked active on both `admin.settings.ai` and `admin.settings.ai.provider` routes.
 _Enforced in:_ `resources/views/layouts/admin-settings.blade.php @ nav-item ИИ-ассистент`; `AdminServiceProvider::boot()` route `admin.settings.ai`
 
-**BR-018** — AI provider credentials (API keys, client IDs/secrets, base URLs, models, max tokens, temperature, cert path) are managed at `/admin/settings/ai/{provider}` via `AiProviderAccessPage`. Route constraint: `provider` ∈ `openai|deepseek|gigachat`. Secrets are encrypted in the `settings` DB table and never pre-filled in the UI form. Blank secret submission does NOT overwrite the existing stored secret.
+**BR-018** — AI provider credentials (API keys, client IDs/secrets, base URLs, models, max tokens, temperature) are managed at `/admin/settings/ai/{provider}` via `AiProviderAccessPage`. Route constraint: `provider` ∈ `openai|deepseek|gigachat`. Secrets are encrypted in the `settings` DB table and never pre-filled in the UI form. Blank secret submission does NOT overwrite the existing stored secret. The **GigaChat CA certificate** is a file upload (not a text path): the uploaded `.crt`/`.pem` is written to `storage/certs/russian_trusted_root_ca_pem.crt` (always that fixed name), and `ai.gigachat_path_cert` stores the storage-relative path `certs/russian_trusted_root_ca_pem.crt` (consumed by `GigaChatProvider` via `storage_path()`). When no new file is uploaded, the existing certificate is kept.
 _Enforced in:_ `AiProviderAccessPage::saveOpenAi/DeepSeek/GigaChat()` — blank-secret guard identical to `IntegrationChannelPage` (BR-015)
 
 **BR-019** — Enabling auto-reply from `AiAssistantPage` requires an explicit user confirmation. The toggle triggers a yellow warning dialog; the user must call `confirmAutoReply()` before the setting is applied. Dismissing the dialog (`cancelAutoReply()`) leaves auto-reply disabled.
@@ -200,6 +200,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 |---|---|---|
 | Название бота | `app.bot_name` | nullable, string, max:255 |
 | Описание | `app.bot_description` | nullable, string, max:1000 |
+| Шаблон названия топика | `telegram.template_topic_name` | nullable, string, max:255 |
 | Интерфейс менеджера | `app.manager_interface` | required, in:telegram_group,admin_panel |
 
 **Component property naming**: uses `$formErrors` (not `$errors`) to avoid shadowing Blade's global `$errors` bag.
@@ -224,6 +225,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 | Channel | Required for "connected" |
 |---|---|
 | Telegram | `telegram.token`, `telegram.secret_key`, `telegram.group_id` |
+| Telegram AI bot | `telegram_ai.token` |
 | VK | `vk.token`, `vk.secret_key`, `vk.confirm_code` |
 | MAX | `max.token`, `max.secret_key` |
 
@@ -231,18 +233,23 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 ### IntegrationChannelPage (`GET /admin/settings/integrations/{channel}`)
 
-`app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|vk|max`.
+`app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`.
 
 **Form fields**:
 | Channel | Fields |
 |---|---|
-| Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id`, `telegram.template_topic_name` |
+| Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id` |
+| Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.username`(string) |
 | VK | `vk.token`(secret), `vk.secret_key`(secret), `vk.confirm_code`(secret) |
 | MAX | `max.token`(secret), `max.secret_key`(secret) |
 
+**Channel set**: `telegram` (main Telegram bot), `telegram_ai` (AI assistant bot — separate bot account), `vk`, `max`. The `telegram_ai` channel saves settings only; webhook registration for the AI bot is done via artisan: `php artisan ai-bot:set-webhook`.
+
 **Secret fields** rendered as `type="password"` inputs with `autocomplete="new-password"`. Blank submission does not overwrite existing stored value (BR-015).
 
-**Webhook registration action** (`wire:click="registerWebhook"`): calls `WebhookRegistrationService`, shows success (green banner) or error (red banner) via `$webhookMessage` / `$webhookSuccess`.
+**Primary action** («Сохранить» button, `wire:submit="connect"`): runs the verify-before-save flow (BR-014). Loading state shows «Проверка...». Result surfaced via `$webhookMessage` / `$webhookSuccess` (green banner on success, red on failure).
+
+**Standalone webhook registration** (`wire:click="registerWebhook"`): calls `WebhookRegistrationService::registerX()` directly (no verify step) — kept for backward compatibility.
 
 **Tests**: `tests/Feature/Settings/IntegrationChannelPageTest.php`
 - Unit tests: `tests/Unit/Modules/Admin/Services/ChannelStatusServiceTest.php`, `tests/Unit/Modules/Admin/Services/WebhookRegistrationServiceTest.php`
@@ -274,7 +281,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 - `tests/Feature/Settings/AiAssistantPageTest.php` — integration (13 cases)
 - `tests/Feature/Settings/AiProviderAccessPageTest.php` — integration (14 cases)
 
-**Runtime application status**: `AiAssistantPage` and `AiProviderAccessPage` persist values to the `settings` DB table. The form reads back from `SettingsService` correctly. Full runtime wiring (AI providers / `ShouldAiReply` / `AiAssistantService` reading from `SettingsService`) is deferred to a follow-up task — those classes still read from `config('ai.*')` at runtime.
+**Runtime application status**: fully wired to the DB. `AiAssistantPage` and `AiProviderAccessPage` persist values to the `settings` table, and the AI runtime (`ShouldAiReply`, `AiAssistantService`, `BaseAiProvider`, AI jobs/actions) reads them **live from `SettingsService`** — there is no `config('ai.*')` fallback (`config => null`). The same applies to all channel access credentials (`telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`), which are read from `SettingsService` everywhere (Api classes, jobs, webhook middlewares, `routes.php`). Accesses must be populated via `/admin/settings/*` after deploy — there is no `.env`/`config()` fallback.
 
 ---
 

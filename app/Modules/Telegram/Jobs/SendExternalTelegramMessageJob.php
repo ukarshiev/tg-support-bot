@@ -9,6 +9,7 @@ use App\Modules\External\DTOs\ExternalMessageDto;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -59,7 +60,7 @@ class SendExternalTelegramMessageJob extends AbstractSendMessageJob
                         $telegramMethods->sendQueryTelegram(
                             'reopenForumTopic',
                             [
-                                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                                 'message_thread_id' => $botUser->topic_id,
                             ]
                         );

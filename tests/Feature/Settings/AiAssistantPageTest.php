@@ -114,6 +114,7 @@ class AiAssistantPageTest extends TestCase
         $this->actingAs($admin);
 
         $component = Livewire::test(AiAssistantPage::class)
+            ->set('ai_enabled', true)
             ->set('default_provider', 'anthropic')
             ->call('save')
             ->assertSet('saved', false);
@@ -127,6 +128,7 @@ class AiAssistantPageTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test(AiAssistantPage::class)
+            ->set('ai_enabled', true)
             ->set('max_context_tokens', 0)
             ->call('save')
             ->assertSet('saved', false);

@@ -10,6 +10,7 @@ use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
 use App\Modules\Telegram\Services\ActionService\Send\ToTgMessageService;
 use App\Modules\Vk\DTOs\VkUpdateDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class VkMessageService extends ToTgMessageService
@@ -124,7 +125,7 @@ class VkMessageService extends ToTgMessageService
             return;
         }
 
-        if ((bool) config('ai.auto_reply', false)) {
+        if ((bool) app(SettingsService::class)->get('ai.auto_reply')) {
             SendAiReplyJob::dispatch($this->botUser->id, null, (string) $text);
         } else {
             SendAiDraftJob::dispatch($this->botUser->id, null, (string) $text);

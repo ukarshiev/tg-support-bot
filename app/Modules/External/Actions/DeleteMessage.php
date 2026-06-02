@@ -7,6 +7,7 @@ use App\Models\ExternalUser;
 use App\Models\Message;
 use App\Modules\External\DTOs\ExternalMessageDto;
 use App\Modules\Telegram\Api\TelegramMethods;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
 
@@ -52,7 +53,7 @@ class DeleteMessage
             }
 
             TelegramMethods::sendQueryTelegram('deleteMessage', [
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_id' => $messageData->to_id,
                 'message_thread_id' => $botUser->topic_id,
             ]);

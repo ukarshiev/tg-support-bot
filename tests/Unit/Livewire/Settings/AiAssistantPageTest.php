@@ -35,6 +35,12 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.default_provider')->andReturn('deepseek');
         $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(true);
         $mock->shouldReceive('get')->with('ai.max_context_tokens')->andReturn(5000);
+        $mock->shouldReceive('get')->with('ai.confidence_threshold')->andReturn('0.9');
+        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(30);
+        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(500);
+        $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn('3600');
+        $mock->shouldReceive('get')->with('ai.auto_escalation')->andReturn(false);
+        $mock->shouldReceive('get')->with('ai.enable_logging')->andReturn(false);
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn('Be helpful');
         $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);
@@ -61,6 +67,12 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.default_provider')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.max_context_tokens')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.confidence_threshold')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.auto_escalation')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.enable_logging')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);
@@ -90,6 +102,12 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('set')->with('ai.default_provider', 'gigachat')->once();
         $mock->shouldReceive('set')->with('ai.auto_reply', true)->once();
         $mock->shouldReceive('set')->with('ai.max_context_tokens', 2000)->once();
+        $mock->shouldReceive('set')->with('ai.confidence_threshold', '0.8')->once();
+        $mock->shouldReceive('set')->with('ai.rate_limit.requests_per_minute', 60)->once();
+        $mock->shouldReceive('set')->with('ai.rate_limit.requests_per_hour', 1000)->once();
+        $mock->shouldReceive('set')->with('ai.disable_timeout', '')->once();
+        $mock->shouldReceive('set')->with('ai.auto_escalation', true)->once();
+        $mock->shouldReceive('set')->with('ai.enable_logging', true)->once();
         $mock->shouldReceive('set')->with('ai.system_prompt', 'Be concise')->once();
 
         $component = new AiAssistantPage();
@@ -113,6 +131,7 @@ class AiAssistantPageTest extends TestCase
 
         $component = new AiAssistantPage();
         $component->mount($mock);
+        $component->ai_enabled = true;
         $component->default_provider = 'anthropic';
         $component->save($mock);
 
@@ -129,6 +148,7 @@ class AiAssistantPageTest extends TestCase
 
         $component = new AiAssistantPage();
         $component->mount($mock);
+        $component->ai_enabled = true;
         $component->max_context_tokens = 0;
         $component->save($mock);
 
@@ -145,6 +165,7 @@ class AiAssistantPageTest extends TestCase
 
         $component = new AiAssistantPage();
         $component->mount($mock);
+        $component->ai_enabled = true;
         $component->max_context_tokens = -100;
         $component->save($mock);
 
@@ -180,6 +201,12 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.default_provider')->andReturn('openai');
         $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(false);
         $mock->shouldReceive('get')->with('ai.max_context_tokens')->andReturn(3000);
+        $mock->shouldReceive('get')->with('ai.confidence_threshold')->andReturn('0.8');
+        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(60);
+        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(1000);
+        $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.auto_escalation')->andReturn(true);
+        $mock->shouldReceive('get')->with('ai.enable_logging')->andReturn(true);
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn('Original');
         $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);

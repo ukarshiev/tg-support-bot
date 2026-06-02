@@ -7,6 +7,7 @@ use App\Models\BotUser;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class SendAiResponseMessageJob extends AbstractSendMessageJob
@@ -46,7 +47,7 @@ class SendAiResponseMessageJob extends AbstractSendMessageJob
                 message: $managerTextMessage,
                 userId: $this->botUserId,
                 platform: 'telegram',
-                provider: config('ai.default_provider'),
+                provider: (string) app(SettingsService::class)->get('ai.default_provider'),
                 forceEscalation: false
             );
 

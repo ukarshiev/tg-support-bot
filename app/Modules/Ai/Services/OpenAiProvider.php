@@ -64,8 +64,8 @@ class OpenAiProvider extends BaseAiProvider
         ])->post($this->baseUrl . '/chat/completions', [
             'model' => $this->modelName,
             'messages' => $messages,
-            'max_tokens' => (int)$this->config['max_tokens'],
-            'temperature' => (float)$this->config['temperature'],
+            'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
+            'temperature' => (float) ($this->config['temperature'] ?? 0.7),
         ]);
 
         if (!$response->successful()) {

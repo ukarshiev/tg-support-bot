@@ -2,6 +2,7 @@
 
 namespace App\Modules\Max\Actions;
 
+use App\Services\Settings\SettingsService;
 use MaxBotApi\Config;
 use MaxBotApi\DTO\UploadResult;
 use MaxBotApi\MaxClient;
@@ -34,7 +35,7 @@ class GetUploadUrlMax
     protected function fetchUploadUrl(string $type): UploadResult
     {
         $client = new MaxClient(new Config(
-            token: config('traffic_source.settings.max.token'),
+            token: (string) app(SettingsService::class)->get('max.token'),
         ));
 
         return $client->uploads->getUploadUrl($type);

@@ -243,7 +243,7 @@ class AiProviderAccessPageTest extends TestCase
 
     // ── save — GigaChat ───────────────────────────────────────────────────────────
 
-    public function test_save_gigachat_persists_all_non_secret_fields_including_path_cert(): void
+    public function test_save_gigachat_persists_all_non_secret_fields(): void
     {
         /** @var \Mockery\MockInterface&SettingsService $mock */
         $mock = Mockery::mock(SettingsService::class);
@@ -252,7 +252,9 @@ class AiProviderAccessPageTest extends TestCase
         $mock->shouldReceive('set')->with('ai.gigachat_base_url', 'https://gigachat.sber.ru')->once();
         $mock->shouldReceive('set')->with('ai.gigachat_model', 'GigaChat-Pro')->once();
         $mock->shouldReceive('set')->with('ai.gigachat_temperature', '0.6')->once();
-        $mock->shouldReceive('set')->with('ai.gigachat_path_cert', '/etc/ssl/certs/giga.pem')->once();
+        // path_cert is NOT persisted from a text field — it is set only when a
+        // certificate file is uploaded (no upload here, so no set call expected).
+        $mock->shouldNotReceive('set')->with('ai.gigachat_path_cert', Mockery::any());
 
         $component = new AiProviderAccessPage();
         $component->mount('gigachat', $mock);
@@ -260,7 +262,6 @@ class AiProviderAccessPageTest extends TestCase
         $component->gigachat_base_url = 'https://gigachat.sber.ru';
         $component->gigachat_model = 'GigaChat-Pro';
         $component->gigachat_temperature = '0.6';
-        $component->gigachat_path_cert = '/etc/ssl/certs/giga.pem';
         $component->gigachat_max_tokens = null;
         $component->save($mock);
 

@@ -7,7 +7,6 @@ use App\Modules\Ai\Services\AiSystemPromptLoader;
 use App\Modules\Telegram\Jobs\SendAiResponseMessageJob;
 use App\Modules\Telegram\Jobs\SendAiTelegramMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -28,7 +27,8 @@ class SendAiResponseMessageJobTest extends TestCase
 
         Queue::fake();
 
-        Config::set('ai.providers.gigachat.client_secret', 'test_secret');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.gigachat_client_secret', 'test_secret');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.gigachat_base_url', 'https://gigachat.devices.sberbank.ru/api/v1');
 
         $loader = Mockery::mock(AiSystemPromptLoader::class);
         $loader->shouldReceive('render')->andReturn('System prompt');
@@ -37,7 +37,7 @@ class SendAiResponseMessageJobTest extends TestCase
         $chatId = time();
         $this->botUser = BotUser::getUserByChatId($chatId, 'telegram');
 
-        $this->baseProviderUrl = config('ai.providers.gigachat.base_url');
+        $this->baseProviderUrl = 'https://gigachat.devices.sberbank.ru/api/v1';
     }
 
     protected function tearDown(): void

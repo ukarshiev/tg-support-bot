@@ -37,7 +37,7 @@ class BanMessageTest extends TestCase
 
         $firstJob = $pushed[0]['job'];
         $this->assertEquals($this->botUser->id, $firstJob->botUserId);
-        $this->assertEquals(config('traffic_source.settings.telegram.group_id'), $firstJob->queryParams->chat_id);
+        $this->assertEquals('-100000000000', $firstJob->queryParams->chat_id);
         $this->assertEquals('sendMessage', $firstJob->queryParams->methodQuery);
         $this->assertEquals(__('messages.ban_bot'), $firstJob->queryParams->text);
     }

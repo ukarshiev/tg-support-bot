@@ -7,6 +7,7 @@ namespace App\Modules\Ai\Services;
 use App\Modules\Ai\Contracts\AiProviderInterface;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class AiAssistantService
@@ -77,7 +78,7 @@ class AiAssistantService
                 userId: $userId,
                 platform: $platform,
                 context: $context,
-                provider: config('ai.default_provider', 'openai'),
+                provider: (string) (app(SettingsService::class)->get('ai.default_provider') ?? 'openai'),
                 forceEscalation: false
             );
 
@@ -118,7 +119,7 @@ class AiAssistantService
      */
     private function getDefaultProvider(string|null $nameProvider = null): AiProviderInterface
     {
-        $defaultProvider = $nameProvider ?? config('ai.default_provider', 'openai');
+        $defaultProvider = $nameProvider ?? (string) (app(SettingsService::class)->get('ai.default_provider') ?? 'openai');
 
         if (isset($this->providers[$defaultProvider]) && $this->providers[$defaultProvider]->isAvailable()) {
             return $this->providers[$defaultProvider];

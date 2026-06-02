@@ -33,6 +33,7 @@ class GeneralSettingsPageTest extends TestCase
         $mock->shouldReceive('get')->with('app.bot_name')->andReturn('Test Bot');
         $mock->shouldReceive('get')->with('app.bot_description')->andReturn('A description');
         $mock->shouldReceive('get')->with('app.manager_interface')->andReturn('admin_panel');
+        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
 
         $component = new GeneralSettingsPage();
         $component->mount($mock);
@@ -49,6 +50,7 @@ class GeneralSettingsPageTest extends TestCase
         $mock->shouldReceive('get')->with('app.bot_name')->andReturn(null);
         $mock->shouldReceive('get')->with('app.bot_description')->andReturn(null);
         $mock->shouldReceive('get')->with('app.manager_interface')->andReturn(null);
+        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
 
         $component = new GeneralSettingsPage();
         $component->mount($mock);
@@ -66,12 +68,15 @@ class GeneralSettingsPageTest extends TestCase
         $mock->shouldReceive('get')->with('app.bot_name')->andReturn('');
         $mock->shouldReceive('get')->with('app.bot_description')->andReturn('');
         $mock->shouldReceive('get')->with('app.manager_interface')->andReturn('telegram_group');
+        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
         // save: reads current interface to detect change
         $mock->shouldReceive('get')->with('app.manager_interface')->andReturn('telegram_group');
+        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
         // save: writes
         $mock->shouldReceive('set')->with('app.bot_name', 'My Bot')->once();
         $mock->shouldReceive('set')->with('app.bot_description', 'Desc')->once();
         $mock->shouldReceive('set')->with('app.manager_interface', 'telegram_group')->once();
+        $mock->shouldReceive('set')->with('telegram.template_topic_name', Mockery::type('string'))->once();
 
         $component = new GeneralSettingsPage();
         $component->mount($mock);
@@ -91,6 +96,7 @@ class GeneralSettingsPageTest extends TestCase
         $mock->shouldReceive('get')->with('app.bot_name')->andReturn('');
         $mock->shouldReceive('get')->with('app.bot_description')->andReturn('');
         $mock->shouldReceive('get')->with('app.manager_interface')->andReturn('telegram_group');
+        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
         $mock->shouldReceive('set')->with(Mockery::any(), Mockery::any());
 
         $component = new GeneralSettingsPage();
@@ -158,6 +164,7 @@ class GeneralSettingsPageTest extends TestCase
         $mock->shouldReceive('get')->with('app.bot_name')->andReturn('Stored');
         $mock->shouldReceive('get')->with('app.bot_description')->andReturn('Stored desc');
         $mock->shouldReceive('get')->with('app.manager_interface')->andReturn('admin_panel');
+        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
 
         $component = new GeneralSettingsPage();
         $component->mount($mock);
@@ -184,6 +191,7 @@ class GeneralSettingsPageTest extends TestCase
         $mock->shouldReceive('get')->with('app.bot_name')->andReturn(null);
         $mock->shouldReceive('get')->with('app.bot_description')->andReturn(null);
         $mock->shouldReceive('get')->with('app.manager_interface')->andReturn(null);
+        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
 
         $component = new GeneralSettingsPage();
         $component->mount($mock);

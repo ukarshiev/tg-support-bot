@@ -9,6 +9,7 @@ use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiBotApi;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -74,7 +75,7 @@ class SendAiReplyJob implements ShouldQueue
                 message: $this->userMessage,
                 userId: $this->botUserId,
                 platform: $botUser->platform ?? 'telegram',
-                provider: config('ai.default_provider'),
+                provider: (string) app(SettingsService::class)->get('ai.default_provider'),
                 forceEscalation: false
             );
 
@@ -86,7 +87,7 @@ class SendAiReplyJob implements ShouldQueue
             $replyText = $aiResponse->response;
 
             $supergroupResponse = $aiBotApi->send('sendMessage', [
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_thread_id' => $botUser->topic_id,
                 'text' => $replyText,
                 'parse_mode' => 'html',

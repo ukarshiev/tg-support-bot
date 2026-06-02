@@ -10,32 +10,6 @@
     <div class="mb-6 rounded-xl border border-border-light bg-bg-primary p-6 lg:px-7">
         <h2 class="mb-4 text-base font-semibold text-text-primary">Пригласить оператора</h2>
 
-        {{-- Success notice — operator created; reveal the generated password once --}}
-        @if ($inviteSuccess)
-            <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-                <div class="flex items-start gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-4 w-4 shrink-0" style="color:#059669" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <div class="min-w-0 flex-1">
-                        <span class="text-sm text-green-800">{{ $inviteSuccess }}</span>
-                        @if ($invitedPassword)
-                            <div class="mt-2 flex flex-wrap items-center gap-2">
-                                <code class="select-all rounded bg-green-100 px-2 py-1 font-mono text-sm text-green-900">{{ $invitedPassword }}</code>
-                                <button type="button"
-                                        x-data
-                                        @click="navigator.clipboard && navigator.clipboard.writeText('{{ $invitedPassword }}')"
-                                        class="text-xs font-medium text-green-700 underline transition hover:text-green-900">Копировать</button>
-                                <button type="button"
-                                        wire:click="dismissInvitedPassword"
-                                        class="text-xs font-medium text-green-600 transition hover:text-green-800">Скрыть</button>
-                            </div>
-                        @endif
-                    </div>
-                </div>
-            </div>
-        @endif
-
         {{-- Action-level error --}}
         @if ($inviteError)
             <div class="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
@@ -99,6 +73,32 @@
                 <span wire:loading wire:target="invite">Отправляем...</span>
             </x-admin.button-primary>
         </div>
+
+        {{-- Success notice — operator created; reveal the generated password once --}}
+        @if ($inviteSuccess)
+            <div class="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                <div class="flex items-start gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-4 w-4 shrink-0" style="color:#059669" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <div class="min-w-0 flex-1">
+                        <span class="text-sm text-green-800">{{ $inviteSuccess }}</span>
+                        @if ($invitedPassword)
+                            <div class="mt-2 flex flex-wrap items-center gap-2">
+                                <code class="select-all rounded bg-green-100 px-2 py-1 font-mono text-sm text-green-900">{{ $invitedPassword }}</code>
+                                <button type="button"
+                                        x-data
+                                        @click="navigator.clipboard && navigator.clipboard.writeText('{{ $invitedPassword }}')"
+                                        class="text-xs font-medium text-green-700 underline transition hover:text-green-900">Копировать</button>
+                                <button type="button"
+                                        wire:click="dismissInvitedPassword"
+                                        class="text-xs font-medium text-green-600 transition hover:text-green-800">Скрыть</button>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
     </div>
 
     {{-- ── Members table ────────────────────────────────────────────────────────── --}}

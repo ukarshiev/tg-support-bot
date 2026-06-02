@@ -231,7 +231,7 @@ class TgMessageServiceTest extends TestCase
     {
         $payload = $this->basicPayload;
         $payload['message']['chat']['type'] = 'supergroup';
-        $payload['message']['chat']['id'] = config('traffic_source.settings.telegram.group_id');
+        $payload['message']['chat']['id'] = '-100000000000';
         $payload['message']['text'] = "Выберите действие\n[[Открыть сайт|url:https://example.com]]\n[[Назад|callback:back]]";
 
         $dto = TelegramUpdateDtoMock::getDto($payload);
@@ -253,7 +253,7 @@ class TgMessageServiceTest extends TestCase
     {
         $payload = $this->basicPayload;
         $payload['message']['chat']['type'] = 'supergroup';
-        $payload['message']['chat']['id'] = config('traffic_source.settings.telegram.group_id');
+        $payload['message']['chat']['id'] = '-100000000000';
         $payload['message']['text'] = "Поделитесь контактом\n[[Отправить номер|phone]]";
 
         $dto = TelegramUpdateDtoMock::getDto($payload);
@@ -292,7 +292,7 @@ class TgMessageServiceTest extends TestCase
     {
         $payload = $this->basicPayload;
         $payload['message']['chat']['type'] = 'supergroup';
-        $payload['message']['chat']['id'] = config('traffic_source.settings.telegram.group_id');
+        $payload['message']['chat']['id'] = '-100000000000';
         $payload['message']['photo'] = [
             [
                 'file_id' => 'test_file_id',
@@ -335,7 +335,7 @@ class TgMessageServiceTest extends TestCase
         // Создаем payload для ответа из группы с reply_to_message
         $payload = $this->basicPayload;
         $payload['message']['chat']['type'] = 'supergroup';
-        $payload['message']['chat']['id'] = config('traffic_source.settings.telegram.group_id');
+        $payload['message']['chat']['id'] = '-100000000000';
         $payload['message']['text'] = 'Ответ на ваше сообщение';
         $payload['message']['reply_to_message'] = [
             'message_id' => $groupMessageId,
@@ -345,7 +345,7 @@ class TgMessageServiceTest extends TestCase
                 'first_name' => 'User',
             ],
             'chat' => [
-                'id' => config('traffic_source.settings.telegram.group_id'),
+                'id' => '-100000000000',
                 'type' => 'supergroup',
             ],
             'text' => 'Оригинальное сообщение',
@@ -369,7 +369,7 @@ class TgMessageServiceTest extends TestCase
         // Создаем payload для ответа из группы, но без записи в базе
         $payload = $this->basicPayload;
         $payload['message']['chat']['type'] = 'supergroup';
-        $payload['message']['chat']['id'] = config('traffic_source.settings.telegram.group_id');
+        $payload['message']['chat']['id'] = '-100000000000';
         $payload['message']['text'] = 'Ответ на несуществующее сообщение';
         $payload['message']['reply_to_message'] = [
             'message_id' => 99999,
@@ -379,7 +379,7 @@ class TgMessageServiceTest extends TestCase
                 'first_name' => 'User',
             ],
             'chat' => [
-                'id' => config('traffic_source.settings.telegram.group_id'),
+                'id' => '-100000000000',
                 'type' => 'supergroup',
             ],
             'text' => 'Несуществующее сообщение',

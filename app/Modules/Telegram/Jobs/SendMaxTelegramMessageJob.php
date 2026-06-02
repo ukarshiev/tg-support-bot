@@ -9,6 +9,7 @@ use App\Modules\Max\DTOs\MaxUpdateDto;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -58,7 +59,7 @@ class SendMaxTelegramMessageJob extends AbstractSendMessageJob
                 $response = $this->telegramMethods->sendQueryTelegram(
                     'editForumTopic',
                     [
-                        'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                        'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                         'message_thread_id' => $botUser->topic_id,
                         'icon_custom_emoji_id' => __('icons.incoming'),
                     ]
@@ -76,7 +77,7 @@ class SendMaxTelegramMessageJob extends AbstractSendMessageJob
                         $this->telegramMethods->sendQueryTelegram(
                             'reopenForumTopic',
                             [
-                                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                                 'message_thread_id' => $botUser->topic_id,
                             ]
                         );
