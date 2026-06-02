@@ -201,22 +201,6 @@
                             />
                         </x-admin.form-field>
 
-                        {{-- ID AI-бота --}}
-                        <x-admin.form-field
-                            label="ID AI-бота"
-                            for="telegram_ai_id"
-                            hint="Числовой Telegram ID AI-бота"
-                            :error="$formErrors['telegram_ai_id'] ?? null"
-                        >
-                            <input
-                                id="telegram_ai_id"
-                                type="text"
-                                wire:model="telegram_ai_id"
-                                placeholder="987654321"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
-                            />
-                        </x-admin.form-field>
-
                         {{-- Username AI-бота --}}
                         <x-admin.form-field
                             label="Username AI-бота"

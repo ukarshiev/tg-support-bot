@@ -63,9 +63,6 @@ class IntegrationChannelPage extends Component
     /** @var string|null AI-bot webhook secret (pre-filled from settings, like the main bot) */
     public ?string $telegram_ai_secret = null;
 
-    /** @var string|null AI-bot numeric ID */
-    public ?string $telegram_ai_id = null;
-
     /** @var string|null AI-bot @username */
     public ?string $telegram_ai_username = null;
 
@@ -351,7 +348,6 @@ class IntegrationChannelPage extends Component
         $this->telegram_secret_key = (string) ($settings->get('telegram.secret_key') ?? '');
 
         // AI-bot fields — pre-filled from settings, same as the main bot / VK / MAX fields.
-        $this->telegram_ai_id = (string) ($settings->get('telegram_ai.id') ?? '');
         $this->telegram_ai_username = (string) ($settings->get('telegram_ai.username') ?? '');
         $this->telegram_ai_token = (string) ($settings->get('telegram_ai.token') ?? '');
         $this->telegram_ai_secret = (string) ($settings->get('telegram_ai.secret') ?? '');
@@ -399,7 +395,6 @@ class IntegrationChannelPage extends Component
             return;
         }
 
-        $settings->set('telegram_ai.id', (int) $this->telegram_ai_id);
         $settings->set('telegram_ai.username', $this->telegram_ai_username ?? '');
 
         // Save secrets only when non-empty (do not overwrite existing secrets with blank)

@@ -65,7 +65,6 @@ trait SeedsSettings
             'telegram.template_topic_name' => '{first_name} {last_name} {platform}',
             'telegram_ai.token' => 'ai-bot-token',
             'telegram_ai.secret' => 'ai-bot-secret',
-            'telegram_ai.id' => 0,
             'telegram_ai.username' => '@test_ai_bot',
             'vk.token' => 'vk-test-token',
             'vk.secret_key' => env('TEST_VK_SECRET_CODE', 'test-vk-secret'),

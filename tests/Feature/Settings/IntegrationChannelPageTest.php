@@ -121,7 +121,6 @@ class IntegrationChannelPageTest extends TestCase
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
             ->assertSee('Токен AI-бота')
             ->assertSee('Секретный ключ Webhook')
-            ->assertSee('ID AI-бота')
             ->assertSee('Username AI-бота')
             ->assertSee('Сохранить');
     }
@@ -246,7 +245,6 @@ class IntegrationChannelPageTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
-            ->set('telegram_ai_id', '987654321')
             ->set('telegram_ai_username', '@my_ai_bot')
             ->call('save')
             ->assertSet('saved', true)

@@ -71,11 +71,6 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => true,
         ],
-        'telegram_ai.id' => [
-            'type' => 'int',
-            'config' => null,
-            'is_secret' => false,
-        ],
         'telegram_ai.username' => [
             'type' => 'string',
             'config' => null,

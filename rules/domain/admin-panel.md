@@ -239,7 +239,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 | Channel | Fields |
 |---|---|
 | Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id` |
-| Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.id`(int), `telegram_ai.username`(string) |
+| Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.username`(string) |
 | VK | `vk.token`(secret), `vk.secret_key`(secret), `vk.confirm_code`(secret) |
 | MAX | `max.token`(secret), `max.secret_key`(secret) |
 
