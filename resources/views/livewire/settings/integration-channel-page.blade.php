@@ -165,22 +165,6 @@
                             />
                         </x-admin.form-field>
 
-                        {{-- Шаблон названия топика --}}
-                        <x-admin.form-field
-                            label="Шаблон названия топика"
-                            for="telegram_template_topic_name"
-                            hint="Например: {first_name} {last_name} {platform}"
-                            :error="$formErrors['telegram_template_topic_name'] ?? null"
-                        >
-                            <input
-                                id="telegram_template_topic_name"
-                                type="text"
-                                wire:model="telegram_template_topic_name"
-                                placeholder="{first_name} {last_name} {platform}"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
-                            />
-                        </x-admin.form-field>
-
                     </div>
 
                 @elseif ($channel === 'telegram_ai')

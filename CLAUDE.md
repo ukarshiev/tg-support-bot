@@ -301,13 +301,13 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
 - Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
 - In-scope keys with `config => null`: all `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`, all `ai.*` credentials and behaviour settings. Infrastructure keys (`app.manager_interface`) retain their `config()` fallback.
-- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, and `app.manager_interface`. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
+- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, `telegram.template_topic_name` (Telegram topic-name template) and `app.manager_interface`. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
 
 ### Channel Integrations (Settings)
 
 - The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, Telegram AI bot, VK, MAX channel cards with connection status computed by `ChannelStatusService`
 - Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens, keys, and identifiers for each platform. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`
-- Telegram channel page (`channel=telegram`) covers: `telegram.group_id`, `telegram.token`, `telegram.secret_key`, `telegram.template_topic_name`. The `telegram.bot_id` setting was removed (unused at runtime)
+- Telegram channel page (`channel=telegram`) covers: `telegram.group_id`, `telegram.token`, `telegram.secret_key`. The `telegram.template_topic_name` field moved to the General settings screen; the `telegram.bot_id` setting was removed (unused at runtime)
 - Telegram AI bot page (`channel=telegram_ai`) covers: `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.id`, `telegram_ai.username`. Action is save-only — webhook registration uses `php artisan ai-bot:set-webhook` (shown in the instruction panel)
 - Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`
 - All secret fields (tokens, keys) are rendered as `type="password"` inputs; blank submission does not overwrite an existing stored secret

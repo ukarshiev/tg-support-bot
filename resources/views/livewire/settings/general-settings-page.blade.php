@@ -68,6 +68,23 @@
                     ></textarea>
                 </x-admin.form-field>
 
+                {{-- Topic name template --}}
+                <x-admin.form-field
+                    label="Шаблон названия топика"
+                    for="template_topic_name"
+                    hint="Шаблон имени форум-темы в супергруппе Telegram для нового обращения"
+                    :error="$formErrors['template_topic_name'] ?? null"
+                >
+                    <input
+                        id="template_topic_name"
+                        type="text"
+                        wire:model="template_topic_name"
+                        maxlength="255"
+                        placeholder="Обращение"
+                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 @if (!empty($formErrors['template_topic_name'])) border-red-400 @endif"
+                    />
+                </x-admin.form-field>
+
                 {{-- Manager interface --}}
                 <x-admin.form-field
                     label="Интерфейс менеджера"

@@ -34,7 +34,7 @@ The Admin Panel domain provides an alternative manager interface for the support
 | `SendReplyAction` | Static action that dispatches the correct queue job (Telegram, VK, or Webhook) based on `botUser->platform` |
 | Livewire Polling | `ConversationPage` refreshes every 5 seconds via `getPollingInterval(): '5s'` |
 | `MANAGER_INTERFACE` | Config key. Values: `telegram_group` (default) or `admin_panel`. Readable from `.env` OR from the `settings` DB table via `SettingsService` (DB row overrides env) |
-| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits bot name, description, and `MANAGER_INTERFACE`. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService`. Shows restart notice when `MANAGER_INTERFACE` changes |
+| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits bot name, description, the Telegram topic-name template (`telegram.template_topic_name`), and `MANAGER_INTERFACE`. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService`. Shows restart notice when `MANAGER_INTERFACE` changes |
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
 | `admin-settings` layout | Full-page layout at `resources/views/layouts/admin-settings.blade.php` — dark sidebar (280px) + main content area. Used by all custom Livewire settings screens |
 | `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX channel cards with connection status badges. Reads statuses via `ChannelStatusService`. «Виджет для сайта» shown as disabled «Скоро» placeholder |
@@ -74,7 +74,7 @@ _Enforced in:_ `AdminPanelInterface::createConversation()` — empty body
 **BR-008** — The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) requires an authenticated user. Unauthenticated visitors are redirected to `/admin/login` by Filament's `Authenticate` middleware applied in `AdminServiceProvider::boot()`. The route does not add a separate admin-role guard at the middleware layer — access is open to any authenticated user; role enforcement can be added to `mount()` if needed in future.
 _Enforced in:_ `AdminServiceProvider::boot()` — `Route::middleware(['web', Authenticate::class])->prefix('admin/settings')...`
 
-**BR-009** — Settings editable from the General Settings screen (`app.bot_name`, `app.bot_description`, `app.manager_interface`) are persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults.
+**BR-009** — Settings editable from the General Settings screen (`app.bot_name`, `app.bot_description`, `telegram.template_topic_name`, `app.manager_interface`) are persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults. (`telegram.template_topic_name` lives in General settings, not the Telegram integration screen.)
 _Enforced in:_ `GeneralSettingsPage::save()` — calls `SettingsService::set()` for each field; `GeneralSettingsPage::mount()` — loads via `SettingsService::get()`
 
 **BR-010** — Changing `MANAGER_INTERFACE` from the General Settings screen saves the new value to the DB, but the `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` is resolved from `config('app.manager_interface')` at container boot time. The change takes full effect only after `docker compose restart app`. Upon save, the screen must display a persistent yellow notice: "Изменение применится после перезапуска контейнера: `docker compose restart app`".
@@ -200,6 +200,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 |---|---|---|
 | Название бота | `app.bot_name` | nullable, string, max:255 |
 | Описание | `app.bot_description` | nullable, string, max:1000 |
+| Шаблон названия топика | `telegram.template_topic_name` | nullable, string, max:255 |
 | Интерфейс менеджера | `app.manager_interface` | required, in:telegram_group,admin_panel |
 
 **Component property naming**: uses `$formErrors` (not `$errors`) to avoid shadowing Blade's global `$errors` bag.
@@ -237,7 +238,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 **Form fields**:
 | Channel | Fields |
 |---|---|
-| Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id`, `telegram.template_topic_name` |
+| Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id` |
 | Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.id`(int), `telegram_ai.username`(string) |
 | VK | `vk.token`(secret), `vk.secret_key`(secret), `vk.confirm_code`(secret) |
 | MAX | `max.token`(secret), `max.secret_key`(secret) |
