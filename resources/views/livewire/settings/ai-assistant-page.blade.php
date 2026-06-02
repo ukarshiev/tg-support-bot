@@ -29,16 +29,6 @@
         </div>
     @endif
 
-    {{-- Success banner --}}
-    @if ($saved)
-        <div class="mb-5 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            Настройки сохранены.
-        </div>
-    @endif
-
     <form wire:submit="save" novalidate class="space-y-6">
 
         {{-- ── Master toggle ───────────────────────────────────────────────── --}}
@@ -296,6 +286,16 @@
                 <span wire:loading wire:target="save">Сохранение...</span>
             </x-admin.button-primary>
         </div>
+
+        {{-- Success banner --}}
+        @if ($saved)
+            <div class="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Настройки сохранены.
+            </div>
+        @endif
 
     </form>
 

@@ -30,26 +30,6 @@
         </div>
     </div>
 
-    {{-- ── Notices ───────────────────────────────────────────────────────────── --}}
-    @if ($webhookMessage)
-        <div class="mx-8 mt-6 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm
-            @if ($webhookSuccess) border-green-200 bg-green-50 text-green-800
-            @else border-red-200 bg-red-50 text-red-800 @endif">
-            @if ($webhookSuccess)
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
-                     fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-            @else
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500"
-                     fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M6.938 19h10.124A2 2 0 0019 16.27L13.938 7A2 2 0 0010.062 7L5 16.27A2 2 0 006.938 19z" />
-                </svg>
-            @endif
-            {{ $webhookMessage }}
-        </div>
-    @endif
-
     {{-- ── Two-column body ──────────────────────────────────────────────────── --}}
     <div class="grid grid-cols-1 gap-7 p-8 lg:grid-cols-[1fr_320px]">
 
@@ -369,6 +349,26 @@
                         </x-admin.button-primary>
                     @endif
                 </div>
+
+                {{-- Webhook result notice --}}
+                @if ($webhookMessage)
+                    <div class="mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm
+                        @if ($webhookSuccess) border-green-200 bg-green-50 text-green-800
+                        @else border-red-200 bg-red-50 text-red-800 @endif">
+                        @if ($webhookSuccess)
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
+                                 fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                        @else
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500"
+                                 fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M6.938 19h10.124A2 2 0 0019 16.27L13.938 7A2 2 0 0010.062 7L5 16.27A2 2 0 006.938 19z" />
+                            </svg>
+                        @endif
+                        {{ $webhookMessage }}
+                    </div>
+                @endif
 
             </form>
         </div>
