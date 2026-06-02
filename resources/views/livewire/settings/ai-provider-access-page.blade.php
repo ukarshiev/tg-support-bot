@@ -387,12 +387,13 @@
                                 class="block w-full cursor-pointer rounded-lg border border-border-light bg-bg-input text-sm text-text-secondary outline-none file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-white hover:file:opacity-90"
                             />
                             <div wire:loading wire:target="gigachat_cert_file" class="mt-1.5 text-xs text-text-secondary">Загрузка файла…</div>
-                            @if (!empty($gigachat_path_cert))
-                                <p class="mt-1.5 text-xs text-text-secondary">
-                                    Текущий сертификат: <code class="rounded bg-bg-input px-1 font-mono text-[11px]">storage/{{ $gigachat_path_cert }}</code>
+                            @if ($gigachat_cert_uploaded)
+                                <p class="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-green-700">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Сертификат уже загружен. Загрузите новый файл, чтобы заменить его.
                                 </p>
-                            @else
-                                <p class="mt-1.5 text-xs text-text-secondary">Сертификат ещё не загружен.</p>
                             @endif
                         </x-admin.form-field>
 

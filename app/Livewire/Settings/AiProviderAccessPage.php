@@ -100,6 +100,9 @@ class AiProviderAccessPage extends Component
      */
     public $gigachat_cert_file = null;
 
+    /** @var bool Whether a GigaChat certificate file is already stored on disk */
+    public bool $gigachat_cert_uploaded = false;
+
     /** Fixed on-disk name + storage-relative path for the GigaChat certificate. */
     private const GIGACHAT_CERT_NAME = 'russian_trusted_root_ca_pem.crt';
 
@@ -189,6 +192,7 @@ class AiProviderAccessPage extends Component
         $this->gigachat_max_tokens = $rawGigaMax !== null ? (int) $rawGigaMax : null;
         $this->gigachat_temperature = (string) ($settings->get('ai.gigachat_temperature') ?? '');
         $this->gigachat_path_cert = (string) ($settings->get('ai.gigachat_path_cert') ?? '');
+        $this->gigachat_cert_uploaded = File::exists(storage_path(self::GIGACHAT_CERT_RELATIVE));
 
         // Secret fields: intentionally left null — never pre-filled
         $this->openai_api_key = null;
@@ -306,6 +310,7 @@ class AiProviderAccessPage extends Component
 
             $settings->set('ai.gigachat_path_cert', self::GIGACHAT_CERT_RELATIVE);
             $this->gigachat_path_cert = self::GIGACHAT_CERT_RELATIVE;
+            $this->gigachat_cert_uploaded = true;
             $this->gigachat_cert_file = null;
         }
 
