@@ -4,6 +4,7 @@ namespace App\Modules\Ai\Services;
 
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class ShouldAiReply
@@ -122,7 +123,7 @@ class ShouldAiReply
      */
     public function isAiEnabled(): bool
     {
-        return (bool) config('ai.enabled', false);
+        return (bool) app(SettingsService::class)->get('ai.enabled');
     }
 
     /**

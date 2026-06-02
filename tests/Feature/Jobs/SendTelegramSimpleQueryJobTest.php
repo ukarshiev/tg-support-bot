@@ -74,7 +74,7 @@ class SendTelegramSimpleQueryJobTest extends TestCase
 
         $job = new SendTelegramSimpleQueryJob(TGTextMessageDto::from([
             'methodQuery' => 'editForumTopic',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => '-100000000000',
             'message_thread_id' => $this->botUser->topic_id,
             'icon_custom_emoji_id' => __('icons.incoming'),
         ]));
@@ -87,7 +87,7 @@ class SendTelegramSimpleQueryJobTest extends TestCase
             }
             $data = $request->data();
 
-            return ($data['chat_id'] ?? null) == config('traffic_source.settings.telegram.group_id')
+            return ($data['chat_id'] ?? null) == '-100000000000'
                 && ($data['message_thread_id'] ?? null) == $this->botUser->topic_id
                 && ($data['icon_custom_emoji_id'] ?? null) == __('icons.incoming');
         });

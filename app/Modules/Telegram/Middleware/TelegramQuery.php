@@ -2,6 +2,7 @@
 
 namespace App\Modules\Telegram\Middleware;
 
+use App\Services\Settings\SettingsService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,8 @@ class TelegramQuery
                 throw new Exception('Secret-Token is invalid!');
             }
 
-            if ($receivedToken !== config('traffic_source.settings.telegram.secret_key')) {
+            $secretKey = (string) app(SettingsService::class)->get('telegram.secret_key');
+            if ($receivedToken !== $secretKey) {
                 throw new Exception('Secret-Token is invalid!');
             }
 

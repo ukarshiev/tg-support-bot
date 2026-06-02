@@ -41,6 +41,26 @@ class IntegrationChannelPage extends Component
     /** @var string|null */
     public ?string $telegram_secret_key = null;
 
+    /** @var string|null Numeric bot ID (non-secret) */
+    public ?string $telegram_bot_id = null;
+
+    /** @var string|null Topic name template */
+    public ?string $telegram_template_topic_name = null;
+
+    // ── Telegram AI-bot fields ────────────────────────────────────────────────
+
+    /** @var string|null AI-bot token (secret — never pre-filled) */
+    public ?string $telegram_ai_token = null;
+
+    /** @var string|null AI-bot webhook secret (secret — never pre-filled) */
+    public ?string $telegram_ai_secret = null;
+
+    /** @var string|null AI-bot numeric ID */
+    public ?string $telegram_ai_id = null;
+
+    /** @var string|null AI-bot @username */
+    public ?string $telegram_ai_username = null;
+
     // ── VK fields ─────────────────────────────────────────────────────────────
 
     /** @var string|null */
@@ -195,6 +215,14 @@ class IntegrationChannelPage extends Component
         $this->telegram_group_id = (string) ($settings->get('telegram.group_id') ?? '');
         $this->telegram_token = (string) ($settings->get('telegram.token') ?? '');
         $this->telegram_secret_key = (string) ($settings->get('telegram.secret_key') ?? '');
+        $this->telegram_bot_id = (string) ($settings->get('telegram.bot_id') ?? '');
+        $this->telegram_template_topic_name = (string) ($settings->get('telegram.template_topic_name') ?? '');
+
+        // AI-bot: non-secret fields pre-filled; secret fields intentionally null (never pre-filled)
+        $this->telegram_ai_id = (string) ($settings->get('telegram_ai.id') ?? '');
+        $this->telegram_ai_username = (string) ($settings->get('telegram_ai.username') ?? '');
+        $this->telegram_ai_token = null;
+        $this->telegram_ai_secret = null;
 
         $this->vk_token = (string) ($settings->get('vk.token') ?? '');
         $this->vk_secret_key = (string) ($settings->get('vk.secret_key') ?? '');
@@ -218,13 +246,26 @@ class IntegrationChannelPage extends Component
         }
 
         $settings->set('telegram.group_id', $this->telegram_group_id ?? '');
+        $settings->set('telegram.bot_id', (int) $this->telegram_bot_id);
+        $settings->set('telegram.template_topic_name', $this->telegram_template_topic_name ?? '');
 
         // Save each secret only when non-empty (do not overwrite existing secrets with blank)
-        if ($this->telegram_token !== '') {
+        if ($this->telegram_token !== '' && $this->telegram_token !== null) {
             $settings->set('telegram.token', $this->telegram_token);
         }
-        if ($this->telegram_secret_key !== '') {
+        if ($this->telegram_secret_key !== '' && $this->telegram_secret_key !== null) {
             $settings->set('telegram.secret_key', $this->telegram_secret_key);
+        }
+
+        // AI-bot fields
+        $settings->set('telegram_ai.id', (int) $this->telegram_ai_id);
+        $settings->set('telegram_ai.username', $this->telegram_ai_username ?? '');
+
+        if ($this->telegram_ai_token !== '' && $this->telegram_ai_token !== null) {
+            $settings->set('telegram_ai.token', $this->telegram_ai_token);
+        }
+        if ($this->telegram_ai_secret !== '' && $this->telegram_ai_secret !== null) {
+            $settings->set('telegram_ai.secret', $this->telegram_ai_secret);
         }
 
         $this->saved = true;

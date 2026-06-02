@@ -2,6 +2,7 @@
 
 namespace App\Modules\Max\Middleware;
 
+use App\Services\Settings\SettingsService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +18,7 @@ class MaxQuery
     public function handle(Request $request, Closure $next): Response
     {
         try {
-            $secretCode = config('traffic_source.settings.max.secret_key');
+            $secretCode = (string) app(SettingsService::class)->get('max.secret_key');
             if ($secretCode !== $request->header('X-Max-Bot-Api-Secret')) {
                 throw new \RuntimeException('Secret-Key is invalid!');
             }

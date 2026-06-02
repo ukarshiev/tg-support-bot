@@ -78,13 +78,11 @@ class IntegrationChannelPageTest extends TestCase
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
-        // Ensure no config fallback provides values
+        // Remove settings seeded by TestCase::setUp() so the channel appears disconnected
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->forget('telegram.token');
+        $settings->forget('telegram.secret_key');
         \Illuminate\Support\Facades\Cache::flush();
-        config([
-            'traffic_source.settings.telegram.token' => '',
-            'traffic_source.settings.telegram.secret_key' => '',
-            'traffic_source.settings.telegram.group_id' => '',
-        ]);
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
             ->assertSet('channelConnected', false);

@@ -149,6 +149,120 @@
 
                 <div class="h-px bg-border-light"></div>
 
+                {{-- Max context tokens --}}
+                <x-admin.form-field
+                    label="Макс. токенов контекста"
+                    for="max_context_tokens"
+                    hint="Ограничение размера окна истории диалога (по умолч. 3000)"
+                    :error="$formErrors['max_context_tokens'] ?? null"
+                >
+                    <input
+                        id="max_context_tokens"
+                        type="number"
+                        min="1"
+                        wire:model="max_context_tokens"
+                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                            @if (!empty($formErrors['max_context_tokens'])) border-red-400 @endif"
+                    />
+                </x-admin.form-field>
+
+                <div class="h-px bg-border-light"></div>
+
+                {{-- Confidence threshold --}}
+                <x-admin.form-field
+                    label="Порог уверенности (0.0–1.0)"
+                    for="confidence_threshold"
+                    hint="Ответы ниже этого порога передаются на эскалацию менеджеру (по умолч. 0.8)"
+                    :error="$formErrors['confidence_threshold'] ?? null"
+                >
+                    <input
+                        id="confidence_threshold"
+                        type="text"
+                        wire:model="confidence_threshold"
+                        placeholder="0.8"
+                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                    />
+                </x-admin.form-field>
+
+                <div class="h-px bg-border-light"></div>
+
+                {{-- Rate limits --}}
+                <div class="grid grid-cols-2 gap-4">
+                    <x-admin.form-field
+                        label="Запросов в минуту"
+                        for="rate_limit_per_minute"
+                        hint="Лимит обращений к AI-провайдеру в минуту"
+                        :error="$formErrors['rate_limit_per_minute'] ?? null"
+                    >
+                        <input
+                            id="rate_limit_per_minute"
+                            type="number"
+                            min="1"
+                            wire:model="rate_limit_per_minute"
+                            class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                                @if (!empty($formErrors['rate_limit_per_minute'])) border-red-400 @endif"
+                        />
+                    </x-admin.form-field>
+
+                    <x-admin.form-field
+                        label="Запросов в час"
+                        for="rate_limit_per_hour"
+                        hint="Лимит обращений к AI-провайдеру в час"
+                        :error="$formErrors['rate_limit_per_hour'] ?? null"
+                    >
+                        <input
+                            id="rate_limit_per_hour"
+                            type="number"
+                            min="1"
+                            wire:model="rate_limit_per_hour"
+                            class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                                @if (!empty($formErrors['rate_limit_per_hour'])) border-red-400 @endif"
+                        />
+                    </x-admin.form-field>
+                </div>
+
+                <div class="h-px bg-border-light"></div>
+
+                {{-- Disable timeout --}}
+                <x-admin.form-field
+                    label="Таймаут отключения (сек)"
+                    for="disable_timeout"
+                    hint="Максимальное время ожидания ответа от провайдера в секундах"
+                    :error="$formErrors['disable_timeout'] ?? null"
+                >
+                    <input
+                        id="disable_timeout"
+                        type="text"
+                        wire:model="disable_timeout"
+                        placeholder="7200"
+                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                    />
+                </x-admin.form-field>
+
+                <div class="h-px bg-border-light"></div>
+
+                {{-- Auto escalation --}}
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-text-primary">Автоэскалация</p>
+                        <p class="mt-0.5 text-xs text-text-secondary">Автоматически эскалировать обращение менеджеру при низкой уверенности ИИ</p>
+                    </div>
+                    <x-admin.toggle name="auto_escalation" id="auto_escalation" wire:model="auto_escalation" />
+                </div>
+
+                <div class="h-px bg-border-light"></div>
+
+                {{-- Enable logging --}}
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-text-primary">Логирование ИИ</p>
+                        <p class="mt-0.5 text-xs text-text-secondary">Записывать запросы и ответы ИИ в лог</p>
+                    </div>
+                    <x-admin.toggle name="enable_logging" id="enable_logging" wire:model="enable_logging" />
+                </div>
+
+                <div class="h-px bg-border-light"></div>
+
                 {{-- System prompt --}}
                 <div x-data="{ count: $refs.prompt ? $refs.prompt.value.length : {{ mb_strlen($system_prompt) }} }">
                     <div class="mb-2 flex items-center justify-between">

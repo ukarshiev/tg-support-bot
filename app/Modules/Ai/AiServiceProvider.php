@@ -7,6 +7,7 @@ use App\Modules\Ai\Services\AiSystemPromptLoader;
 use App\Modules\Ai\Services\DeepSeekProvider;
 use App\Modules\Ai\Services\GigaChatProvider;
 use App\Modules\Ai\Services\OpenAiProvider;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,7 +23,9 @@ class AiServiceProvider extends ServiceProvider
         $this->app->singleton(AiSystemPromptLoader::class);
 
         $this->app->bind(AiProviderInterface::class, function () {
-            return match (config('ai.default_provider')) {
+            $provider = (string) ($this->app->make(SettingsService::class)->get('ai.default_provider') ?? 'openai');
+
+            return match ($provider) {
                 'openai' => $this->app->make(OpenAiProvider::class),
                 'deepseek' => $this->app->make(DeepSeekProvider::class),
                 'gigachat' => $this->app->make(GigaChatProvider::class),

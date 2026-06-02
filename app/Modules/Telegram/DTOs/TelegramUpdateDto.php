@@ -3,6 +3,7 @@
 namespace App\Modules\Telegram\DTOs;
 
 use App\Helpers\TelegramHelper;
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
 use Spatie\LaravelData\Data;
 
@@ -75,8 +76,9 @@ class TelegramUpdateDto extends Data
             }
 
             $textMessage = $data[$type]['text'] ?? '';
-            if (!empty($textMessage) && !empty(config('traffic_source.settings.telegram_ai.username'))) {
-                $aiTechMessage = str_contains($data[$type]['text'], config('traffic_source.settings.telegram_ai.username'));
+            $aiUsername = (string) app(SettingsService::class)->get('telegram_ai.username');
+            if (!empty($textMessage) && !empty($aiUsername)) {
+                $aiTechMessage = str_contains($data[$type]['text'], $aiUsername);
             } else {
                 $aiTechMessage = false;
             }

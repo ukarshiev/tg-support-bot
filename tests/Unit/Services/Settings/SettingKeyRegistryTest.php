@@ -41,16 +41,25 @@ class SettingKeyRegistryTest extends TestCase
         $this->assertSame('string', SettingKeyRegistry::meta('max.token')['type']);
     }
 
-    public function test_meta_points_each_key_to_its_config_fallback_path(): void
+    public function test_in_scope_keys_have_null_config_fallback(): void
     {
-        $this->assertSame(
-            'traffic_source.settings.telegram.token',
-            SettingKeyRegistry::meta('telegram.token')['config']
-        );
-        $this->assertSame(
-            'ai.providers.openai.api_key',
-            SettingKeyRegistry::meta('ai.openai_api_key')['config']
-        );
+        // All channel/AI credentials have config=>null (no env fallback — DB only)
+        $this->assertNull(SettingKeyRegistry::meta('telegram.token')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('telegram.secret_key')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('telegram.group_id')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('telegram_ai.token')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('telegram_ai.secret')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('vk.token')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('vk.secret_key')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('max.token')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('ai.openai_api_key')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('ai.enabled')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('ai.default_provider')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('ai.confidence_threshold')['config']);
+        $this->assertNull(SettingKeyRegistry::meta('ai.rate_limit.requests_per_minute')['config']);
+
+        // Infrastructure keys that still have a config fallback
+        $this->assertSame('app.manager_interface', SettingKeyRegistry::meta('app.manager_interface')['config']);
     }
 
     // ── meta() for unknown keys ──────────────────────────────────────────────
@@ -75,6 +84,13 @@ class SettingKeyRegistryTest extends TestCase
         $this->assertContains('vk.confirm_code', $keys);
         $this->assertContains('max.secret_key', $keys);
         $this->assertContains('ai.default_provider', $keys);
+        // New keys added for issues-163
+        $this->assertContains('ai.confidence_threshold', $keys);
+        $this->assertContains('ai.rate_limit.requests_per_minute', $keys);
+        $this->assertContains('ai.rate_limit.requests_per_hour', $keys);
+        $this->assertContains('ai.disable_timeout', $keys);
+        $this->assertContains('ai.auto_escalation', $keys);
+        $this->assertContains('ai.enable_logging', $keys);
     }
 
     public function test_keys_returns_a_list_of_unique_strings(): void

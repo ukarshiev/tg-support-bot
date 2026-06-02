@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Ai\Services;
 
 use App\Models\Message;
+use App\Services\Settings\SettingsService;
 
 class AiChatHistoryService
 {
@@ -21,7 +22,7 @@ class AiChatHistoryService
      * Empty `text` is dropped on both sides. The slice is sorted by
      * `created_at` ascending, then a sliding window is applied from the
      * end so that the total approximate token count stays below
-     * `config('ai.max_context_tokens')`. Token weight is estimated as
+     * the `ai.max_context_tokens` setting (via SettingsService). Token weight is estimated as
      * `floor(mb_strlen($content) / 4)` — a deliberately coarse heuristic
      * with a built-in safety buffer (no tokenizer dependency).
      *
@@ -110,7 +111,7 @@ class AiChatHistoryService
      */
     private function applySlidingWindow(array $entries): array
     {
-        $limit = (int) config('ai.max_context_tokens', 3000);
+        $limit = (int) (app(SettingsService::class)->get('ai.max_context_tokens') ?? 3000);
         if ($limit <= 0 || $entries === []) {
             return $entries;
         }

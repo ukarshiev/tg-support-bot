@@ -5,6 +5,7 @@ namespace App\Modules\Telegram\Actions;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Services\Settings\SettingsService;
 
 class SendContactMessage
 {
@@ -28,7 +29,7 @@ class SendContactMessage
     {
         return TGTextMessageDto::from([
             'methodQuery' => 'sendMessage',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $botUser->topic_id,
             'text' => $this->buildText($botUser),
             'parse_mode' => 'html',

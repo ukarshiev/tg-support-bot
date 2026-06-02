@@ -102,11 +102,11 @@ class GigaChatProvider extends BaseAiProvider
     private function refreshAccessToken(): void
     {
         $response = Http::withHeaders([
-            'Authorization' => 'Basic ' . $this->config['client_secret'],
+            'Authorization' => 'Basic ' . ($this->config['client_secret'] ?? ''),
             'RqUID' => (string) \Illuminate\Support\Str::uuid(),
             'Content-Type' => 'application/x-www-form-urlencoded',
         ])->withOptions([
-            'verify' => storage_path($this->config['path_cert']),
+            'verify' => storage_path($this->config['path_cert'] ?? ''),
         ])->asForm()->post('https://ngw.devices.sberbank.ru:9443/api/v2/oauth', [
             'scope' => 'GIGACHAT_API_PERS',
         ]);
@@ -138,12 +138,12 @@ class GigaChatProvider extends BaseAiProvider
             'Content-Type' => 'application/json',
             'RqUID' => (string) \Illuminate\Support\Str::uuid(),
         ])->withOptions([
-            'verify' => storage_path($this->config['path_cert']),
-        ])->post($this->config['base_url'] . '/chat/completions', [
-            'model' => $this->config['model'],
+            'verify' => storage_path($this->config['path_cert'] ?? ''),
+        ])->post(($this->config['base_url'] ?? '') . '/chat/completions', [
+            'model' => $this->config['model'] ?? 'GigaChat-2-Max',
             'messages' => $messages,
-            'max_tokens' => (int)$this->config['max_tokens'],
-            'temperature' => (float)$this->config['temperature'],
+            'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
+            'temperature' => (float) ($this->config['temperature'] ?? 0.7),
             'stream' => false,
         ]);
 

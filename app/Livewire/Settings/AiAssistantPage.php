@@ -35,6 +35,24 @@ class AiAssistantPage extends Component
     /** @var int Maximum context tokens */
     public int $max_context_tokens = 3000;
 
+    /** @var string Confidence threshold (0.0–1.0) */
+    public string $confidence_threshold = '0.8';
+
+    /** @var int Rate limit: requests per minute */
+    public int $rate_limit_per_minute = 60;
+
+    /** @var int Rate limit: requests per hour */
+    public int $rate_limit_per_hour = 1000;
+
+    /** @var string AI timeout setting (seconds or false) */
+    public string $disable_timeout = '';
+
+    /** @var bool Automatic escalation to manager when confidence is low */
+    public bool $auto_escalation = true;
+
+    /** @var bool Enable AI request/response logging */
+    public bool $enable_logging = true;
+
     /** @var string System prompt text */
     public string $system_prompt = '';
 
@@ -120,6 +138,14 @@ class AiAssistantPage extends Component
             $this->formErrors['max_context_tokens'] = 'Лимит контекста должен быть положительным целым числом.';
         }
 
+        if ($this->rate_limit_per_minute < 1) {
+            $this->formErrors['rate_limit_per_minute'] = 'Лимит запросов в минуту должен быть положительным числом.';
+        }
+
+        if ($this->rate_limit_per_hour < 1) {
+            $this->formErrors['rate_limit_per_hour'] = 'Лимит запросов в час должен быть положительным числом.';
+        }
+
         if (! empty($this->formErrors)) {
             return;
         }
@@ -128,6 +154,12 @@ class AiAssistantPage extends Component
         $settings->set('ai.default_provider', $this->default_provider);
         $settings->set('ai.auto_reply', $this->auto_reply);
         $settings->set('ai.max_context_tokens', $this->max_context_tokens);
+        $settings->set('ai.confidence_threshold', $this->confidence_threshold);
+        $settings->set('ai.rate_limit.requests_per_minute', $this->rate_limit_per_minute);
+        $settings->set('ai.rate_limit.requests_per_hour', $this->rate_limit_per_hour);
+        $settings->set('ai.disable_timeout', $this->disable_timeout);
+        $settings->set('ai.auto_escalation', $this->auto_escalation);
+        $settings->set('ai.enable_logging', $this->enable_logging);
         $settings->set('ai.system_prompt', $this->system_prompt);
 
         $this->saved = true;
@@ -166,6 +198,12 @@ class AiAssistantPage extends Component
         $this->default_provider = (string) ($settings->get('ai.default_provider') ?? 'openai');
         $this->auto_reply = (bool) ($settings->get('ai.auto_reply') ?? false);
         $this->max_context_tokens = (int) ($settings->get('ai.max_context_tokens') ?? 3000);
+        $this->confidence_threshold = (string) ($settings->get('ai.confidence_threshold') ?? '0.8');
+        $this->rate_limit_per_minute = (int) ($settings->get('ai.rate_limit.requests_per_minute') ?? 60);
+        $this->rate_limit_per_hour = (int) ($settings->get('ai.rate_limit.requests_per_hour') ?? 1000);
+        $this->disable_timeout = (string) ($settings->get('ai.disable_timeout') ?? '');
+        $this->auto_escalation = (bool) ($settings->get('ai.auto_escalation') ?? true);
+        $this->enable_logging = (bool) ($settings->get('ai.enable_logging') ?? true);
         $this->system_prompt = (string) ($settings->get('ai.system_prompt') ?? '');
 
         $this->providerConfigured = [

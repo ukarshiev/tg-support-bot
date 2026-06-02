@@ -4,6 +4,7 @@ namespace App\Modules\Ai\Services;
 
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
+use App\Services\Settings\SettingsService;
 
 class AiBotApi
 {
@@ -20,7 +21,7 @@ class AiBotApi
      */
     public function send(string $methodQuery, ?array $dataQuery = null): TelegramAnswerDto
     {
-        $token = config('traffic_source.settings.telegram_ai.token');
+        $token = (string) app(SettingsService::class)->get('telegram_ai.token');
 
         return TelegramMethods::sendQueryTelegram($methodQuery, $dataQuery, $token);
     }

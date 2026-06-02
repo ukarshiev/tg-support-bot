@@ -38,7 +38,7 @@ class BannedContactMessageTest extends TestCase
         $job = $pushed[0]['job'];
 
         // Assert
-        $this->assertEquals(config('traffic_source.settings.telegram.group_id'), $job->queryParams->chat_id);
+        $this->assertEquals('-100000000000', $job->queryParams->chat_id);
         $this->assertEquals('sendMessage', $job->queryParams->methodQuery);
     }
 }

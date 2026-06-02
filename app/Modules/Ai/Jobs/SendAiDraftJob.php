@@ -9,6 +9,7 @@ use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiBotApi;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -75,7 +76,7 @@ class SendAiDraftJob implements ShouldQueue
                 message: $this->userMessage,
                 userId: $this->botUserId,
                 platform: $botUser->platform ?? 'telegram',
-                provider: config('ai.default_provider'),
+                provider: (string) app(SettingsService::class)->get('ai.default_provider'),
                 forceEscalation: false
             );
 
@@ -88,7 +89,7 @@ class SendAiDraftJob implements ShouldQueue
 
             // Post draft as AI bot in the supergroup topic
             $response = $aiBotApi->send('sendMessage', [
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_thread_id' => $botUser->topic_id,
                 'text' => $draftText,
                 'parse_mode' => 'html',
@@ -108,7 +109,7 @@ class SendAiDraftJob implements ShouldQueue
 
             // Edit the message to add inline buttons
             $aiBotApi->send('editMessageReplyMarkup', [
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_thread_id' => $botUser->topic_id,
                 'message_id' => $response->message_id,
                 'reply_markup' => AiHelper::preparedAiReplyMarkup((int) $aiMessage->message_id, $aiResponse->response),

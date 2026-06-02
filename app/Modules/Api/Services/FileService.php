@@ -2,6 +2,7 @@
 
 namespace App\Modules\Api\Services;
 
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -21,7 +22,7 @@ class FileService
 
     public function __construct()
     {
-        $this->botToken = config('traffic_source.settings.telegram.token');
+        $this->botToken = (string) app(SettingsService::class)->get('telegram.token');
     }
 
     /**

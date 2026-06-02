@@ -80,19 +80,16 @@ class IntegrationsListPageTest extends TestCase
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
-        Cache::flush();
 
-        // Override config so SettingsService fallback also returns empty
-        config([
-            'traffic_source.settings.telegram.token' => '',
-            'traffic_source.settings.telegram.secret_key' => '',
-            'traffic_source.settings.telegram.group_id' => '',
-            'traffic_source.settings.vk.token' => '',
-            'traffic_source.settings.vk.secret_key' => '',
-            'traffic_source.settings.vk.confirm_code' => '',
-            'traffic_source.settings.max.token' => '',
-            'traffic_source.settings.max.secret_key' => '',
-        ]);
+        // Remove all channel token settings seeded by TestCase::setUp()
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->forget('telegram.token');
+        $settings->forget('telegram.secret_key');
+        $settings->forget('vk.token');
+        $settings->forget('vk.secret_key');
+        $settings->forget('max.token');
+        $settings->forget('max.secret_key');
+        \Illuminate\Support\Facades\Cache::flush();
 
         Livewire::test(IntegrationsListPage::class)
             ->assertSee('Не подключён');
@@ -151,12 +148,16 @@ class IntegrationsListPageTest extends TestCase
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
-        Cache::flush();
 
-        config([
-            'traffic_source.settings.max.token' => '',
-            'traffic_source.settings.max.secret_key' => '',
-        ]);
+        // Remove all channel token settings seeded by TestCase::setUp()
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->forget('telegram.token');
+        $settings->forget('telegram.secret_key');
+        $settings->forget('vk.token');
+        $settings->forget('vk.secret_key');
+        $settings->forget('max.token');
+        $settings->forget('max.secret_key');
+        Cache::flush();
 
         Livewire::test(IntegrationsListPage::class)
             ->assertSee('Подключить');

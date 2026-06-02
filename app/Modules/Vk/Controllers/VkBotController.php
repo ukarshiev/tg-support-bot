@@ -8,6 +8,7 @@ use App\Modules\Vk\Actions\SendBannedMessageVk;
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Modules\Vk\Services\VkEditService;
 use App\Modules\Vk\Services\VkMessageService;
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
@@ -22,7 +23,7 @@ class VkBotController
     public function bot_query(Request $request): Response
     {
         if ($request->type === 'confirmation') {
-            return response(config('traffic_source.settings.vk.confirm_code'), 200);
+            return response((string) app(SettingsService::class)->get('vk.confirm_code'), 200);
         }
 
         $dataHook = VkUpdateDto::fromRequest($request);

@@ -22,7 +22,7 @@ class SendAiAnswerMessageTest extends TestCase
 
         Queue::fake();
 
-        config(['traffic_source.settings.telegram_ai.token' => 'test_token']);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', 'test_token');
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 123;

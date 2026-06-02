@@ -24,6 +24,7 @@ use App\Modules\Telegram\Services\TgExternal\TgExternalMessageService;
 use App\Modules\Telegram\Services\TgMax\TgMaxMessageService;
 use App\Modules\Telegram\Services\TgVk\TgVkEditService;
 use App\Modules\Telegram\Services\TgVk\TgVkMessageService;
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
 
 class TelegramBotController
@@ -108,7 +109,7 @@ class TelegramBotController
         if ($this->dataHook->editedTopicStatus && $this->dataHook->typeSource === 'supergroup') {
             SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
                 'methodQuery' => 'deleteMessage',
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_id' => $this->dataHook->messageId,
             ]));
         } elseif (!$this->dataHook->isBot) {
@@ -195,7 +196,7 @@ class TelegramBotController
             return;
         }
 
-        if ((bool) config('ai.auto_reply', false)) {
+        if ((bool) app(SettingsService::class)->get('ai.auto_reply')) {
             SendAiReplyJob::dispatch($this->botUser->id, $this->dataHook, $this->dataHook->text);
         } else {
             SendAiDraftJob::dispatch($this->botUser->id, $this->dataHook, $this->dataHook->text);

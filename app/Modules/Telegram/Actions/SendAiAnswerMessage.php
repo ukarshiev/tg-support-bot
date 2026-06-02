@@ -5,6 +5,7 @@ namespace App\Modules\Telegram\Actions;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Jobs\SendAiResponseMessageJob;
+use App\Services\Settings\SettingsService;
 use Exception;
 use Illuminate\Support\Facades\Log;
 
@@ -20,7 +21,7 @@ class SendAiAnswerMessage
     public function execute(TelegramUpdateDto $update): void
     {
         try {
-            if (empty(config('traffic_source.settings.telegram_ai.token'))) {
+            if (empty((string) app(SettingsService::class)->get('telegram_ai.token'))) {
                 throw new Exception('AI bot token not specified!');
             }
 

@@ -3,6 +3,7 @@
 namespace App\Modules\Vk\Api;
 
 use App\Modules\Vk\DTOs\VkAnswerDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Http;
 
 class VkMethods
@@ -19,7 +20,7 @@ class VkMethods
     {
         try {
             $queryParams = array_merge($params, [
-                'access_token' => config('traffic_source.settings.vk.token'),
+                'access_token' => (string) app(SettingsService::class)->get('vk.token'),
                 'v' => '5.199',
                 'random_id' => random_int(1, PHP_INT_MAX),
             ]);

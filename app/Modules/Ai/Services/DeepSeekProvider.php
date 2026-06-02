@@ -96,7 +96,7 @@ class DeepSeekProvider extends BaseAiProvider
 
     private function refreshAccessToken(): void
     {
-        $this->accessToken = $this->config['client_secret'];
+        $this->accessToken = $this->config['client_secret'] ?? '';
     }
 
     /**
@@ -116,8 +116,8 @@ class DeepSeekProvider extends BaseAiProvider
         ])->post($this->config['base_url'], [
             'model' => $this->config['model'] ?? 'deepseek-chat',
             'messages' => $messages,
-            'max_tokens' => (int)$this->config['max_tokens'],
-            'temperature' => (float)$this->config['temperature'],
+            'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
+            'temperature' => (float) ($this->config['temperature'] ?? 0.7),
             'stream' => false,
         ]);
 

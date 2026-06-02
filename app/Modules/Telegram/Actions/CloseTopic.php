@@ -8,6 +8,7 @@ use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class CloseTopic
@@ -23,7 +24,7 @@ class CloseTopic
             return;
         }
 
-        $groupId = config('traffic_source.settings.telegram.group_id');
+        $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
 
         switch ($botUser->platform) {
             case 'telegram':

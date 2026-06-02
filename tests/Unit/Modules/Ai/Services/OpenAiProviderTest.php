@@ -8,7 +8,6 @@ use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiSystemPromptLoader;
 use App\Modules\Ai\Services\OpenAiProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -30,8 +29,9 @@ class OpenAiProviderTest extends TestCase
 
         Queue::fake();
 
-        Config::set('ai.default_provider', 'openai');
-        Config::set('ai.providers.openai.api_key', 'test_123');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.default_provider', 'openai');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.openai_api_key', 'test_123');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.openai_base_url', 'https://api.openai.com/v1');
 
         $loader = Mockery::mock(AiSystemPromptLoader::class);
         $loader->shouldReceive('render')->andReturn('System prompt');
@@ -40,7 +40,7 @@ class OpenAiProviderTest extends TestCase
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
 
         $this->provider = 'openai';
-        $this->baseProviderUrl = config('ai.providers.openai.base_url');
+        $this->baseProviderUrl = 'https://api.openai.com/v1';
     }
 
     protected function tearDown(): void

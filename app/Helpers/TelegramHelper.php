@@ -3,6 +3,7 @@
 namespace App\Helpers;
 
 use App\Modules\Api\Services\FileService;
+use App\Services\Settings\SettingsService;
 use phpDocumentor\Reflection\Exception;
 
 class TelegramHelper
@@ -16,7 +17,7 @@ class TelegramHelper
      */
     public static function getFilePath(string $localFilePath): string
     {
-        $telegramToken = config('traffic_source.settings.telegram.token');
+        $telegramToken = (string) app(SettingsService::class)->get('telegram.token');
         return "https://api.telegram.org/file/bot{$telegramToken}/{$localFilePath}";
     }
 
@@ -41,7 +42,7 @@ class TelegramHelper
      */
     public static function getFileTelegramPath(string $fileId, ?FileService $fileService = null): ?string
     {
-        $botToken = config('traffic_source.settings.telegram.token');
+        $botToken = (string) app(SettingsService::class)->get('telegram.token');
         $fileService = $fileService ?? new FileService();
 
         try {

@@ -7,6 +7,7 @@ namespace App\Modules\Ai\Services;
 use App\Modules\Ai\Contracts\AiProviderInterface;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Cache;
 
 abstract class BaseAiProvider implements AiProviderInterface
@@ -24,10 +25,38 @@ abstract class BaseAiProvider implements AiProviderInterface
     public function __construct(string $providerName)
     {
         $this->providerName = $providerName;
-        $this->config = config("ai.providers.{$providerName}", []);
-        $this->apiKey = $this->config['api_key'] ?? '';
+        $this->config = $this->buildProviderConfig($providerName);
+        $this->apiKey = $this->config['api_key'] ?? $this->config['client_secret'] ?? '';
         $this->baseUrl = $this->config['base_url'] ?? '';
         $this->modelName = $this->config['model'] ?? '';
+    }
+
+    /**
+     * Build provider config array from SettingsService for the given provider name.
+     *
+     * @param string $providerName
+     *
+     * @return array<string, mixed>
+     */
+    private function buildProviderConfig(string $providerName): array
+    {
+        $settings = app(SettingsService::class);
+        $prefix = "ai.{$providerName}_";
+
+        $keys = [
+            'api_key', 'client_id', 'client_secret',
+            'base_url', 'model', 'max_tokens', 'temperature', 'path_cert',
+        ];
+
+        $config = [];
+        foreach ($keys as $key) {
+            $value = $settings->get($prefix . $key);
+            if ($value !== null) {
+                $config[$key] = $value;
+            }
+        }
+
+        return $config;
     }
 
     /**
@@ -69,7 +98,7 @@ abstract class BaseAiProvider implements AiProviderInterface
     {
         $cacheKey = "ai_rate_limit_{$this->providerName}";
         $requests = Cache::get($cacheKey, 0);
-        $limit = config('ai.rate_limit.requests_per_minute', 60);
+        $limit = (int) (app(SettingsService::class)->get('ai.rate_limit.requests_per_minute') ?? 60);
 
         return [
             'current_requests' => $requests,
@@ -88,7 +117,7 @@ abstract class BaseAiProvider implements AiProviderInterface
     {
         $cacheKey = "ai_rate_limit_{$this->providerName}";
         $requests = Cache::get($cacheKey, 0);
-        $limit = config('ai.rate_limit.requests_per_minute', 60);
+        $limit = (int) (app(SettingsService::class)->get('ai.rate_limit.requests_per_minute') ?? 60);
 
         if ($requests >= $limit) {
             return false;
@@ -139,7 +168,7 @@ abstract class BaseAiProvider implements AiProviderInterface
      */
     protected function shouldEscalate(float $confidenceScore): bool
     {
-        $threshold = config('ai.confidence_threshold', 0.8);
+        $threshold = (float) (app(SettingsService::class)->get('ai.confidence_threshold') ?? 0.8);
         return $confidenceScore < $threshold;
     }
 

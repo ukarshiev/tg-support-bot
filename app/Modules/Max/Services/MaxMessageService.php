@@ -10,6 +10,7 @@ use App\Modules\Max\DTOs\MaxUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendMaxTelegramMessageJob;
 use App\Modules\Telegram\Services\ActionService\Send\ToTgMessageService;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class MaxMessageService extends ToTgMessageService
@@ -127,7 +128,7 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendPhoto',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'photo' => $url,
             'caption' => $caption !== '' ? $caption : null,
@@ -158,7 +159,7 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendDocument',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'document' => $url,
             'caption' => $caption !== '' ? $caption : null,
@@ -188,7 +189,7 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendVoice',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'voice' => $url,
         ]);
@@ -213,7 +214,7 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendMessage',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'text' => $this->update->text,
         ]);
@@ -249,7 +250,7 @@ class MaxMessageService extends ToTgMessageService
             return;
         }
 
-        if ((bool) config('ai.auto_reply', false)) {
+        if ((bool) app(SettingsService::class)->get('ai.auto_reply')) {
             SendAiReplyJob::dispatch($this->botUser->id, null, (string) $text);
         } else {
             SendAiDraftJob::dispatch($this->botUser->id, null, (string) $text);

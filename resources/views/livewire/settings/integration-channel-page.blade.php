@@ -154,6 +154,112 @@
                             />
                         </x-admin.form-field>
 
+                        {{-- ID бота --}}
+                        <x-admin.form-field
+                            label="ID бота"
+                            for="telegram_bot_id"
+                            hint="Числовой ID основного бота (не AI-бота)"
+                            :error="$formErrors['telegram_bot_id'] ?? null"
+                        >
+                            <input
+                                id="telegram_bot_id"
+                                type="text"
+                                wire:model="telegram_bot_id"
+                                placeholder="123456789"
+                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                            />
+                        </x-admin.form-field>
+
+                        {{-- Шаблон названия топика --}}
+                        <x-admin.form-field
+                            label="Шаблон названия топика"
+                            for="telegram_template_topic_name"
+                            hint="Например: {first_name} {last_name} {platform}"
+                            :error="$formErrors['telegram_template_topic_name'] ?? null"
+                        >
+                            <input
+                                id="telegram_template_topic_name"
+                                type="text"
+                                wire:model="telegram_template_topic_name"
+                                placeholder="{first_name} {last_name} {platform}"
+                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                            />
+                        </x-admin.form-field>
+
+                        {{-- AI-бот: подраздел --}}
+                        <div class="mt-6 border-t border-border-light pt-5">
+                            <h3 class="mb-4 text-sm font-semibold text-text-primary">Telegram AI-бот</h3>
+                            <div class="space-y-4">
+
+                                {{-- AI-бот: токен (secret) --}}
+                                <x-admin.form-field
+                                    label="Токен AI-бота"
+                                    for="telegram_ai_token"
+                                    hint="Токен отдельного бота для черновиков ИИ (secret)"
+                                    :error="$formErrors['telegram_ai_token'] ?? null"
+                                >
+                                    <input
+                                        id="telegram_ai_token"
+                                        type="password"
+                                        wire:model="telegram_ai_token"
+                                        autocomplete="new-password"
+                                        placeholder="Оставьте пустым, чтобы не менять"
+                                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                    />
+                                </x-admin.form-field>
+
+                                {{-- AI-бот: секретный ключ (secret) --}}
+                                <x-admin.form-field
+                                    label="Секрет вебхука AI-бота"
+                                    for="telegram_ai_secret"
+                                    hint="Для верификации запросов от AI-бота (secret)"
+                                    :error="$formErrors['telegram_ai_secret'] ?? null"
+                                >
+                                    <input
+                                        id="telegram_ai_secret"
+                                        type="password"
+                                        wire:model="telegram_ai_secret"
+                                        autocomplete="new-password"
+                                        placeholder="Оставьте пустым, чтобы не менять"
+                                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                    />
+                                </x-admin.form-field>
+
+                                {{-- AI-бот: числовой ID --}}
+                                <x-admin.form-field
+                                    label="ID AI-бота"
+                                    for="telegram_ai_id"
+                                    hint="Числовой Telegram ID AI-бота"
+                                    :error="$formErrors['telegram_ai_id'] ?? null"
+                                >
+                                    <input
+                                        id="telegram_ai_id"
+                                        type="text"
+                                        wire:model="telegram_ai_id"
+                                        placeholder="987654321"
+                                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                    />
+                                </x-admin.form-field>
+
+                                {{-- AI-бот: username --}}
+                                <x-admin.form-field
+                                    label="Username AI-бота"
+                                    for="telegram_ai_username"
+                                    hint="Например @my_ai_bot — используется для фильтрации входящих сообщений"
+                                    :error="$formErrors['telegram_ai_username'] ?? null"
+                                >
+                                    <input
+                                        id="telegram_ai_username"
+                                        type="text"
+                                        wire:model="telegram_ai_username"
+                                        placeholder="@my_ai_bot"
+                                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                    />
+                                </x-admin.form-field>
+
+                            </div>
+                        </div>
+
                     </div>
 
                 @elseif ($channel === 'vk')

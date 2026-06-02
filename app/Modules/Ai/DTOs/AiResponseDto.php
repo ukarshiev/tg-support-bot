@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Modules\Ai\DTOs;
 
+use App\Services\Settings\SettingsService;
+
 class AiResponseDto
 {
     /**
@@ -77,6 +79,7 @@ class AiResponseDto
      */
     public function isConfident(): bool
     {
-        return $this->confidenceScore >= config('ai.confidence_threshold', 0.8);
+        $threshold = (float) (app(SettingsService::class)->get('ai.confidence_threshold') ?? 0.8);
+        return $this->confidenceScore >= $threshold;
     }
 }

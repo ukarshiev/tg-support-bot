@@ -26,7 +26,7 @@ class VkMessageServiceTest extends TestCase
 
         Queue::fake();
 
-        $this->groupChatId = config('traffic_source.settings.telegram.group_id');
+        $this->groupChatId = '-100000000000';
 
         $chatId = time();
         $this->botUser = BotUser::getUserByChatId($chatId, 'vk');

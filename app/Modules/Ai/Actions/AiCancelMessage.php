@@ -7,6 +7,7 @@ use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
 
@@ -22,7 +23,7 @@ class AiCancelMessage extends AiAction
     public function execute(TelegramUpdateDto $update): void
     {
         try {
-            if (empty(config('traffic_source.settings.telegram_ai.token'))) {
+            if (empty((string) app(SettingsService::class)->get('telegram_ai.token'))) {
                 throw new Exception('AI bot token not specified!', 1);
             }
 
@@ -40,7 +41,7 @@ class AiCancelMessage extends AiAction
                 $botUser->id,
                 $update,
                 TGTextMessageDto::from([
-                    'token' => config('traffic_source.settings.telegram_ai.token'),
+                    'token' => (string) app(SettingsService::class)->get('telegram_ai.token'),
                     'methodQuery' => 'deleteMessage',
                     'typeSource' => 'private',
                     'chat_id' => $update->chatId,

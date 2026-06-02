@@ -64,6 +64,10 @@ class IntegrationChannelPageTest extends TestCase
         $settings->shouldReceive('get')->with('telegram.group_id')->andReturn('-100123');
         $settings->shouldReceive('get')->with('telegram.token')->andReturn('tok');
         $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('sec');
+        $settings->shouldReceive('get')->with('telegram.bot_id')->andReturn('0');
+        $settings->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram_ai.id')->andReturn('0');
+        $settings->shouldReceive('get')->with('telegram_ai.username')->andReturn('');
         $settings->shouldReceive('get')->with('vk.token')->andReturn('');
         $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
         $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
@@ -83,8 +87,12 @@ class IntegrationChannelPageTest extends TestCase
     {
         $settings = $this->settingsMock();
         $settings->shouldReceive('set')->with('telegram.group_id', '-100999')->once();
+        $settings->shouldReceive('set')->with('telegram.bot_id', Mockery::type('int'))->once();
+        $settings->shouldReceive('set')->with('telegram.template_topic_name', Mockery::type('string'))->once();
         $settings->shouldReceive('set')->with('telegram.token', 'newtok')->once();
         $settings->shouldReceive('set')->with('telegram.secret_key', 'newsec')->once();
+        $settings->shouldReceive('set')->with('telegram_ai.id', Mockery::type('int'))->once();
+        $settings->shouldReceive('set')->with('telegram_ai.username', Mockery::type('string'))->once();
 
         $component = new IntegrationChannelPage();
         $component->mount('telegram', $settings, $this->statusMock());
@@ -101,8 +109,12 @@ class IntegrationChannelPageTest extends TestCase
     {
         $settings = $this->settingsMock();
         $settings->shouldReceive('set')->with('telegram.group_id', '-100')->once();
+        $settings->shouldReceive('set')->with('telegram.bot_id', Mockery::type('int'))->once();
+        $settings->shouldReceive('set')->with('telegram.template_topic_name', Mockery::type('string'))->once();
         $settings->shouldReceive('set')->with('telegram.token', Mockery::any())->never();
         $settings->shouldReceive('set')->with('telegram.secret_key', Mockery::any())->never();
+        $settings->shouldReceive('set')->with('telegram_ai.id', Mockery::type('int'))->once();
+        $settings->shouldReceive('set')->with('telegram_ai.username', Mockery::type('string'))->once();
 
         $component = new IntegrationChannelPage();
         $component->mount('telegram', $settings, $this->statusMock());
@@ -149,6 +161,10 @@ class IntegrationChannelPageTest extends TestCase
     {
         $settings = $this->settingsMock();
         $settings->shouldReceive('set')->with('telegram.group_id', '-100')->once();
+        $settings->shouldReceive('set')->with('telegram.bot_id', Mockery::type('int'))->once();
+        $settings->shouldReceive('set')->with('telegram.template_topic_name', Mockery::type('string'))->once();
+        $settings->shouldReceive('set')->with('telegram_ai.id', Mockery::type('int'))->once();
+        $settings->shouldReceive('set')->with('telegram_ai.username', Mockery::type('string'))->once();
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
@@ -189,6 +205,10 @@ class IntegrationChannelPageTest extends TestCase
         $settings->shouldReceive('get')->with('telegram.group_id')->andReturn('-100stored');
         $settings->shouldReceive('get')->with('telegram.token')->andReturn('');
         $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram.bot_id')->andReturn('0');
+        $settings->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram_ai.id')->andReturn('0');
+        $settings->shouldReceive('get')->with('telegram_ai.username')->andReturn('');
         $settings->shouldReceive('get')->with('vk.token')->andReturn('');
         $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
         $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');

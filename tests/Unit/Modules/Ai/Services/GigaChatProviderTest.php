@@ -8,7 +8,6 @@ use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiSystemPromptLoader;
 use App\Modules\Ai\Services\GigaChatProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -30,7 +29,8 @@ class GigaChatProviderTest extends TestCase
 
         Queue::fake();
 
-        Config::set('ai.providers.gigachat.client_secret', 'test_secret');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.gigachat_client_secret', 'test_secret');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.gigachat_base_url', 'https://gigachat.devices.sberbank.ru/api/v1');
 
         $loader = Mockery::mock(AiSystemPromptLoader::class);
         $loader->shouldReceive('render')->andReturn('System prompt');
@@ -39,7 +39,7 @@ class GigaChatProviderTest extends TestCase
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
 
         $this->provider = 'gigachat';
-        $this->baseProviderUrl = config('ai.providers.gigachat.base_url');
+        $this->baseProviderUrl = 'https://gigachat.devices.sberbank.ru/api/v1';
     }
 
     protected function tearDown(): void

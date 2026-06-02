@@ -30,8 +30,8 @@ class AiCancelMessageTest extends TestCase
 
         $this->groupId = time();
 
-        config(['traffic_source.settings.telegram_ai.token' => 'test_token']);
-        config(['traffic_source.settings.telegram.group_id' => $this->groupId]);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', 'test_token');
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.group_id', (string) $this->groupId);
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 123;

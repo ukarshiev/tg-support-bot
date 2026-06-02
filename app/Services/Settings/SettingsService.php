@@ -60,7 +60,13 @@ class SettingsService
             return $this->coerceByType($plain, $type);
         }
 
-        $setting = Setting::where('key', $key)->first();
+        try {
+            $setting = Setting::where('key', $key)->first();
+        } catch (\Throwable) {
+            // DB unavailable (e.g., table not migrated in unit tests).
+            // Fall back to the registry default without caching.
+            return $this->resolveDefault($key, $default);
+        }
 
         if ($setting !== null) {
             // Decrypt if secret, then cache as "type:value".

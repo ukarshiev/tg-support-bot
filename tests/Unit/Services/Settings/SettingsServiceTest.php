@@ -18,6 +18,9 @@ class SettingsServiceTest extends TestCase
     {
         parent::setUp();
 
+        // Wipe all rows seeded by TestCase::setUp() so each test starts with
+        // a clean settings table under full test control.
+        Setting::truncate();
         Cache::flush();
         $this->service = new SettingsService();
     }
