@@ -445,8 +445,9 @@ tests/
 
 | Hook | Script | What it checks |
 |---|---|---|
-| `pre-commit` | `linting/pre-commit-check.sh` | Laravel Pint formatting |
 | `pre-push` | `linting/pre-push-check.sh` | PHPStan level 6 + PHPUnit |
+
+The `pre-commit` and `prepare-commit-msg` hooks have been removed. Pint formatting is not enforced by a local hook or CI at this time — run it manually before committing (`vendor/bin/pint`). PHPStan and tests are enforced by CI and by the `pre-push` hook.
 
 Never bypass hooks with `--no-verify`.
 
