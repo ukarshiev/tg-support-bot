@@ -81,6 +81,48 @@ class ApiWebhooksPage extends Component
     }
 
     /**
+     * Deterministic avatar background colour for a source.
+     * Derived from the source name — produces one of 8 palette colours.
+     *
+     * @param ExternalSource $source
+     *
+     * @return string Hex colour string.
+     */
+    public function avatarColor(ExternalSource $source): string
+    {
+        $palette = [
+            '#5B6ABF', '#E85D75', '#34C759', '#F5A623',
+            '#06B6D4', '#10B981', '#8B5CF6', '#EF4444',
+        ];
+
+        return $palette[abs(crc32($source->name)) % 8];
+    }
+
+    /**
+     * Two-letter uppercase initials from the source name.
+     *
+     * @param ExternalSource $source
+     *
+     * @return string
+     */
+    public function avatarInitials(ExternalSource $source): string
+    {
+        $name = trim($source->name);
+
+        if ($name === '') {
+            return '?';
+        }
+
+        $parts = preg_split('/\s+/', $name);
+
+        if (is_array($parts) && count($parts) >= 2) {
+            return mb_strtoupper(mb_substr($parts[0], 0, 1) . mb_substr($parts[1], 0, 1));
+        }
+
+        return mb_strtoupper(mb_substr($name, 0, 2));
+    }
+
+    /**
      * Show the "add source" inline form.
      */
     public function showAddSourceForm(): void
