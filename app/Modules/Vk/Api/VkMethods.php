@@ -11,16 +11,17 @@ class VkMethods
     /**
      * Send request to VK.
      *
-     * @param string $methodQuery
-     * @param array  $params
+     * @param string      $methodQuery
+     * @param array       $params
+     * @param string|null $token       Explicit access token; falls back to SettingsService 'vk.token' when null.
      *
      * @return VkAnswerDto
      */
-    public static function sendQueryVk(string $methodQuery, array $params): VkAnswerDto
+    public static function sendQueryVk(string $methodQuery, array $params, ?string $token = null): VkAnswerDto
     {
         try {
             $queryParams = array_merge($params, [
-                'access_token' => (string) app(SettingsService::class)->get('vk.token'),
+                'access_token' => $token ?? (string) app(SettingsService::class)->get('vk.token'),
                 'v' => '5.199',
                 'random_id' => random_int(1, PHP_INT_MAX),
             ]);

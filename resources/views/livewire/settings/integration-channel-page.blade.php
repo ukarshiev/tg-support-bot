@@ -337,17 +337,10 @@
                     <x-admin.button-secondary wire:click="cancel" type="button">
                         Отмена
                     </x-admin.button-secondary>
-                    @if ($channel === 'telegram_ai')
-                        <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="connect">
-                            <span wire:loading.remove wire:target="connect">Сохранить</span>
-                            <span wire:loading wire:target="connect">Сохранение...</span>
-                        </x-admin.button-primary>
-                    @else
-                        <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="connect">
-                            <span wire:loading.remove wire:target="connect">Подключить</span>
-                            <span wire:loading wire:target="connect">Подключение...</span>
-                        </x-admin.button-primary>
-                    @endif
+                    <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="connect">
+                        <span wire:loading.remove wire:target="connect">Сохранить</span>
+                        <span wire:loading wire:target="connect">Проверка...</span>
+                    </x-admin.button-primary>
                 </div>
 
                 {{-- Webhook result notice --}}

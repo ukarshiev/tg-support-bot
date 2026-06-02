@@ -168,6 +168,146 @@ class WebhookRegistrationServiceTest extends TestCase
         $this->assertStringContainsString('401', $result['message']);
     }
 
+    // ── verifyTelegram() ─────────────────────────────────────────────────────
+
+    public function test_verify_telegram_returns_error_when_token_empty(): void
+    {
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyTelegram('');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('не задан', $result['message']);
+    }
+
+    public function test_verify_telegram_returns_success_when_get_me_ok(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*' => Http::response([
+                'ok' => true,
+                'result' => ['id' => 123, 'is_bot' => true, 'first_name' => 'TestBot'],
+            ], 200),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyTelegram('bot123:validtoken');
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('прошёл проверку', $result['message']);
+    }
+
+    public function test_verify_telegram_returns_error_when_get_me_fails(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*' => Http::response([
+                'ok' => false,
+                'description' => 'Unauthorized',
+                'error_code' => 401,
+            ], 401),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyTelegram('bad_token');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('getMe не прошёл', $result['message']);
+    }
+
+    // ── verifyVk() ───────────────────────────────────────────────────────────
+
+    public function test_verify_vk_returns_error_when_token_empty(): void
+    {
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyVk('');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('не задан', $result['message']);
+    }
+
+    public function test_verify_vk_returns_success_on_valid_response(): void
+    {
+        Http::fake([
+            'https://api.vk.com/*' => Http::response([
+                'response' => [['id' => 1, 'name' => 'TestGroup']],
+            ], 200),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyVk('vk1.a.valid_token');
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('прошёл проверку', $result['message']);
+    }
+
+    public function test_verify_vk_returns_error_on_api_error_response(): void
+    {
+        Http::fake([
+            'https://api.vk.com/*' => Http::response([
+                'error' => ['error_code' => 5, 'error_msg' => 'User authorization failed'],
+            ], 200),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyVk('bad_vk_token');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('Ошибка VK API', $result['message']);
+    }
+
+    // ── verifyMax() ──────────────────────────────────────────────────────────
+
+    public function test_verify_max_returns_error_when_token_empty(): void
+    {
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyMax('');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('не задан', $result['message']);
+    }
+
+    public function test_verify_max_returns_success_on_200_response(): void
+    {
+        Http::fake([
+            'https://platform-api.max.ru/*' => Http::response(['id' => 1, 'name' => 'TestBot'], 200),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyMax('max_valid_token');
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('прошёл проверку', $result['message']);
+    }
+
+    public function test_verify_max_returns_error_on_non_200_response(): void
+    {
+        Http::fake([
+            'https://platform-api.max.ru/*' => Http::response(['error' => 'unauthorized'], 401),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyMax('bad_max_token');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('401', $result['message']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**

@@ -311,8 +311,9 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Telegram AI bot page (`channel=telegram_ai`) covers: `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.id`, `telegram_ai.username`. Action is save-only — webhook registration uses `php artisan ai-bot:set-webhook` (shown in the instruction panel)
 - Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`
 - All secret fields (tokens, keys) are rendered as `type="password"` inputs; blank submission does not overwrite an existing stored secret
-- Webhook registration for telegram|vk|max is handled by `WebhookRegistrationService` — never directly call platform API methods from the Livewire component
-- `WebhookRegistrationService` wraps: Telegram (`TelegramMethods::sendQueryTelegram('setWebhook', ...)`), VK (connectivity via `VkMethods::sendQueryVk('groups.getById', ...)`), MAX (`Http::post(...platform-api.max.ru/subscriptions...)`)
+- The primary action button is **«Сохранить»** and follows a **verify-before-save** flow: (1) field validation, (2) resolve verification token (entered value or stored fallback), (3) call `WebhookRegistrationService::verifyX($token)` — if it fails, show error and do NOT persist anything; (4) on success, persist via `SettingsService`, then register webhook (telegram|vk|max) or show success notice (telegram_ai)
+- `WebhookRegistrationService` provides `verifyTelegram/verifyVk/verifyMax($token)` (pre-save platform check, explicit token) and `registerTelegram/registerVk/registerMax()` (webhook registration, reads from `SettingsService`)
+- Verify methods: Telegram uses `getMe`, VK uses `groups.getById`, MAX uses `GET /me` — all with a 10 s timeout, catch exceptions → `success=false`
 - Tokens are never logged — only non-sensitive context (registered URL, HTTP status code)
 - See `rules/domain/admin-panel.md` (BR-013 through BR-016) and `rules/process/security.md` (Secrets in the DB settings table)
 

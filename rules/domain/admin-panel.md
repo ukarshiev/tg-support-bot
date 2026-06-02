@@ -38,9 +38,9 @@ The Admin Panel domain provides an alternative manager interface for the support
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
 | `admin-settings` layout | Full-page layout at `resources/views/layouts/admin-settings.blade.php` — dark sidebar (280px) + main content area. Used by all custom Livewire settings screens |
 | `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX channel cards with connection status badges. Reads statuses via `ChannelStatusService`. «Виджет для сайта» shown as disabled «Скоро» placeholder |
-| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max). Per-channel config form (read/write via `SettingsService`), webhook registration action (delegates to `WebhookRegistrationService` for telegram\|vk\|max; for `telegram_ai` the action only saves — webhook registration uses `php artisan ai-bot:set-webhook`) |
+| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max). Per-channel config form (read/write via `SettingsService`). Primary action button is **«Сохранить»** — runs a **verify-before-save** flow: (1) field validation, (2) token verification via `WebhookRegistrationService::verifyX($token)` (entered value or stored fallback), (3) persist settings only on verification success, (4) register webhook (telegram\|vk\|max) or show success notice (telegram_ai — no webhook registration via UI; uses `php artisan ai-bot:set-webhook`) |
 | `ChannelStatusService` | `app/Modules/Admin/Services/ChannelStatusService.php`. Computes `connected/label` per channel based on whether required `SettingsService` keys are non-empty. Shared by list and per-channel pages |
-| `WebhookRegistrationService` | `app/Modules/Admin/Services/WebhookRegistrationService.php`. Thin wrapper around `TelegramMethods::sendQueryTelegram('setWebhook', ...)`, `VkMethods::sendQueryVk('groups.getById', ...)`, and `Http::post(.../subscriptions, ...)` for MAX. Returns `{success: bool, message: string}`. Reads tokens via `SettingsService`. Never logs tokens |
+| `WebhookRegistrationService` | `app/Modules/Admin/Services/WebhookRegistrationService.php`. Provides **verify** methods (`verifyTelegram`, `verifyVk`, `verifyMax`) that accept an explicit token and call the platform API to confirm validity before any data is persisted (returns `{success: bool, message: string}`), and **register** methods (`registerTelegram`, `registerVk`, `registerMax`) that read tokens from `SettingsService` and perform the actual webhook registration. Never logs tokens |
 
 ---
 
@@ -89,8 +89,8 @@ _Enforced in:_ `AdminServiceProvider::boot()` — verified against `php artisan 
 **BR-013** — Integration config for Telegram/Telegram AI/VK/MAX is read and written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`. Secrets (tokens, secret keys, confirm codes) are stored encrypted (`is_secret = true` in `SettingKeyRegistry`). Never log tokens or secrets (see `rules/process/security.md`). The `telegram.bot_id` key was removed — it is unused at runtime.
 _Enforced in:_ `IntegrationChannelPage::saveTelegram/TelegramAi/Vk/Max()` — calls `SettingsService::set()`; `WebhookRegistrationService` — reads tokens via `SettingsService`, logs only non-sensitive data
 
-**BR-014** — The webhook registration action in `IntegrationChannelPage` delegates to `WebhookRegistrationService` — never directly calls platform API methods or executes artisan commands from the UI. The result (success/error with a user-facing message) is surfaced via `$webhookMessage` / `$webhookSuccess` properties.
-_Enforced in:_ `IntegrationChannelPage::registerWebhook()` — match dispatch to `WebhookRegistrationService`
+**BR-014** — The primary «Сохранить» action in `IntegrationChannelPage` follows a **verify-before-save** sequence: (1) validate form fields; (2) resolve the token (form value if non-empty, otherwise stored fallback — so re-entering the secret is not required on edit); (3) call `WebhookRegistrationService::verifyX($token)` — if verification fails, set `$webhookMessage` / `$webhookSuccess = false` and **return without saving** any settings; (4) on success, persist via `saveX()`, then register the webhook (telegram|vk|max) or show a success notice (telegram_ai). The webhook registration and verification methods in `WebhookRegistrationService` never log tokens.
+_Enforced in:_ `IntegrationChannelPage::connect()` → `resolveVerificationToken()` + `validateFields()` + `WebhookRegistrationService::verifyX/registerX()`
 
 **BR-015** — Saving a secret field (token, key) with an empty string does NOT overwrite the existing secret in the DB. This prevents accidentally blanking credentials when only non-secret fields are edited.
 _Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — `if ($field !== '') { $settings->set(...) }`
@@ -247,7 +247,9 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 **Secret fields** rendered as `type="password"` inputs with `autocomplete="new-password"`. Blank submission does not overwrite existing stored value (BR-015).
 
-**Webhook registration action** (`wire:click="registerWebhook"`): calls `WebhookRegistrationService`, shows success (green banner) or error (red banner) via `$webhookMessage` / `$webhookSuccess`.
+**Primary action** («Сохранить» button, `wire:submit="connect"`): runs the verify-before-save flow (BR-014). Loading state shows «Проверка...». Result surfaced via `$webhookMessage` / `$webhookSuccess` (green banner on success, red on failure).
+
+**Standalone webhook registration** (`wire:click="registerWebhook"`): calls `WebhookRegistrationService::registerX()` directly (no verify step) — kept for backward compatibility.
 
 **Tests**: `tests/Feature/Settings/IntegrationChannelPageTest.php`
 - Unit tests: `tests/Unit/Modules/Admin/Services/ChannelStatusServiceTest.php`, `tests/Unit/Modules/Admin/Services/WebhookRegistrationServiceTest.php`
