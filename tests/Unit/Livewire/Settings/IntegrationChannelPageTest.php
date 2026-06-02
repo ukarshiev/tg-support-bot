@@ -192,7 +192,7 @@ class IntegrationChannelPageTest extends TestCase
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
-        $webhook->shouldReceive('verifyTelegram')->with('ai-tok')->once()->andReturn(['success' => true, 'message' => 'OK']);
+        $webhook->shouldReceive('verifyTelegram')->with('ai-tok', \Mockery::any())->once()->andReturn(['success' => true, 'message' => 'OK']);
         $webhook->shouldNotReceive('registerTelegram');
         $webhook->shouldNotReceive('registerVk');
         $webhook->shouldNotReceive('registerMax');
@@ -237,7 +237,7 @@ class IntegrationChannelPageTest extends TestCase
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
-        $webhook->shouldReceive('verifyTelegram')->with('tok123')->once()->andReturn(['success' => true, 'message' => 'Verified']);
+        $webhook->shouldReceive('verifyTelegram')->with('tok123', \Mockery::any())->once()->andReturn(['success' => true, 'message' => 'Verified']);
         $webhook->shouldReceive('registerTelegram')->with()->once()->andReturn(['success' => true, 'message' => 'OK']);
 
         $component = new IntegrationChannelPage();
@@ -277,7 +277,7 @@ class IntegrationChannelPageTest extends TestCase
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
-        $webhook->shouldReceive('verifyTelegram')->with('bad_tok')->once()->andReturn(['success' => false, 'message' => 'Неверный токен Telegram.']);
+        $webhook->shouldReceive('verifyTelegram')->with('bad_tok', \Mockery::any())->once()->andReturn(['success' => false, 'message' => 'Неверный токен Telegram.']);
         $webhook->shouldNotReceive('registerTelegram');
 
         $component = new IntegrationChannelPage();
@@ -304,7 +304,7 @@ class IntegrationChannelPageTest extends TestCase
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
         // verify must be called with the stored token, not the blank form field
-        $webhook->shouldReceive('verifyTelegram')->with('stored_tok')->once()->andReturn(['success' => true, 'message' => 'OK']);
+        $webhook->shouldReceive('verifyTelegram')->with('stored_tok', \Mockery::any())->once()->andReturn(['success' => true, 'message' => 'OK']);
         $webhook->shouldReceive('registerTelegram')->once()->andReturn(['success' => true, 'message' => 'Registered']);
 
         $component = new IntegrationChannelPage();

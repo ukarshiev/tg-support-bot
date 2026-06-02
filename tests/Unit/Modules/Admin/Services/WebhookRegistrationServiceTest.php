@@ -218,6 +218,37 @@ class WebhookRegistrationServiceTest extends TestCase
         $this->assertStringContainsString('Неверный токен Telegram', $result['message']);
     }
 
+    public function test_verify_telegram_returns_error_when_group_inaccessible(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true]], 200),
+            'https://api.telegram.org/*/getChat' => Http::response(['ok' => false, 'description' => 'chat not found', 'error_code' => 400], 400),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyTelegram('bot123:validtoken', '-100999999');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('группы', $result['message']);
+    }
+
+    public function test_verify_telegram_returns_success_with_valid_group(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true]], 200),
+            'https://api.telegram.org/*/getChat' => Http::response(['ok' => true, 'result' => ['id' => -1001234567890, 'type' => 'supergroup']], 200),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyTelegram('bot123:validtoken', '-1001234567890');
+
+        $this->assertTrue($result['success']);
+    }
+
     // ── verifyVk() ───────────────────────────────────────────────────────────
 
     public function test_verify_vk_returns_error_when_token_empty(): void

@@ -150,10 +150,15 @@ class IntegrationChannelPage extends Component
             return;
         }
 
-        // Step 3: verify the token against the platform API.
+        // Telegram group to verify the bot's access to (entered value, else stored).
+        $telegramGroupId = ($this->telegram_group_id !== null && $this->telegram_group_id !== '')
+            ? $this->telegram_group_id
+            : (string) ($settings->get('telegram.group_id') ?? '');
+
+        // Step 3: verify the token (and, for Telegram, the group access) against the platform API.
         $verifyResult = match ($this->channel) {
-            'telegram' => $webhook->verifyTelegram($tokenToVerify),
-            'telegram_ai' => $webhook->verifyTelegram($tokenToVerify),
+            'telegram' => $webhook->verifyTelegram($tokenToVerify, $telegramGroupId),
+            'telegram_ai' => $webhook->verifyTelegram($tokenToVerify, $telegramGroupId),
             'vk' => $webhook->verifyVk($tokenToVerify),
             'max' => $webhook->verifyMax($tokenToVerify),
             default => ['success' => false, 'message' => 'Неизвестный канал.'],

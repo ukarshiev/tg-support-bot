@@ -34,11 +34,13 @@ class WebhookRegistrationService
      * Accepts an explicit token so verification can run against the form-entered
      * value before the setting is persisted. Never logs the token.
      *
-     * @param string $token Bot token to verify.
+     * @param string      $token   Bot token to verify.
+     * @param string|null $groupId Optional Telegram group/chat ID — when provided (non-empty),
+     *                             also verifies the bot can access that chat via getChat.
      *
      * @return array{success: bool, message: string}
      */
-    public function verifyTelegram(string $token): array
+    public function verifyTelegram(string $token, ?string $groupId = null): array
     {
         if ($token === '') {
             return ['success' => false, 'message' => 'Токен Telegram не задан.'];
@@ -47,11 +49,20 @@ class WebhookRegistrationService
         try {
             $result = TelegramMethods::sendQueryTelegram('getMe', [], $token);
 
-            if ($result->ok === true) {
-                return ['success' => true, 'message' => 'Токен Telegram прошёл проверку.'];
+            if ($result->ok !== true) {
+                return ['success' => false, 'message' => 'Неверный токен Telegram.'];
             }
 
-            return ['success' => false, 'message' => 'Неверный токен Telegram.'];
+            // Optionally verify the bot has access to the configured group.
+            if ($groupId !== null && $groupId !== '') {
+                $chat = TelegramMethods::sendQueryTelegram('getChat', ['chat_id' => $groupId], $token);
+
+                if ($chat->ok !== true) {
+                    return ['success' => false, 'message' => 'Неверный ID группы или бот не добавлен в группу.'];
+                }
+            }
+
+            return ['success' => true, 'message' => 'Токен Telegram прошёл проверку.'];
         } catch (\Throwable) {
             return ['success' => false, 'message' => 'Не удалось связаться с API платформы.'];
         }
