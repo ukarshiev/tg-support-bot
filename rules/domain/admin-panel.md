@@ -274,7 +274,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 - `tests/Feature/Settings/AiAssistantPageTest.php` — integration (13 cases)
 - `tests/Feature/Settings/AiProviderAccessPageTest.php` — integration (14 cases)
 
-**Runtime application status**: `AiAssistantPage` and `AiProviderAccessPage` persist values to the `settings` DB table. The form reads back from `SettingsService` correctly. Full runtime wiring (AI providers / `ShouldAiReply` / `AiAssistantService` reading from `SettingsService`) is deferred to a follow-up task — those classes still read from `config('ai.*')` at runtime.
+**Runtime application status**: fully wired to the DB. `AiAssistantPage` and `AiProviderAccessPage` persist values to the `settings` table, and the AI runtime (`ShouldAiReply`, `AiAssistantService`, `BaseAiProvider`, AI jobs/actions) reads them **live from `SettingsService`** — there is no `config('ai.*')` fallback (`config => null`). The same applies to all channel access credentials (`telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`), which are read from `SettingsService` everywhere (Api classes, jobs, webhook middlewares, `routes.php`). Accesses must be populated via `/admin/settings/*` after deploy — there is no `.env`/`config()` fallback.
 
 ---
 

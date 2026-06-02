@@ -25,12 +25,12 @@ Security is not optional or deferred.
 All Telegram requests must be validated by the appropriate middleware before the controller runs.
 
 **Main bot** — `TelegramQuery` middleware:
-- Validates `X-Telegram-Bot-Api-Secret-Token` header against `TELEGRAM_SECRET_KEY` env variable
+- Validates `X-Telegram-Bot-Api-Secret-Token` header against the `telegram.secret_key` setting (read via `SettingsService`; stored in the `settings` DB table)
 - Rejects invalid requests with `403`
 - Applies to: `POST /api/telegram/bot` and `POST /api/telegram/ai/bot`
 
 **AI bot** — `AiBotQuery` middleware (`app/Modules/Ai/Middleware/AiBotQuery.php`):
-- Validates `X-Telegram-Bot-Api-Secret-Token` header against `TELEGRAM_AI_BOT_SECRET` env variable
+- Validates `X-Telegram-Bot-Api-Secret-Token` header against the `telegram_ai.secret` setting (read via `SettingsService`)
 - Rejects missing or invalid tokens with `403`
 - Applies to: `POST /api/ai-bot/webhook`
 
@@ -52,7 +52,7 @@ Route::post('/api/ai-bot/webhook', [AiBotController::class, 'handle']);
 
 All VK requests must be validated by `VkQuery` middleware:
 
-- Validates secret code from request body against `VK_SECRET_CODE`
+- Validates secret code from request body against the `vk.secret_key` setting (read via `SettingsService`)
 - Returns confirmation code for VK verification requests
 - Rejects invalid requests with `403`
 
@@ -117,39 +117,38 @@ DB::select("SELECT * FROM bot_users WHERE chat_id = '$chatId'");
 
 ## 5. Secrets Management Rules
 
-- Secrets must only exist in environment variables (`.env` file)
-- Never commit `.env` files to the repository
+- **Application access credentials (bot tokens, webhook secrets, AI provider keys) live in the DB `settings` table, NOT in `.env`/`config()`.** They are read via `SettingsService`, stored encrypted (`Crypt::encrypt()`) for `is_secret` keys, and edited in `/admin/settings/*`. There is no `config()` fallback for these keys (`config => null` in `SettingKeyRegistry`).
+- Only **infrastructure** secrets remain in environment variables (`.env`): `APP_KEY`, `DB_PASSWORD`, `REDIS_PASSWORD`, `MAIL_PASSWORD`, `AWS_*`, `TG_LOGGER_TOKEN`. Never commit `.env`.
 - Never hardcode API keys, tokens, or passwords in code or config files
 - Never echo secrets in logs (see also `process/observability.md`)
 
 ```php
-// ✅ Correct — read from env
-$token = config('traffic_source.settings.telegram.token');
+// ✅ Correct — read application credentials from the DB settings layer
+$token = app(\App\Services\Settings\SettingsService::class)->get('telegram.token');
 ```
 
 ```php
-// ❌ Incorrect — hardcoded secret
-$token = '1234567890:AABBcc_my_telegram_token_here';
+// ❌ Incorrect — reading an app credential from config()/env() (removed), or hardcoding
+$token = config('traffic_source.settings.telegram.token'); // no longer exists
+$token = '1234567890:AABBcc_my_telegram_token_here';        // hardcoded secret
 ```
 
-**Secrets in this project:**
-- `TELEGRAM_TOKEN` — Telegram main bot token
-- `TELEGRAM_SECRET_KEY` — main bot webhook validation secret
-- `TELEGRAM_AI_BOT_TOKEN` — AI bot token
-- `TELEGRAM_AI_BOT_SECRET` — AI bot webhook validation secret
-- `VK_TOKEN` — VK API token
-- `VK_SECRET_CODE` — VK webhook secret
-- `OPENAI_API_KEY`, `DEEPSEEK_CLIENT_SECRET`, `GIGACHAT_CLIENT_SECRET` — AI providers
-- `REDIS_PASSWORD` — Redis password
-- `DB_PASSWORD` — Database password
-- Bearer tokens in `external_source_access_tokens` table
+**Application access secrets (DB `settings` table, via `SettingsService`):**
+- `telegram.token`, `telegram.secret_key` — main bot token + webhook validation secret
+- `telegram_ai.token`, `telegram_ai.secret` — AI bot token + webhook validation secret
+- `vk.token`, `vk.secret_key`, `vk.confirm_code` — VK API token + webhook secret + confirm code
+- `max.token`, `max.secret_key` — MAX token + webhook secret
+- `ai.openai_api_key`, `ai.deepseek_client_secret`, `ai.gigachat_client_secret` (+ client ids / base urls / models / cert) — AI providers
+- Non-secret access keys (`telegram.group_id`, `telegram.bot_id`, `telegram_ai.id`, etc.) also live in `settings` but are stored unencrypted
 
-**Secrets in the DB settings table:**
-Channel integration secrets (`telegram.token`, `telegram.secret_key`, `vk.token`, `vk.secret_key`, `vk.confirm_code`, `max.token`, `max.secret_key`) are stored encrypted via `SettingsService` (Laravel `Crypt::encrypt()`). They are surfaced in the admin UI as `<input type="password">` fields. The following rules apply:
+**Infrastructure secrets (`.env` only):** `APP_KEY`, `DB_PASSWORD`, `REDIS_PASSWORD`, `MAIL_PASSWORD`, `AWS_*`, `TG_LOGGER_TOKEN`. Per-source bearer tokens live in the `external_source_access_tokens` table.
+
+**Handling rules for DB settings secrets:**
+- Secrets (`is_secret = true` in `SettingKeyRegistry`) are encrypted via `Crypt::encrypt()` and surfaced in the admin UI as `<input type="password">` fields
 - Never log decrypted token values — log only non-sensitive context (URL registered, HTTP status code)
 - Blank-submission guard: if the UI field is left empty, do NOT overwrite the stored encrypted value
 - In logs, do not include any key whose `is_secret = true` in `SettingKeyRegistry`
-- `WebhookRegistrationService` reads tokens via `SettingsService::get()` — never accesses config() for secrets directly
+- Read credentials via `SettingsService::get()` — never via `config()`/`env()` (the access branches were removed)
 
 ---
 

@@ -41,8 +41,8 @@ This domain does not own: actual message sending to the end user (see `domain/me
 
 ## 3. Business Rules
 
-**BR-001** — The AI assistant is globally disabled by default (`AI_ENABLED=false`). It must be explicitly enabled via the admin panel (`/admin/settings/ai`) or via `.env`. The DB-persisted value (via `SettingsService`) takes priority over `.env` on runtime reads from the admin UI form. Note: `ShouldAiReply` and `AiAssistantService` still read from `config('ai.*')` at runtime (no live DB re-read) — a container restart is not required for the *UI form* to store and display the new value, but runtime AI-flow wiring to `SettingsService` is deferred (see follow-up task).
-_Enforced in:_ `config/ai.php @ enabled`; `app/Livewire/Settings/AiAssistantPage.php`; `app/Services/Settings/SettingKeyRegistry.php @ ai.enabled`
+**BR-001** — The AI assistant is globally disabled by default. The `ai.enabled` flag is stored in the DB `settings` table and read at runtime via `SettingsService` (no `config()`/`.env` fallback). It is toggled in the admin panel (`/admin/settings/ai`). `ShouldAiReply` reads `ai.enabled` live from `SettingsService`, so a change takes effect on the next request — no container restart needed.
+_Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php` (reads `SettingsService`); `app/Livewire/Settings/AiAssistantPage.php`; `app/Services/Settings/SettingKeyRegistry.php @ ai.enabled` (`config => null`)
 
 **BR-002** — Auto-reply mode (`AI_AUTO_REPLY=true`) must not be enabled in production unless explicitly approved. In auto-reply mode, AI drafts are sent to users without manager review. The admin panel (`/admin/settings/ai`) shows a confirmation warning before enabling auto-reply; the user must explicitly confirm.
 _Enforced in:_ `config/ai.php @ auto_reply`; `AiAssistantPage::updatedAutoReply()` — reverts toggle and shows confirmation dialog; `AiAssistantPage::confirmAutoReply()` / `cancelAutoReply()`
@@ -50,8 +50,8 @@ _Enforced in:_ `config/ai.php @ auto_reply`; `AiAssistantPage::updatedAutoReply(
 **BR-003** — An AI draft (`AiMessage`) must be created before any response is sent from the AI path. The draft must include both `text_ai` and optionally `text_manager`.
 _Enforced in:_ `app/Actions/Ai/AiAction.php`
 
-**BR-004** — The AI provider used for a request is determined by `AI_DEFAULT_PROVIDER` config. Supported values: `openai`, `deepseek`, `gigachat`. The active provider can be changed via the admin panel (`/admin/settings/ai`) without a code change; the value is persisted in the `settings` table and displayed in the UI. Runtime wiring of `AiAssistantService` to `SettingsService` is deferred.
-_Enforced in:_ `config/ai.php @ default_provider`; `app/Livewire/Settings/AiAssistantPage.php`; `app/Services/Settings/SettingKeyRegistry.php @ ai.default_provider`
+**BR-004** — The AI provider used for a request is determined by the `ai.default_provider` setting (DB, via `SettingsService`). Supported values: `openai`, `deepseek`, `gigachat`. It is changed in the admin panel (`/admin/settings/ai`) and read live at runtime — `AiServiceProvider`/`AiAssistantService` resolve the active provider from `SettingsService`, and `BaseAiProvider` builds each provider's credentials from the `ai.{provider}_*` settings.
+_Enforced in:_ `app/Modules/Ai/AiServiceProvider.php`; `app/Modules/Ai/Services/AiAssistantService.php`; `app/Modules/Ai/Services/BaseAiProvider.php`; `app/Services/Settings/SettingKeyRegistry.php @ ai.default_provider`
 
 **BR-005** — An `AiCondition` record must exist and have `active = true` for a given `BotUser` before AI processing starts.
 _Enforced in:_ `app/Actions/Ai/AiAction.php`
@@ -65,7 +65,7 @@ _Enforced in:_ `config/ai.php @ disable_timeout` (timeout applied in AiAction fl
 **BR-008** — AI responses must never exceed the token limits defined per provider in config.
 _Enforced in:_ `config/ai.php @ providers.*.max_tokens`
 
-**BR-009** — The AI conversation context is sourced from the `messages` table by `bot_user_id` (incoming → `role: user` excluding slash-commands; any outgoing → `role: assistant`). The window is bounded by `max_context_tokens` (token budget) using a `mb_strlen / 4` heuristic with a sliding window from the newest entries; older entries that would exceed the budget are dropped. Redis-backed context (`ai_context_*`) is no longer used. The `max_context_tokens` limit is editable from the admin panel (`/admin/settings/ai`) and persisted via `SettingsService`. Runtime wiring of `AiChatHistoryService` to `SettingsService` for this value is deferred.
+**BR-009** — The AI conversation context is sourced from the `messages` table by `bot_user_id` (incoming → `role: user` excluding slash-commands; any outgoing → `role: assistant`). The window is bounded by `max_context_tokens` (token budget) using a `mb_strlen / 4` heuristic with a sliding window from the newest entries; older entries that would exceed the budget are dropped. Redis-backed context (`ai_context_*`) is no longer used. The `max_context_tokens` limit is editable from the admin panel (`/admin/settings/ai`) and read live at runtime by `AiChatHistoryService` via `SettingsService` (no `config()` fallback).
 _Enforced in:_ `app/Modules/Ai/Services/AiChatHistoryService.php`; `config/ai.php @ max_context_tokens` (default: 3000); `app/Services/Settings/SettingKeyRegistry.php @ ai.max_context_tokens`
 
 **BR-010** — If AI confidence is below `confidence_threshold`, the message must be escalated to a human manager.
@@ -77,7 +77,7 @@ _Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php`
 **BR-012** — The AI bot webhook path (`POST /api/ai-bot/webhook`) is active only when `MANAGER_INTERFACE=telegram_group`. When `MANAGER_INTERFACE=admin_panel`, `AiBotWebhookJob` exits early without dispatching any send jobs.
 _Enforced in:_ `app/Modules/Ai/Jobs/AiBotWebhookJob.php`
 
-**BR-013** — To identify forwarded user messages, the AI bot checks that the sender's `from.id` equals `TELEGRAM_BOT_ID` (the main bot's numeric Telegram ID). This value must be set in `.env` manually when configuring the webhook.
+**BR-013** — To identify forwarded user messages, the AI bot checks that the sender's `from.id` equals the `telegram.bot_id` setting (the main bot's numeric Telegram ID), read via `SettingsService`. This value is configured in the admin panel (Telegram integration screen), not in `.env`.
 _Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php @ isFromMainBot()`
 
 **BR-014** — `generateReply()` and `processMessage()` share the same DB-backed history pipeline through `AiChatHistoryService::buildForBotUser($userId, $userMessage)`. The current incoming user message is passed as `$excludeLastUserText` so it is dropped from the assembled history when `SendTelegramMessageJob` has already inserted it (race-safe in both directions: when the row exists the duplicate is dropped, when it does not nothing happens).
@@ -121,7 +121,7 @@ The AI assistant settings are managed via custom Livewire/Blade pages at `/admin
 
 **Provider cards**: provider selection rendered as 3 clickable cards (OpenAI / DeepSeek / GigaChat). Each card has a «Настроить доступ» link to the corresponding provider access page.
 
-**Runtime application (deferred)**: `ShouldAiReply`, `AiAssistantService`, `AiChatHistoryService` still read from `config('ai.*')` at runtime. The admin UI persists values to `settings` DB (displayed correctly next page load). Full runtime wiring is tracked as a follow-up task.
+**Runtime application**: `ShouldAiReply`, `AiAssistantService`, `AiChatHistoryService`, `BaseAiProvider` and the AI jobs/actions read all AI settings and provider credentials **live from `SettingsService`** (DB `settings` table) — there is no `config('ai.*')` fallback (`config => null` in `SettingKeyRegistry`). Saved values take effect on the next request; no container restart needed.
 
 ### Pages: AiProviderAccessPage (`GET /admin/settings/ai/{provider}`)
 
@@ -173,15 +173,19 @@ stateDiagram-v2
 
 ## 6. Provider Configuration (was §5)
 
-| Provider | Env Prefix | Model Config Key | Default Model |
-|---|---|---|---|
-| OpenAI | `OPENAI_*` | `providers.openai` | `gpt-4.1` |
-| DeepSeek | `DEEPSEEK_*` | `providers.deepseek` | `deepseek-chat` |
-| GigaChat | `GIGACHAT_*` | `providers.gigachat` | `GigaChat-2-Max` |
+Provider credentials live in the DB `settings` table (via `SettingsService`), edited at `/admin/settings/ai/{provider}`. Each provider's fields use the `ai.{provider}_*` keys:
+
+| Provider | Settings keys (`ai.*`) | Default Model |
+|---|---|---|
+| OpenAI | `ai.openai_api_key`, `ai.openai_base_url`, `ai.openai_model`, `ai.openai_max_tokens`, `ai.openai_temperature` | `gpt-4.1` |
+| DeepSeek | `ai.deepseek_client_id`, `ai.deepseek_client_secret`, `ai.deepseek_base_url`, `ai.deepseek_model`, … | `deepseek-chat` |
+| GigaChat | `ai.gigachat_client_id`, `ai.gigachat_client_secret`, `ai.gigachat_base_url`, `ai.gigachat_model`, `ai.gigachat_path_cert`, … | `GigaChat-2-Max` |
+
+`BaseAiProvider::buildProviderConfig()` assembles these from `SettingsService`. There is no `config('ai.providers.*')` — that config block was removed.
 
 ```php
-// ✅ Correct — read AI provider from config
-$provider = config('ai.default_provider');
+// ✅ Correct — read AI provider from the DB settings layer
+$provider = app(\App\Services\Settings\SettingsService::class)->get('ai.default_provider');
 ```
 
 ```php
@@ -263,7 +267,8 @@ The AI bot replies **only** when all of the following are true:
 - ❌ Inventing or modifying security/auth mechanisms for AI providers
 - ❌ Creating `AiMessage` without corresponding `AiCondition`
 - ❌ Enabling `AI_AUTO_REPLY` without explicit configuration
-- ❌ Storing API keys for AI providers in code (must use `.env`)
+- ❌ Storing AI provider API keys in code, `.env` or `config()` (they live in the DB `settings` table via `SettingsService`, encrypted)
+- ❌ Reading any AI setting/credential via `config('ai.*')` or `env()` at runtime (use `SettingsService`)
 - ❌ Skipping the `confidence_threshold` check
 
 ---
