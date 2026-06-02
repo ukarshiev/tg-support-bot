@@ -100,6 +100,7 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/admin/settings/ai/{provider}` | session | Per-provider access settings (`AiProviderAccessPage`) — name `admin.settings.ai.provider` |
 | `GET` | `/admin/settings/api-webhooks` | session (admin only) | API and webhooks list (`ApiWebhooksPage`, custom Livewire) — name `admin.settings.api-webhooks` |
 | `GET` | `/admin/settings/api-webhooks/{source}` | session (admin only) | Per-source config (`ApiWebhookSourcePage`; source ∈ `[0-9]+`) — name `admin.settings.api-webhooks.source` |
+| `GET` | `/admin/settings/team` | session (admin only) | Team management screen (`TeamPage`, custom Livewire) — name `admin.settings.team` |
 
 > The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens. The underlying models, services, and artisan commands are unchanged.
 

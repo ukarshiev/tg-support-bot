@@ -10,6 +10,7 @@ use App\Livewire\Settings\ApiWebhooksPage;
 use App\Livewire\Settings\GeneralSettingsPage;
 use App\Livewire\Settings\IntegrationChannelPage;
 use App\Livewire\Settings\IntegrationsListPage;
+use App\Livewire\Settings\TeamPage;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -74,6 +75,10 @@ class AdminServiceProvider extends ServiceProvider
                 Route::get('/api-webhooks/{source}', ApiWebhookSourcePage::class)
                     ->name('api-webhooks.source')
                     ->where('source', '[0-9]+');
+
+                // Team — manage operators, invite new members, delete existing ones.
+                Route::get('/team', TeamPage::class)
+                    ->name('team');
             });
     }
 }
