@@ -77,8 +77,8 @@ _Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php`
 **BR-012** — The AI bot webhook path (`POST /api/ai-bot/webhook`) is active only when `MANAGER_INTERFACE=telegram_group`. When `MANAGER_INTERFACE=admin_panel`, `AiBotWebhookJob` exits early without dispatching any send jobs.
 _Enforced in:_ `app/Modules/Ai/Jobs/AiBotWebhookJob.php`
 
-**BR-013** — To identify forwarded user messages, the AI bot checks that the sender's `from.id` equals the `telegram.bot_id` setting (the main bot's numeric Telegram ID), read via `SettingsService`. This value is configured in the admin panel (Telegram integration screen), not in `.env`.
-_Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php @ isFromMainBot()`
+**BR-013** — The AI bot (via `AiBotWebhookJob`) only processes updates from the supergroup forum topics where `MANAGER_INTERFACE=telegram_group` is active (`ShouldAiReply::shouldGenerateForUserMessage()` gates on this). On the `ShouldAiReply` side, incoming Telegram updates for AI processing must satisfy: AI enabled, manager interface is `telegram_group`, the update originated from a private chat (`typeSource === 'private'`), update type is `message`, text is non-empty and not a slash-command, and the bot user is active (not banned/closed). There is no configured `telegram.bot_id` check — the `telegram.bot_id` setting was removed as unused at runtime. The AI bot's identity is identified by its own webhook path (`POST /api/ai-bot/webhook`), not by comparing sender IDs.
+_Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php::shouldGenerateForUserMessage()`
 
 **BR-014** — `generateReply()` and `processMessage()` share the same DB-backed history pipeline through `AiChatHistoryService::buildForBotUser($userId, $userMessage)`. The current incoming user message is passed as `$excludeLastUserText` so it is dropped from the assembled history when `SendTelegramMessageJob` has already inserted it (race-safe in both directions: when the row exists the duplicate is dropped, when it does not nothing happens).
 _Enforced in:_ `app/Modules/Ai/Services/AiAssistantService.php`, `app/Modules/Ai/Services/AiChatHistoryService.php`

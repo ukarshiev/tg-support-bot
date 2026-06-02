@@ -279,7 +279,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - The AI bot webhook URL is `POST /api/ai-bot/webhook`, protected by `AiBotQuery` middleware (secret stored as `telegram_ai.secret` in settings DB)
 - `ai.auto_reply = false` (default): AI posts a draft with "Accept / Cancel" inline buttons; manager reviews before sending
 - `ai.auto_reply = true`: AI posts the reply directly to the topic; it is immediately sent to the user; enabling via admin panel requires explicit confirmation
-- The AI bot only replies to messages whose `from.id` equals `telegram.bot_id` (forwarded user messages from the main bot) — stored in settings DB
+- The AI bot processes updates arriving at `POST /api/ai-bot/webhook`; `ShouldAiReply` gates replies on AI enabled, `MANAGER_INTERFACE=telegram_group`, private-chat source, message type, replyable text, and active user — no configured bot ID comparison is used
 - The AI bot does NOT reply when `MANAGER_INTERFACE=admin_panel`
 - Supported providers: OpenAI, DeepSeek, GigaChat (set via `ai.default_provider` in settings DB or from `/admin/settings/ai`)
 - Register the AI bot webhook with: `docker exec -it pet php artisan ai-bot:set-webhook`
@@ -305,12 +305,13 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 ### Channel Integrations (Settings)
 
-- The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, VK, MAX channel cards with connection status computed by `ChannelStatusService`
-- Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens, keys, and identifiers for each platform
-- Telegram channel page covers: `telegram.group_id`, `telegram.token`, `telegram.secret_key`, `telegram.bot_id`, `telegram.template_topic_name`, and a "Telegram AI-bot" subsection with `telegram_ai.token`, `telegram_ai.secret`, `telegram_ai.id`, `telegram_ai.username`
+- The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, Telegram AI bot, VK, MAX channel cards with connection status computed by `ChannelStatusService`
+- Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens, keys, and identifiers for each platform. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`
+- Telegram channel page (`channel=telegram`) covers: `telegram.group_id`, `telegram.token`, `telegram.secret_key`, `telegram.template_topic_name`. The `telegram.bot_id` setting was removed (unused at runtime)
+- Telegram AI bot page (`channel=telegram_ai`) covers: `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.id`, `telegram_ai.username`. Action is save-only — webhook registration uses `php artisan ai-bot:set-webhook` (shown in the instruction panel)
 - Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`
 - All secret fields (tokens, keys) are rendered as `type="password"` inputs; blank submission does not overwrite an existing stored secret
-- Webhook registration for each channel is handled by `WebhookRegistrationService` — never directly call platform API methods from the Livewire component
+- Webhook registration for telegram|vk|max is handled by `WebhookRegistrationService` — never directly call platform API methods from the Livewire component
 - `WebhookRegistrationService` wraps: Telegram (`TelegramMethods::sendQueryTelegram('setWebhook', ...)`), VK (connectivity via `VkMethods::sendQueryVk('groups.getById', ...)`), MAX (`Http::post(...platform-api.max.ru/subscriptions...)`)
 - Tokens are never logged — only non-sensitive context (registered URL, HTTP status code)
 - See `rules/domain/admin-panel.md` (BR-013 through BR-016) and `rules/process/security.md` (Secrets in the DB settings table)

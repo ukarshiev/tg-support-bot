@@ -28,7 +28,6 @@ abstract class TestCase extends BaseTestCase
             $settings->set('telegram.token', $this->botToken);
             $settings->set('telegram.group_id', $this->defaultGroupId);
             $settings->set('telegram.secret_key', 'test-secret-key');
-            $settings->set('telegram.bot_id', 0);
             $settings->set('telegram.template_topic_name', '{first_name} {last_name} {platform}');
             $settings->set('telegram_ai.token', 'ai-bot-token');
             $settings->set('telegram_ai.secret', 'ai-bot-secret');

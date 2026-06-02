@@ -54,11 +54,6 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => false,
         ],
-        'telegram.bot_id' => [
-            'type' => 'int',
-            'config' => null,
-            'is_secret' => false,
-        ],
         'telegram.template_topic_name' => [
             'type' => 'string',
             'config' => null,

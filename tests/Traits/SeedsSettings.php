@@ -62,7 +62,6 @@ trait SeedsSettings
             'telegram.token' => $botToken,
             'telegram.group_id' => env('TELEGRAM_GROUP_ID', '-100000000000'),
             'telegram.secret_key' => 'test-secret-key',
-            'telegram.bot_id' => 0,
             'telegram.template_topic_name' => '{first_name} {last_name} {platform}',
             'telegram_ai.token' => 'ai-bot-token',
             'telegram_ai.secret' => 'ai-bot-secret',

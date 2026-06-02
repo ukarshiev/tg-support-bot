@@ -72,6 +72,7 @@ class IntegrationsListPageTest extends TestCase
         Livewire::test(IntegrationsListPage::class)
             ->assertSee('Интеграции')
             ->assertSee('Telegram')
+            ->assertSee('Бот AI помощника')
             ->assertSee('ВКонтакте')
             ->assertSee('Max');
     }
@@ -110,7 +111,7 @@ class IntegrationsListPageTest extends TestCase
             ->assertSee('Подключено');
     }
 
-    public function test_channel_statuses_property_has_all_three_keys(): void
+    public function test_channel_statuses_property_has_all_four_keys(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
@@ -119,8 +120,28 @@ class IntegrationsListPageTest extends TestCase
 
         $statuses = $component->get('channelStatuses');
         $this->assertArrayHasKey('telegram', $statuses);
+        $this->assertArrayHasKey('telegram_ai', $statuses);
         $this->assertArrayHasKey('vk', $statuses);
         $this->assertArrayHasKey('max', $statuses);
+    }
+
+    public function test_renders_telegram_ai_card_with_link_to_channel_page(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Бот AI помощника')
+            ->assertSee(route('admin.settings.integrations.channel', ['channel' => 'telegram_ai']));
+    }
+
+    public function test_renders_telegram_ai_card_description(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Отдельный бот ИИ-помощника');
     }
 
     public function test_renders_widget_placeholder(): void

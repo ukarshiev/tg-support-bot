@@ -37,7 +37,7 @@ class SettingKeyRegistryTest extends TestCase
     {
         $this->assertSame('bool', SettingKeyRegistry::meta('ai.enabled')['type']);
         $this->assertSame('int', SettingKeyRegistry::meta('ai.max_context_tokens')['type']);
-        $this->assertSame('int', SettingKeyRegistry::meta('telegram.bot_id')['type']);
+        $this->assertSame('int', SettingKeyRegistry::meta('telegram_ai.id')['type']);
         $this->assertSame('string', SettingKeyRegistry::meta('max.token')['type']);
     }
 

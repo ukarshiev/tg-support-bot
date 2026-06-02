@@ -24,7 +24,7 @@ class ChannelStatusServiceTest extends TestCase
 
     // ── all() ────────────────────────────────────────────────────────────────
 
-    public function test_all_returns_all_three_channels(): void
+    public function test_all_returns_all_four_channels(): void
     {
         $settings = $this->makeSettings([]);
         $service = new ChannelStatusService($settings);
@@ -32,6 +32,7 @@ class ChannelStatusServiceTest extends TestCase
         $result = $service->all();
 
         $this->assertArrayHasKey('telegram', $result);
+        $this->assertArrayHasKey('telegram_ai', $result);
         $this->assertArrayHasKey('vk', $result);
         $this->assertArrayHasKey('max', $result);
     }
@@ -98,6 +99,40 @@ class ChannelStatusServiceTest extends TestCase
         $service = new ChannelStatusService($settings);
 
         $this->assertFalse($service->telegram()['connected']);
+    }
+
+    // ── telegramAi() ─────────────────────────────────────────────────────────
+
+    public function test_telegram_ai_connected_when_token_set(): void
+    {
+        $settings = $this->makeSettings([
+            'telegram_ai.token' => 'ai-tok',
+        ]);
+        $service = new ChannelStatusService($settings);
+
+        $status = $service->telegramAi();
+
+        $this->assertTrue($status['connected']);
+        $this->assertSame('Подключён', $status['label']);
+    }
+
+    public function test_telegram_ai_not_connected_when_token_empty(): void
+    {
+        $settings = $this->makeSettings([
+            'telegram_ai.token' => '',
+        ]);
+        $service = new ChannelStatusService($settings);
+
+        $this->assertFalse($service->telegramAi()['connected']);
+        $this->assertSame('Не настроен', $service->telegramAi()['label']);
+    }
+
+    public function test_telegram_ai_not_connected_when_token_missing(): void
+    {
+        $settings = $this->makeSettings([]);
+        $service = new ChannelStatusService($settings);
+
+        $this->assertFalse($service->telegramAi()['connected']);
     }
 
     // ── vk() ─────────────────────────────────────────────────────────────────

@@ -13,13 +13,17 @@ use Livewire\Component;
 /**
  * Per-channel integration configuration page.
  *
- * Handles config forms for Telegram, VK, and MAX channels.
+ * Handles config forms for Telegram, Telegram AI bot, VK, and MAX channels.
  * Reads/writes via SettingsService (secrets are stored encrypted).
  *
- * The «Подключить» button saves config AND attempts webhook registration in
- * a single action (connect()). A separate cancel() resets the form.
+ * For telegram|vk|max the «Подключить» button saves config AND attempts webhook
+ * registration in a single action (connect()). For telegram_ai the primary
+ * action is save() only — webhook registration for the AI bot is done via the
+ * artisan command `php artisan ai-bot:set-webhook` (shown in the instruction
+ * panel). A separate cancel() resets the form.
  *
- * Route: /admin/settings/integrations/{channel} where channel ∈ {telegram, vk, max}
+ * Route: /admin/settings/integrations/{channel}
+ *        where channel ∈ {telegram, telegram_ai, vk, max}
  *
  * Access: authenticated users via route middleware.
  * Layout: custom dark-sidebar admin layout (layouts.admin-settings).
@@ -27,10 +31,10 @@ use Livewire\Component;
 #[Layout('layouts.admin-settings')]
 class IntegrationChannelPage extends Component
 {
-    /** @var string The current channel slug (telegram|vk|max) */
+    /** @var string The current channel slug (telegram|telegram_ai|vk|max) */
     public string $channel = 'telegram';
 
-    // ── Telegram fields ───────────────────────────────────────────────────────
+    // ── Telegram (main bot) fields ────────────────────────────────────────────
 
     /** @var string|null */
     public ?string $telegram_group_id = null;
@@ -41,13 +45,10 @@ class IntegrationChannelPage extends Component
     /** @var string|null */
     public ?string $telegram_secret_key = null;
 
-    /** @var string|null Numeric bot ID (non-secret) */
-    public ?string $telegram_bot_id = null;
-
     /** @var string|null Topic name template */
     public ?string $telegram_template_topic_name = null;
 
-    // ── Telegram AI-bot fields ────────────────────────────────────────────────
+    // ── Telegram AI bot fields ────────────────────────────────────────────────
 
     /** @var string|null AI-bot token (secret — never pre-filled) */
     public ?string $telegram_ai_token = null;
@@ -112,8 +113,9 @@ class IntegrationChannelPage extends Component
     /**
      * Save config then attempt webhook registration — the «Подключить» action.
      *
-     * Saves first; on success immediately registers the webhook so the user
-     * sees a combined result without a second click.
+     * For telegram_ai the action only saves (webhook is registered via artisan).
+     * For telegram|vk|max: saves first; on success immediately registers the
+     * webhook so the user sees a combined result without a second click.
      */
     public function connect(SettingsService $settings, WebhookRegistrationService $webhook): void
     {
@@ -124,12 +126,18 @@ class IntegrationChannelPage extends Component
 
         match ($this->channel) {
             'telegram' => $this->saveTelegram($settings),
+            'telegram_ai' => $this->saveTelegramAi($settings),
             'vk' => $this->saveVk($settings),
             'max' => $this->saveMax($settings),
             default => $this->formErrors['channel'] = 'Неизвестный канал.',
         };
 
         if (! $this->saved) {
+            return;
+        }
+
+        // telegram_ai: no webhook registration via UI — artisan command only.
+        if ($this->channel === 'telegram_ai') {
             return;
         }
 
@@ -158,6 +166,7 @@ class IntegrationChannelPage extends Component
 
         match ($this->channel) {
             'telegram' => $this->saveTelegram($settings),
+            'telegram_ai' => $this->saveTelegramAi($settings),
             'vk' => $this->saveVk($settings),
             'max' => $this->saveMax($settings),
             default => $this->formErrors['channel'] = 'Неизвестный канал.',
@@ -215,7 +224,6 @@ class IntegrationChannelPage extends Component
         $this->telegram_group_id = (string) ($settings->get('telegram.group_id') ?? '');
         $this->telegram_token = (string) ($settings->get('telegram.token') ?? '');
         $this->telegram_secret_key = (string) ($settings->get('telegram.secret_key') ?? '');
-        $this->telegram_bot_id = (string) ($settings->get('telegram.bot_id') ?? '');
         $this->telegram_template_topic_name = (string) ($settings->get('telegram.template_topic_name') ?? '');
 
         // AI-bot: non-secret fields pre-filled; secret fields intentionally null (never pre-filled)
@@ -233,7 +241,7 @@ class IntegrationChannelPage extends Component
     }
 
     /**
-     * Validate and save Telegram channel settings.
+     * Validate and save Telegram main bot channel settings.
      */
     private function saveTelegram(SettingsService $settings): void
     {
@@ -246,7 +254,6 @@ class IntegrationChannelPage extends Component
         }
 
         $settings->set('telegram.group_id', $this->telegram_group_id ?? '');
-        $settings->set('telegram.bot_id', (int) $this->telegram_bot_id);
         $settings->set('telegram.template_topic_name', $this->telegram_template_topic_name ?? '');
 
         // Save each secret only when non-empty (do not overwrite existing secrets with blank)
@@ -257,10 +264,22 @@ class IntegrationChannelPage extends Component
             $settings->set('telegram.secret_key', $this->telegram_secret_key);
         }
 
-        // AI-bot fields
+        $this->saved = true;
+    }
+
+    /**
+     * Validate and save Telegram AI bot channel settings.
+     */
+    private function saveTelegramAi(SettingsService $settings): void
+    {
+        if (! empty($this->formErrors)) {
+            return;
+        }
+
         $settings->set('telegram_ai.id', (int) $this->telegram_ai_id);
         $settings->set('telegram_ai.username', $this->telegram_ai_username ?? '');
 
+        // Save secrets only when non-empty (do not overwrite existing secrets with blank)
         if ($this->telegram_ai_token !== '' && $this->telegram_ai_token !== null) {
             $settings->set('telegram_ai.token', $this->telegram_ai_token);
         }
