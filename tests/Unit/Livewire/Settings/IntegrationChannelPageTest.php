@@ -277,7 +277,7 @@ class IntegrationChannelPageTest extends TestCase
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
-        $webhook->shouldReceive('verifyTelegram')->with('bad_tok')->once()->andReturn(['success' => false, 'message' => 'Неверный токен Telegram (getMe не прошёл).']);
+        $webhook->shouldReceive('verifyTelegram')->with('bad_tok')->once()->andReturn(['success' => false, 'message' => 'Неверный токен Telegram.']);
         $webhook->shouldNotReceive('registerTelegram');
 
         $component = new IntegrationChannelPage();
@@ -288,7 +288,7 @@ class IntegrationChannelPageTest extends TestCase
 
         $this->assertFalse($component->saved);
         $this->assertFalse($component->webhookSuccess);
-        $this->assertSame('Неверный токен Telegram (getMe не прошёл).', $component->webhookMessage);
+        $this->assertSame('Неверный токен Telegram.', $component->webhookMessage);
     }
 
     public function test_connect_uses_stored_token_when_form_field_is_blank(): void

@@ -51,7 +51,7 @@ class WebhookRegistrationService
                 return ['success' => true, 'message' => 'Токен Telegram прошёл проверку.'];
             }
 
-            return ['success' => false, 'message' => 'Неверный токен Telegram (getMe не прошёл).'];
+            return ['success' => false, 'message' => 'Неверный токен Telegram.'];
         } catch (\Throwable) {
             return ['success' => false, 'message' => 'Не удалось связаться с API платформы.'];
         }

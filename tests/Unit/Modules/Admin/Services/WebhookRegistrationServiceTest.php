@@ -215,7 +215,7 @@ class WebhookRegistrationServiceTest extends TestCase
         $result = $service->verifyTelegram('bad_token');
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('getMe не прошёл', $result['message']);
+        $this->assertStringContainsString('Неверный токен Telegram', $result['message']);
     }
 
     // ── verifyVk() ───────────────────────────────────────────────────────────
