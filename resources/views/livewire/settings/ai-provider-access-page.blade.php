@@ -463,16 +463,26 @@
                     </li>
                 </ul>
 
-                @if ($provider === 'gigachat')
-                    <div class="mt-5 rounded-lg border border-border-light bg-bg-secondary p-3">
-                        <p class="text-[12px] leading-relaxed text-text-secondary">
-                            <strong class="font-semibold text-text-primary">Сертификат</strong> — CA-сертификат GigaChat.
-                            Загрузите файл (.crt / .pem) — он сохраняется как
-                            <code class="rounded bg-bg-input px-1 font-mono text-[11px]">storage/certs/russian_trusted_root_ca_pem.crt</code>
-                            и используется провайдером как <code class="rounded bg-bg-input px-1 font-mono text-[11px]">verify</code>.
-                        </p>
-                    </div>
-                @endif
+                @php
+                    $docsUrl = match ($provider) {
+                        'openai' => 'https://docs.tg-support-bot.ru/docs/ai-openai.html',
+                        'deepseek' => 'https://docs.tg-support-bot.ru/docs/ai-deepseek.html',
+                        'gigachat' => 'https://docs.tg-support-bot.ru/docs/ai-gigachat.html',
+                        default => 'https://docs.tg-support-bot.ru/',
+                    };
+                @endphp
+                <a href="{{ $docsUrl }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="mt-5 flex items-center gap-2 rounded-lg px-3.5 py-3 text-xs font-medium text-accent transition hover:opacity-80"
+                   style="background:#F0F4FF">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none"
+                         viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Подробнее в документации
+                </a>
 
             </div>
         </div>
