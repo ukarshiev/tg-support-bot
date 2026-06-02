@@ -68,8 +68,14 @@
                     <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl" style="background:#229ED9">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7"
                              fill="none" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                  d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                            <g stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 8V4H8" />
+                                <rect width="16" height="12" x="4" y="8" rx="2" />
+                                <path d="M2 14h2" />
+                                <path d="M20 14h2" />
+                                <path d="M15 13v2" />
+                                <path d="M9 13v2" />
+                            </g>
                         </svg>
                     </div>
                 @elseif ($channel === 'vk')
