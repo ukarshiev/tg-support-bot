@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Livewire\Settings;
 
 use App\Services\Settings\SettingsService;
+use Illuminate\Support\Facades\File;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 /**
  * Per-provider AI credentials configuration page.
@@ -26,6 +28,8 @@ use Livewire\Component;
 #[Layout('layouts.admin-settings')]
 class AiProviderAccessPage extends Component
 {
+    use WithFileUploads;
+
     /** @var string The current provider slug (openai|deepseek|gigachat) */
     public string $provider = 'openai';
 
@@ -86,8 +90,20 @@ class AiProviderAccessPage extends Component
     /** @var string|null GigaChat temperature */
     public ?string $gigachat_temperature = null;
 
-    /** @var string|null Path to GigaChat certificate file */
+    /** @var string|null Stored relative path of the GigaChat certificate (read-only display) */
     public ?string $gigachat_path_cert = null;
+
+    /**
+     * Uploaded GigaChat certificate file. Saved to storage/certs/russian_trusted_root_ca_pem.crt.
+     *
+     * @var \Livewire\Features\SupportFileUploads\TemporaryUploadedFile|null
+     */
+    public $gigachat_cert_file = null;
+
+    /** Fixed on-disk name + storage-relative path for the GigaChat certificate. */
+    private const GIGACHAT_CERT_NAME = 'russian_trusted_root_ca_pem.crt';
+
+    private const GIGACHAT_CERT_RELATIVE = 'certs/russian_trusted_root_ca_pem.crt';
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -251,6 +267,16 @@ class AiProviderAccessPage extends Component
             $this->formErrors['gigachat_max_tokens'] = 'Макс. токенов должно быть положительным числом.';
         }
 
+        if ($this->gigachat_cert_file !== null) {
+            $ext = strtolower((string) $this->gigachat_cert_file->getClientOriginalExtension());
+
+            if (! in_array($ext, ['crt', 'pem', 'cer'], true)) {
+                $this->formErrors['gigachat_cert_file'] = 'Допустимы файлы .crt, .pem, .cer.';
+            } elseif ($this->gigachat_cert_file->getSize() > 1024 * 1024) {
+                $this->formErrors['gigachat_cert_file'] = 'Файл слишком большой (макс. 1 МБ).';
+            }
+        }
+
         if (! empty($this->formErrors)) {
             return;
         }
@@ -270,7 +296,18 @@ class AiProviderAccessPage extends Component
         }
 
         $settings->set('ai.gigachat_temperature', $this->gigachat_temperature ?? '');
-        $settings->set('ai.gigachat_path_cert', $this->gigachat_path_cert ?? '');
+
+        // Certificate: when a new file is uploaded, store it under storage/certs with the
+        // fixed name and persist its storage-relative path. Otherwise keep the current cert.
+        if ($this->gigachat_cert_file !== null) {
+            $dir = storage_path('certs');
+            File::ensureDirectoryExists($dir);
+            File::put($dir . '/' . self::GIGACHAT_CERT_NAME, $this->gigachat_cert_file->get());
+
+            $settings->set('ai.gigachat_path_cert', self::GIGACHAT_CERT_RELATIVE);
+            $this->gigachat_path_cert = self::GIGACHAT_CERT_RELATIVE;
+            $this->gigachat_cert_file = null;
+        }
 
         $this->saved = true;
     }

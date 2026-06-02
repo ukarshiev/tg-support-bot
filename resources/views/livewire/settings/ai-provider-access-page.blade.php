@@ -383,20 +383,28 @@
                             />
                         </x-admin.form-field>
 
-                        {{-- Path to certificate --}}
+                        {{-- Certificate file upload --}}
                         <x-admin.form-field
-                            label="Путь к сертификату (path_cert)"
-                            for="gigachat_path_cert"
-                            hint="Путь к файлу сертификата на сервере (только текстовый путь, не загрузка файла)"
-                            :error="$formErrors['gigachat_path_cert'] ?? null"
+                            label="Сертификат (CA)"
+                            for="gigachat_cert_file"
+                            hint="Загрузите CA-сертификат (.crt / .pem). Файл сохраняется как storage/certs/russian_trusted_root_ca_pem.crt"
+                            :error="$formErrors['gigachat_cert_file'] ?? null"
                         >
                             <input
-                                id="gigachat_path_cert"
-                                type="text"
-                                wire:model="gigachat_path_cert"
-                                placeholder="/etc/ssl/certs/gigachat.pem"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                id="gigachat_cert_file"
+                                type="file"
+                                wire:model="gigachat_cert_file"
+                                accept=".crt,.pem,.cer"
+                                class="block w-full cursor-pointer rounded-lg border border-border-light bg-bg-input text-sm text-text-secondary outline-none file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-white hover:file:opacity-90"
                             />
+                            <div wire:loading wire:target="gigachat_cert_file" class="mt-1.5 text-xs text-text-secondary">Загрузка файла…</div>
+                            @if (!empty($gigachat_path_cert))
+                                <p class="mt-1.5 text-xs text-text-secondary">
+                                    Текущий сертификат: <code class="rounded bg-bg-input px-1 font-mono text-[11px]">storage/{{ $gigachat_path_cert }}</code>
+                                </p>
+                            @else
+                                <p class="mt-1.5 text-xs text-text-secondary">Сертификат ещё не загружен.</p>
+                            @endif
                         </x-admin.form-field>
 
                     </div>
@@ -458,9 +466,10 @@
                 @if ($provider === 'gigachat')
                     <div class="mt-5 rounded-lg border border-border-light bg-bg-secondary p-3">
                         <p class="text-[12px] leading-relaxed text-text-secondary">
-                            <strong class="font-semibold text-text-primary">path_cert</strong> — путь к CA-сертификату
-                            GigaChat на сервере. Укажите абсолютный путь, например
-                            <code class="rounded bg-bg-input px-1 font-mono text-[11px]">/etc/ssl/certs/russian_trusted_root_ca.pem</code>.
+                            <strong class="font-semibold text-text-primary">Сертификат</strong> — CA-сертификат GigaChat.
+                            Загрузите файл (.crt / .pem) — он сохраняется как
+                            <code class="rounded bg-bg-input px-1 font-mono text-[11px]">storage/certs/russian_trusted_root_ca_pem.crt</code>
+                            и используется провайдером как <code class="rounded bg-bg-input px-1 font-mono text-[11px]">verify</code>.
                         </p>
                     </div>
                 @endif
