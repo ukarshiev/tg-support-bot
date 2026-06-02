@@ -129,21 +129,23 @@ class AiAssistantPage extends Component
         $this->formErrors = [];
         $this->saved = false;
 
-        // Validation
-        if (! in_array($this->default_provider, ['openai', 'deepseek', 'gigachat'], true)) {
-            $this->formErrors['default_provider'] = 'Выберите допустимый провайдер.';
-        }
+        // Validation — only the (visible) detail settings matter when AI is enabled.
+        if ($this->ai_enabled) {
+            if (! in_array($this->default_provider, ['openai', 'deepseek', 'gigachat'], true)) {
+                $this->formErrors['default_provider'] = 'Выберите допустимый провайдер.';
+            }
 
-        if ($this->max_context_tokens < 1) {
-            $this->formErrors['max_context_tokens'] = 'Лимит контекста должен быть положительным целым числом.';
-        }
+            if ($this->max_context_tokens < 1) {
+                $this->formErrors['max_context_tokens'] = 'Лимит контекста должен быть положительным целым числом.';
+            }
 
-        if ($this->rate_limit_per_minute < 1) {
-            $this->formErrors['rate_limit_per_minute'] = 'Лимит запросов в минуту должен быть положительным числом.';
-        }
+            if ($this->rate_limit_per_minute < 1) {
+                $this->formErrors['rate_limit_per_minute'] = 'Лимит запросов в минуту должен быть положительным числом.';
+            }
 
-        if ($this->rate_limit_per_hour < 1) {
-            $this->formErrors['rate_limit_per_hour'] = 'Лимит запросов в час должен быть положительным числом.';
+            if ($this->rate_limit_per_hour < 1) {
+                $this->formErrors['rate_limit_per_hour'] = 'Лимит запросов в час должен быть положительным числом.';
+            }
         }
 
         if (! empty($this->formErrors)) {

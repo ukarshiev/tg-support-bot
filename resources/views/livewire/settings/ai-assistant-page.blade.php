@@ -57,6 +57,9 @@
             <x-admin.toggle name="ai_enabled" id="ai_enabled" wire:model.live="ai_enabled" />
         </div>
 
+        {{-- All detail settings are hidden while the assistant is disabled --}}
+        @if ($ai_enabled)
+
         {{-- ── AI provider ─────────────────────────────────────────────────── --}}
         <div>
             <h2 class="mb-4 text-base font-semibold text-text-primary">AI-провайдер</h2>
@@ -282,15 +285,16 @@
                     <p class="mt-2 text-[11px] text-gray-400">Промпт определяет поведение и стиль ответов ИИ-ассистента</p>
                 </div>
 
-                {{-- Save --}}
-                <div class="flex justify-end">
-                    <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="save">
-                        <span wire:loading.remove wire:target="save">Сохранить настройки</span>
-                        <span wire:loading wire:target="save">Сохранение...</span>
-                    </x-admin.button-primary>
-                </div>
-
             </div>
+        </div>
+        @endif
+
+        {{-- Save (always visible — allows persisting the disabled state too) --}}
+        <div class="flex justify-end">
+            <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="save">
+                <span wire:loading.remove wire:target="save">Сохранить настройки</span>
+                <span wire:loading wire:target="save">Сохранение...</span>
+            </x-admin.button-primary>
         </div>
 
     </form>

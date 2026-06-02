@@ -131,6 +131,7 @@ class AiAssistantPageTest extends TestCase
 
         $component = new AiAssistantPage();
         $component->mount($mock);
+        $component->ai_enabled = true;
         $component->default_provider = 'anthropic';
         $component->save($mock);
 
@@ -147,6 +148,7 @@ class AiAssistantPageTest extends TestCase
 
         $component = new AiAssistantPage();
         $component->mount($mock);
+        $component->ai_enabled = true;
         $component->max_context_tokens = 0;
         $component->save($mock);
 
@@ -163,6 +165,7 @@ class AiAssistantPageTest extends TestCase
 
         $component = new AiAssistantPage();
         $component->mount($mock);
+        $component->ai_enabled = true;
         $component->max_context_tokens = -100;
         $component->save($mock);
 
