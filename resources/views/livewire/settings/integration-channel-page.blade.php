@@ -177,8 +177,9 @@
                                 type="password"
                                 wire:model="telegram_ai_token"
                                 autocomplete="new-password"
-                                placeholder="Оставьте пустым, чтобы не менять"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                placeholder="110201543:AAHdqTcvCH1vGWJxfSeo..."
+                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                                    @if (!empty($formErrors['telegram_ai_token'])) border-red-400 @endif"
                             />
                         </x-admin.form-field>
 
@@ -194,8 +195,9 @@
                                 type="password"
                                 wire:model="telegram_ai_secret"
                                 autocomplete="new-password"
-                                placeholder="Оставьте пустым, чтобы не менять"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                                placeholder="your-secret-key"
+                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                                    @if (!empty($formErrors['telegram_ai_secret'])) border-red-400 @endif"
                             />
                         </x-admin.form-field>
 
