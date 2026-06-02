@@ -57,10 +57,10 @@ class IntegrationChannelPage extends Component
 
     // ── Telegram AI bot fields ────────────────────────────────────────────────
 
-    /** @var string|null AI-bot token (secret — never pre-filled) */
+    /** @var string|null AI-bot token (pre-filled from settings, like the main bot) */
     public ?string $telegram_ai_token = null;
 
-    /** @var string|null AI-bot webhook secret (secret — never pre-filled) */
+    /** @var string|null AI-bot webhook secret (pre-filled from settings, like the main bot) */
     public ?string $telegram_ai_secret = null;
 
     /** @var string|null AI-bot numeric ID */
@@ -350,11 +350,11 @@ class IntegrationChannelPage extends Component
         $this->telegram_token = (string) ($settings->get('telegram.token') ?? '');
         $this->telegram_secret_key = (string) ($settings->get('telegram.secret_key') ?? '');
 
-        // AI-bot: non-secret fields pre-filled; secret fields intentionally null (never pre-filled)
+        // AI-bot fields — pre-filled from settings, same as the main bot / VK / MAX fields.
         $this->telegram_ai_id = (string) ($settings->get('telegram_ai.id') ?? '');
         $this->telegram_ai_username = (string) ($settings->get('telegram_ai.username') ?? '');
-        $this->telegram_ai_token = null;
-        $this->telegram_ai_secret = null;
+        $this->telegram_ai_token = (string) ($settings->get('telegram_ai.token') ?? '');
+        $this->telegram_ai_secret = (string) ($settings->get('telegram_ai.secret') ?? '');
 
         $this->vk_token = (string) ($settings->get('vk.token') ?? '');
         $this->vk_secret_key = (string) ($settings->get('vk.secret_key') ?? '');

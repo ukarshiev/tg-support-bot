@@ -69,6 +69,8 @@ class IntegrationChannelPageTest extends TestCase
         $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('sec');
         $settings->shouldReceive('get')->with('telegram_ai.id')->andReturn('0');
         $settings->shouldReceive('get')->with('telegram_ai.username')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram_ai.token')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram_ai.secret')->andReturn('');
         $settings->shouldReceive('get')->with('vk.token')->andReturn('');
         $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
         $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
@@ -353,6 +355,8 @@ class IntegrationChannelPageTest extends TestCase
         $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('');
         $settings->shouldReceive('get')->with('telegram_ai.id')->andReturn('0');
         $settings->shouldReceive('get')->with('telegram_ai.username')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram_ai.token')->andReturn('');
+        $settings->shouldReceive('get')->with('telegram_ai.secret')->andReturn('');
         $settings->shouldReceive('get')->with('vk.token')->andReturn('');
         $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
         $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
