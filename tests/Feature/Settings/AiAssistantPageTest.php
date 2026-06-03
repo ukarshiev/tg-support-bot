@@ -52,15 +52,15 @@ class AiAssistantPageTest extends TestCase
         $settings = app(SettingsService::class);
         $settings->set('ai.enabled', true);
         $settings->set('ai.default_provider', 'deepseek');
+        // deepseek must have access configured to remain the active provider.
+        $settings->set('ai.deepseek_client_secret', 'secret');
         $settings->set('ai.auto_reply', false);
-        $settings->set('ai.max_context_tokens', 4000);
         $settings->set('ai.system_prompt', 'Be helpful.');
 
         Livewire::test(AiAssistantPage::class)
             ->assertSet('ai_enabled', true)
             ->assertSet('default_provider', 'deepseek')
             ->assertSet('auto_reply', false)
-            ->assertSet('max_context_tokens', 4000)
             ->assertSet('system_prompt', 'Be helpful.');
     }
 
@@ -73,14 +73,13 @@ class AiAssistantPageTest extends TestCase
             'ai.enabled' => false,
             'ai.default_provider' => 'openai',
             'ai.auto_reply' => false,
-            'ai.max_context_tokens' => 3000,
         ]);
 
         Livewire::test(AiAssistantPage::class)
             ->assertSet('ai_enabled', false)
-            ->assertSet('default_provider', 'openai')
-            ->assertSet('auto_reply', false)
-            ->assertSet('max_context_tokens', 3000);
+            // No provider configured → none is pre-selected.
+            ->assertSet('default_provider', '')
+            ->assertSet('auto_reply', false);
     }
 
     // ── Save ─────────────────────────────────────────────────────────────────
@@ -90,11 +89,14 @@ class AiAssistantPageTest extends TestCase
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
+        // The chosen provider must have its access credentials configured,
+        // otherwise save() rejects it as «Доступы не указаны».
+        app(SettingsService::class)->set('ai.gigachat_client_secret', 'secret');
+
         Livewire::test(AiAssistantPage::class)
             ->set('ai_enabled', true)
             ->set('default_provider', 'gigachat')
             ->set('auto_reply', false)
-            ->set('max_context_tokens', 5000)
             ->set('system_prompt', 'My prompt')
             ->call('save')
             ->assertSet('saved', true)
@@ -104,7 +106,6 @@ class AiAssistantPageTest extends TestCase
         $settings = app(SettingsService::class);
         $this->assertTrue((bool) $settings->get('ai.enabled'));
         $this->assertSame('gigachat', (string) $settings->get('ai.default_provider'));
-        $this->assertSame(5000, (int) $settings->get('ai.max_context_tokens'));
         $this->assertSame('My prompt', (string) $settings->get('ai.system_prompt'));
     }
 
@@ -122,16 +123,115 @@ class AiAssistantPageTest extends TestCase
         $this->assertArrayHasKey('default_provider', $component->get('formErrors'));
     }
 
-    public function test_save_rejects_zero_max_context_tokens(): void
+    // ── Provider access gating ─────────────────────────────────────────────────
+
+    public function test_save_rejects_provider_without_access(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
-        Livewire::test(AiAssistantPage::class)
+        // gigachat has no credentials configured → it cannot be selected.
+        $component = Livewire::test(AiAssistantPage::class)
             ->set('ai_enabled', true)
-            ->set('max_context_tokens', 0)
+            ->set('default_provider', 'gigachat')
             ->call('save')
             ->assertSet('saved', false);
+
+        $this->assertArrayHasKey('default_provider', $component->get('formErrors'));
+        $this->assertSame(
+            'У выбранного провайдера не указаны доступы.',
+            $component->get('formErrors')['default_provider'],
+        );
+    }
+
+    public function test_provider_without_access_shows_flag_and_no_select_button(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        // openai is the active, configured provider; deepseek/gigachat are not.
+        $settings->set('ai.enabled', true);
+        $settings->set('ai.default_provider', 'openai');
+        $settings->set('ai.openai_api_key', 'sk-test');
+
+        Livewire::test(AiAssistantPage::class)
+            ->assertSee('Доступы не указаны')
+            ->assertSet('providerConfigured.openai', true)
+            ->assertSet('providerConfigured.deepseek', false)
+            ->assertSet('providerConfigured.gigachat', false);
+    }
+
+    public function test_no_provider_is_preselected_when_none_has_access(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        // Nothing configured at all — OpenAI must NOT be pre-selected.
+        Livewire::test(AiAssistantPage::class)
+            ->set('ai_enabled', true)
+            ->assertSet('default_provider', '')
+            ->assertDontSee('Активен');
+    }
+
+    public function test_stored_provider_without_access_falls_back_to_configured_one(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        // openai is stored as default but has no access; deepseek is configured.
+        $settings->set('ai.default_provider', 'openai');
+        $settings->set('ai.deepseek_client_secret', 'secret');
+
+        Livewire::test(AiAssistantPage::class)
+            ->assertSet('default_provider', 'deepseek');
+    }
+
+    // ── Master AI toggle (instant persist) ─────────────────────────────────────
+
+    public function test_master_toggle_persists_without_save(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        // TestCase::setUp seeds telegram_ai.token, so the AI bot integration is
+        // connected and the master toggle can be enabled.
+
+        // Toggling the master switch persists immediately — no save() call.
+        Livewire::test(AiAssistantPage::class)
+            ->set('ai_enabled', true);
+
+        $this->assertTrue((bool) $settings->get('ai.enabled'));
+
+        Livewire::test(AiAssistantPage::class)
+            ->set('ai_enabled', false);
+
+        $this->assertFalse((bool) $settings->get('ai.enabled'));
+    }
+
+    public function test_master_toggle_blocked_until_ai_bot_configured(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        // Remove the seeded AI bot token → integration not connected.
+        $settings->forget('telegram_ai.token');
+
+        Livewire::test(AiAssistantPage::class)
+            ->assertSet('aiBotConnected', false)
+            ->assertSee('Сначала настройте')
+            ->set('ai_enabled', true)
+            // Enabling is blocked — toggle reverts and nothing is persisted.
+            ->assertSet('ai_enabled', false);
+
+        $this->assertFalse((bool) $settings->get('ai.enabled'));
     }
 
     // ── Auto-reply confirm flow ───────────────────────────────────────────────
@@ -182,6 +282,8 @@ class AiAssistantPageTest extends TestCase
         /** @var SettingsService $settings */
         $settings = app(SettingsService::class);
         $settings->set('ai.default_provider', 'openai');
+        // openai must have access configured to remain the active provider.
+        $settings->set('ai.openai_api_key', 'sk-test');
         $settings->set('ai.system_prompt', 'Original prompt');
 
         Livewire::test(AiAssistantPage::class)

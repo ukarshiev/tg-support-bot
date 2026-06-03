@@ -6,29 +6,6 @@
         <p class="mt-1 text-sm text-text-secondary">Настройка AI-помощника для автоматических ответов</p>
     </div>
 
-    {{-- Auto-reply warning --}}
-    @if ($showAutoReplyWarning)
-        <div class="mb-5 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-            <div class="flex items-start gap-3">
-                <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <div class="flex-1">
-                    <p class="text-sm font-semibold text-yellow-800">Включить автоответ?</p>
-                    <p class="mt-1 text-xs text-yellow-700">В режиме автоответа ИИ будет отправлять сообщения пользователям напрямую без проверки менеджером. Убедитесь, что системный промпт настроен корректно.</p>
-                    <div class="mt-3 flex gap-2">
-                        <x-admin.button-primary wire:click="confirmAutoReply" type="button" class="py-1.5 text-xs">
-                            Включить автоответ
-                        </x-admin.button-primary>
-                        <x-admin.button-secondary wire:click="cancelAutoReply" type="button" class="py-1.5 text-xs">
-                            Отмена
-                        </x-admin.button-secondary>
-                    </div>
-                </div>
-            </div>
-        </div>
-    @endif
-
     <form wire:submit="save" novalidate class="space-y-6">
 
         {{-- ── Master toggle ───────────────────────────────────────────────── --}}
@@ -41,11 +18,34 @@
                 </div>
                 <div>
                     <p class="text-[15px] font-semibold text-text-primary">Включить AI помощника</p>
-                    <p class="mt-0.5 text-[13px] text-text-secondary">ИИ будет помогать операторам составлять ответы</p>
+                    <p class="mt-0.5 text-[13px] text-text-secondary">ИИ будет помогать операторам составлять ответы · применяется сразу</p>
                 </div>
             </div>
-            <x-admin.toggle name="ai_enabled" id="ai_enabled" wire:model.live="ai_enabled" />
+            {{-- Cannot be enabled until the AI bot integration is configured; disabling stays allowed --}}
+            <x-admin.toggle name="ai_enabled" id="ai_enabled" wire:model.live="ai_enabled" :disabled="! $aiBotConnected && ! $ai_enabled" />
         </div>
+
+        {{-- AI bot integration required notice --}}
+        @unless ($aiBotConnected)
+            <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+                <div class="flex items-start gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div class="flex-1">
+                        <p class="text-sm font-semibold text-yellow-800">Сначала настройте «Бот AI помощника»</p>
+                        <p class="mt-1 text-xs text-yellow-700">Включить ИИ-помощника нельзя, пока не настроена интеграция «Бот AI помощника»: ответы ИИ публикуются в супергруппе от его имени, и без рабочего токена они не отправляются.</p>
+                        <a href="{{ route('admin.settings.integrations.channel', 'telegram_ai') }}" wire:navigate
+                           class="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline">
+                            Настроить «Бот AI помощника»
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        @endunless
 
         {{-- All detail settings are hidden while the assistant is disabled --}}
         @if ($ai_enabled)
@@ -68,8 +68,11 @@
 
             <div class="space-y-4">
                 @foreach ($providers as $slug => $p)
-                    @php $active = $default_provider === $slug; @endphp
-                    <div class="rounded-xl bg-bg-primary p-5 lg:px-6 {{ $active ? 'border-2' : 'border border-border-light' }}"
+                    @php
+                        $active = $default_provider === $slug;
+                        $configured = $providerConfigured[$slug] ?? false;
+                    @endphp
+                    <div class="rounded-xl bg-bg-primary p-5 lg:px-6 {{ $active ? 'border-2' : 'border border-border-light' }} {{ ! $configured && ! $active ? 'opacity-75' : '' }}"
                          @if ($active) style="border-color:#10A37F" @endif>
 
                         {{-- Top row --}}
@@ -86,6 +89,13 @@
                             <div class="flex items-center gap-2">
                                 @if ($active)
                                     <span class="inline-flex items-center rounded-lg px-2 py-1 text-xs font-medium" style="background:#ECFDF5;color:#10A37F">Активен</span>
+                                @elseif (! $configured)
+                                    <span class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium" style="background:#FEF9C3;color:#A16207" title="Укажите доступы провайдера, чтобы его можно было выбрать">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                        Доступы не указаны
+                                    </span>
                                 @else
                                     <button type="button" wire:click="$set('default_provider', '{{ $slug }}')"
                                             class="inline-flex items-center justify-center rounded-lg bg-bg-input px-3.5 py-1.5 text-xs font-medium text-text-primary transition hover:bg-border-light">
@@ -131,6 +141,29 @@
 
             <div class="space-y-5 rounded-xl border border-border-light bg-bg-primary p-6">
 
+                {{-- Auto-reply warning — appears right above the toggle after it is clicked --}}
+                @if ($showAutoReplyWarning)
+                    <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+                        <div class="flex items-start gap-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <div class="flex-1">
+                                <p class="text-sm font-semibold text-yellow-800">Включить автоответ?</p>
+                                <p class="mt-1 text-xs text-yellow-700">В режиме автоответа ИИ будет отправлять сообщения пользователям напрямую без проверки менеджером. Убедитесь, что системный промпт настроен корректно.</p>
+                                <div class="mt-3 flex gap-2">
+                                    <x-admin.button-primary wire:click="confirmAutoReply" type="button" class="py-1.5 text-xs">
+                                        Включить автоответ
+                                    </x-admin.button-primary>
+                                    <x-admin.button-secondary wire:click="cancelAutoReply" type="button" class="py-1.5 text-xs">
+                                        Отмена
+                                    </x-admin.button-secondary>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
                 {{-- Auto-reply --}}
                 <div class="flex items-center justify-between">
                     <div>
@@ -139,43 +172,6 @@
                     </div>
                     <x-admin.toggle name="auto_reply" id="auto_reply" wire:model.live="auto_reply" />
                 </div>
-
-                <div class="h-px bg-border-light"></div>
-
-                {{-- Max context tokens --}}
-                <x-admin.form-field
-                    label="Макс. токенов контекста"
-                    for="max_context_tokens"
-                    hint="Ограничение размера окна истории диалога (по умолч. 3000)"
-                    :error="$formErrors['max_context_tokens'] ?? null"
-                >
-                    <input
-                        id="max_context_tokens"
-                        type="number"
-                        min="1"
-                        wire:model="max_context_tokens"
-                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
-                            @if (!empty($formErrors['max_context_tokens'])) border-red-400 @endif"
-                    />
-                </x-admin.form-field>
-
-                <div class="h-px bg-border-light"></div>
-
-                {{-- Confidence threshold --}}
-                <x-admin.form-field
-                    label="Порог уверенности (0.0–1.0)"
-                    for="confidence_threshold"
-                    hint="Ответы ниже этого порога передаются на эскалацию менеджеру (по умолч. 0.8)"
-                    :error="$formErrors['confidence_threshold'] ?? null"
-                >
-                    <input
-                        id="confidence_threshold"
-                        type="text"
-                        wire:model="confidence_threshold"
-                        placeholder="0.8"
-                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
-                    />
-                </x-admin.form-field>
 
                 <div class="h-px bg-border-light"></div>
 
@@ -231,28 +227,6 @@
                         class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
                     />
                 </x-admin.form-field>
-
-                <div class="h-px bg-border-light"></div>
-
-                {{-- Auto escalation --}}
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-sm font-semibold text-text-primary">Автоэскалация</p>
-                        <p class="mt-0.5 text-xs text-text-secondary">Автоматически эскалировать обращение менеджеру при низкой уверенности ИИ</p>
-                    </div>
-                    <x-admin.toggle name="auto_escalation" id="auto_escalation" wire:model="auto_escalation" />
-                </div>
-
-                <div class="h-px bg-border-light"></div>
-
-                {{-- Enable logging --}}
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-sm font-semibold text-text-primary">Логирование ИИ</p>
-                        <p class="mt-0.5 text-xs text-text-secondary">Записывать запросы и ответы ИИ в лог</p>
-                    </div>
-                    <x-admin.toggle name="enable_logging" id="enable_logging" wire:model="enable_logging" />
-                </div>
 
                 <div class="h-px bg-border-light"></div>
 

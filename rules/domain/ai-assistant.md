@@ -53,6 +53,11 @@ _Enforced in:_ `app/Actions/Ai/AiAction.php`
 **BR-004** — The AI provider used for a request is determined by the `ai.default_provider` setting (DB, via `SettingsService`). Supported values: `openai`, `deepseek`, `gigachat`. It is changed in the admin panel (`/admin/settings/ai`) and read live at runtime — `AiServiceProvider`/`AiAssistantService` resolve the active provider from `SettingsService`, and `BaseAiProvider` builds each provider's credentials from the `ai.{provider}_*` settings.
 _Enforced in:_ `app/Modules/Ai/AiServiceProvider.php`; `app/Modules/Ai/Services/AiAssistantService.php`; `app/Modules/Ai/Services/BaseAiProvider.php`; `app/Services/Settings/SettingKeyRegistry.php @ ai.default_provider`
 
+**BR-004a** — A provider whose access credentials are not configured cannot be selected as `ai.default_provider`. In the AI assistant screen its card shows a «Доступы не указаны» flag instead of the «Выбрать» button, and `AiAssistantPage::save()` rejects it with «У выбранного провайдера не указаны доступы.» when AI is enabled. A provider counts as configured when its primary credential is present: `ai.openai_api_key` (OpenAI), `ai.deepseek_client_secret` (DeepSeek), `ai.gigachat_client_secret` (GigaChat). The guard runs only when `ai.enabled` is true.
+
+An unconfigured provider must also never appear **pre-selected**: on load (`loadFields()`) the active card is the stored `ai.default_provider` only when it is configured; otherwise it falls back to the first configured provider (card order: openai → deepseek → gigachat), or to no selection at all (`''`) when nothing is set up. There is no hard-coded OpenAI default.
+_Enforced in:_ `app/Livewire/Settings/AiAssistantPage.php` (`providerHasAccess()`, `firstConfiguredProvider()`, `save()`, `loadFields()` → `providerConfigured` / `default_provider`); `resources/views/livewire/settings/ai-assistant-page.blade.php` (provider cards)
+
 **BR-005** — An `AiCondition` record must exist and have `active = true` for a given `BotUser` before AI processing starts.
 _Enforced in:_ `app/Actions/Ai/AiAction.php`
 
@@ -65,7 +70,7 @@ _Enforced in:_ `config/ai.php @ disable_timeout` (timeout applied in AiAction fl
 **BR-008** — AI responses must never exceed the token limits defined per provider in config.
 _Enforced in:_ `config/ai.php @ providers.*.max_tokens`
 
-**BR-009** — The AI conversation context is sourced from the `messages` table by `bot_user_id` (incoming → `role: user` excluding slash-commands; any outgoing → `role: assistant`). The window is bounded by `max_context_tokens` (token budget) using a `mb_strlen / 4` heuristic with a sliding window from the newest entries; older entries that would exceed the budget are dropped. Redis-backed context (`ai_context_*`) is no longer used. The `max_context_tokens` limit is editable from the admin panel (`/admin/settings/ai`) and read live at runtime by `AiChatHistoryService` via `SettingsService` (no `config()` fallback).
+**BR-009** — The AI conversation context is sourced from the `messages` table by `bot_user_id` (incoming → `role: user` excluding slash-commands; any outgoing → `role: assistant`). The window is bounded by `max_context_tokens` (token budget) using a `mb_strlen / 4` heuristic with a sliding window from the newest entries; older entries that would exceed the budget are dropped. Redis-backed context (`ai_context_*`) is no longer used. The `max_context_tokens` limit is read live at runtime by `AiChatHistoryService` via `SettingsService` (no `config()` fallback) and defaults to 3000 — it is **not** exposed in the admin panel UI (removed from the AI assistant screen).
 _Enforced in:_ `app/Modules/Ai/Services/AiChatHistoryService.php`; `config/ai.php @ max_context_tokens` (default: 3000); `app/Services/Settings/SettingKeyRegistry.php @ ai.max_context_tokens`
 
 **BR-010** — If AI confidence is below `confidence_threshold`, the message must be escalated to a human manager.
@@ -111,15 +116,24 @@ The AI assistant settings are managed via custom Livewire/Blade pages at `/admin
 **Fields** (all persisted via `SettingsService`):
 | Field | Setting key | Type | Validation |
 |---|---|---|---|
-| ИИ-ассистент (master toggle) | `ai.enabled` | bool | — |
+| ИИ-ассистент (master toggle) | `ai.enabled` | bool | — (persists instantly, no save) |
 | Провайдер по умолчанию | `ai.default_provider` | string | in:openai,deepseek,gigachat |
 | Автоответ (toggle) | `ai.auto_reply` | bool | confirm dialog required |
-| Лимит контекста | `ai.max_context_tokens` | int | > 0 |
+| Запросов в минуту | `ai.rate_limit.requests_per_minute` | int | > 0 |
+| Запросов в час | `ai.rate_limit.requests_per_hour` | int | > 0 |
+| Таймаут отключения | `ai.disable_timeout` | string | — |
 | Системный промпт | `ai.system_prompt` | string | — |
+
+The screen intentionally does NOT expose `ai.max_context_tokens`, `ai.confidence_threshold`, `ai.auto_escalation` or `ai.enable_logging`. These keys still exist in `SettingKeyRegistry`: `max_context_tokens` (default 3000) and `confidence_threshold` (default 0.8) are read live at runtime on their defaults; `auto_escalation`/`enable_logging` are vestigial (not read anywhere) — AI logging is always on.
+
+**Master toggle (instant persist)**: the «Включить AI помощника» switch (`ai_enabled`, `wire:model.live`) is written to `ai.enabled` immediately via `updatedAiEnabled()` — it does NOT wait for «Сохранить». All other fields still persist only on `save()`.
+
+**Master toggle gated on the AI bot integration**: the assistant cannot be **enabled** until the «Бот AI помощника» integration is configured (`telegram_ai.token` present, checked via `ChannelStatusService::telegramAi()` → `aiBotConnected`). AI replies are posted to the supergroup as the AI bot, so without a working token they fail (Telegram 404). When not connected, the page shows a yellow notice with a link to `/admin/settings/integrations/telegram_ai`, the toggle is rendered `disabled` (only while off), and `updatedAiEnabled(true)` reverts to `false` without persisting. **Disabling is always allowed.**
+_Enforced in:_ `app/Livewire/Settings/AiAssistantPage.php` (`updatedAiEnabled()`, `loadFields()` → `aiBotConnected`); `resources/views/livewire/settings/ai-assistant-page.blade.php`
 
 **Auto-reply guard**: enabling auto-reply via the toggle triggers `updatedAutoReply(true)`, which reverts the toggle to `false` and shows a yellow confirmation dialog. The user must call `confirmAutoReply()` to accept, or `cancelAutoReply()` to dismiss.
 
-**Provider cards**: provider selection rendered as 3 clickable cards (OpenAI / DeepSeek / GigaChat). Each card has a «Настроить доступ» link to the corresponding provider access page.
+**Provider cards**: provider selection rendered as 3 clickable cards (OpenAI / DeepSeek / GigaChat). Each card has a «Настроить доступ» link to the corresponding provider access page. A provider with no configured credentials shows a yellow «Доступы не указаны» flag instead of the «Выбрать» button and cannot be selected (see BR-004a).
 
 **Runtime application**: `ShouldAiReply`, `AiAssistantService`, `AiChatHistoryService`, `BaseAiProvider` and the AI jobs/actions read all AI settings and provider credentials **live from `SettingsService`** (DB `settings` table) — there is no `config('ai.*')` fallback (`config => null` in `SettingKeyRegistry`). Saved values take effect on the next request; no container restart needed.
 
@@ -136,6 +150,8 @@ The AI assistant settings are managed via custom Livewire/Blade pages at `/admin
 
 **Secret fields**: rendered as `type="password"` inputs. Secret fields are never pre-filled (always `null`). Saving an empty secret field does NOT overwrite the existing stored secret (blank-secret guard, mirrors BR-015 from admin-panel.md).
 
+**Verify-before-save**: the primary «Проверить и сохранить» button calls `connect()`, which mirrors the channel-integration flow (admin-panel.md BR-013): (1) validate fields; (2) resolve the secret to verify — entered value, else the stored one (blank-secret guard); (3) call `App\Modules\Ai\Services\AiProviderVerificationService::verifyOpenai/verifyDeepseek/verifyGigachat()` — on failure show the error notice (`$verifyError`) and persist **nothing**; (4) on success persist via the settings-only `save()` path. Verification probes the real provider API: OpenAI/DeepSeek do a minimal chat-completion (`max_tokens=1`) against `{base_url}`; GigaChat performs the OAuth token request (Basic secret + the uploaded/stored trusted-root certificate). All calls use a 10 s timeout, never log secrets, and convert transport errors into a failed result. `save()` (settings-only, no probe) is retained for programmatic/test use.
+
 **System prompt storage**: the system prompt is stored in `SettingsService` under key `ai.system_prompt` (non-secret, plain text). The Blade template `resources/ai/system-prompt.blade.php` is NOT overwritten — that file is the production fallback.
 
 **Routes**: registered in `AdminServiceProvider::boot()` under `admin/settings/` prefix, names `admin.settings.ai` and `admin.settings.ai.provider`. Middleware: `['web', Filament\Http\Middleware\Authenticate::class]`.
@@ -144,7 +160,8 @@ The AI assistant settings are managed via custom Livewire/Blade pages at `/admin
 
 **Tests**:
 - `tests/Unit/Livewire/Settings/AiAssistantPageTest.php` — unit tests with mocked SettingsService
-- `tests/Unit/Livewire/Settings/AiProviderAccessPageTest.php` — unit tests with mocked SettingsService
+- `tests/Unit/Livewire/Settings/AiProviderAccessPageTest.php` — unit tests with mocked SettingsService (incl. `connect()` verify-before-save)
+- `tests/Unit/Modules/Ai/Services/AiProviderVerificationServiceTest.php` — unit tests for the verify service (Http::fake)
 - `tests/Feature/Settings/AiAssistantPageTest.php` — integration: access control, mount, save, auto-reply confirm flow, cancel
 - `tests/Feature/Settings/AiProviderAccessPageTest.php` — integration: access control, mount, save per provider, blank-secret guard
 

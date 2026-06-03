@@ -34,16 +34,13 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.enabled')->andReturn(true);
         $mock->shouldReceive('get')->with('ai.default_provider')->andReturn('deepseek');
         $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(true);
-        $mock->shouldReceive('get')->with('ai.max_context_tokens')->andReturn(5000);
-        $mock->shouldReceive('get')->with('ai.confidence_threshold')->andReturn('0.9');
         $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(30);
         $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(500);
         $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn('3600');
-        $mock->shouldReceive('get')->with('ai.auto_escalation')->andReturn(false);
-        $mock->shouldReceive('get')->with('ai.enable_logging')->andReturn(false);
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn('Be helpful');
         $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);
+        // deepseek has access configured → it stays the active stored provider.
+        $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn('secret');
         $mock->shouldReceive('get')->with('ai.gigachat_client_secret')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.openai_model')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.deepseek_model')->andReturn(null);
@@ -55,7 +52,6 @@ class AiAssistantPageTest extends TestCase
         $this->assertTrue($component->ai_enabled);
         $this->assertSame('deepseek', $component->default_provider);
         $this->assertTrue($component->auto_reply);
-        $this->assertSame(5000, $component->max_context_tokens);
         $this->assertSame('Be helpful', $component->system_prompt);
     }
 
@@ -66,13 +62,9 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.enabled')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.default_provider')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.max_context_tokens')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.confidence_threshold')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.auto_escalation')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.enable_logging')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);
@@ -85,9 +77,9 @@ class AiAssistantPageTest extends TestCase
         $component->mount($mock);
 
         $this->assertFalse($component->ai_enabled);
-        $this->assertSame('openai', $component->default_provider);
+        // No provider has access configured → none is pre-selected.
+        $this->assertSame('', $component->default_provider);
         $this->assertFalse($component->auto_reply);
-        $this->assertSame(3000, $component->max_context_tokens);
         $this->assertSame('', $component->system_prompt);
     }
 
@@ -101,20 +93,15 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('set')->with('ai.enabled', false)->once();
         $mock->shouldReceive('set')->with('ai.default_provider', 'gigachat')->once();
         $mock->shouldReceive('set')->with('ai.auto_reply', true)->once();
-        $mock->shouldReceive('set')->with('ai.max_context_tokens', 2000)->once();
-        $mock->shouldReceive('set')->with('ai.confidence_threshold', '0.8')->once();
         $mock->shouldReceive('set')->with('ai.rate_limit.requests_per_minute', 60)->once();
         $mock->shouldReceive('set')->with('ai.rate_limit.requests_per_hour', 1000)->once();
         $mock->shouldReceive('set')->with('ai.disable_timeout', '')->once();
-        $mock->shouldReceive('set')->with('ai.auto_escalation', true)->once();
-        $mock->shouldReceive('set')->with('ai.enable_logging', true)->once();
         $mock->shouldReceive('set')->with('ai.system_prompt', 'Be concise')->once();
 
         $component = new AiAssistantPage();
         $component->mount($mock);
         $component->default_provider = 'gigachat';
         $component->auto_reply = true;
-        $component->max_context_tokens = 2000;
         $component->system_prompt = 'Be concise';
         $component->save($mock);
 
@@ -139,38 +126,61 @@ class AiAssistantPageTest extends TestCase
         $this->assertArrayHasKey('default_provider', $component->formErrors);
     }
 
-    public function test_save_rejects_zero_max_context_tokens(): void
+    public function test_save_rejects_provider_without_access_when_enabled(): void
     {
         /** @var \Mockery\MockInterface&SettingsService $mock */
         $mock = Mockery::mock(SettingsService::class);
+        // No credentials for any provider.
         $mock->shouldReceive('get')->andReturn(null);
         $mock->shouldNotReceive('set');
 
         $component = new AiAssistantPage();
         $component->mount($mock);
         $component->ai_enabled = true;
-        $component->max_context_tokens = 0;
+        $component->default_provider = 'openai';
         $component->save($mock);
 
         $this->assertFalse($component->saved);
-        $this->assertArrayHasKey('max_context_tokens', $component->formErrors);
+        $this->assertSame(
+            'У выбранного провайдера не указаны доступы.',
+            $component->formErrors['default_provider'] ?? null,
+        );
     }
 
-    public function test_save_rejects_negative_max_context_tokens(): void
+    public function test_save_accepts_provider_with_access_when_enabled(): void
     {
         /** @var \Mockery\MockInterface&SettingsService $mock */
         $mock = Mockery::mock(SettingsService::class);
+        // Specific expectation first; Mockery matches in declaration order.
+        $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn('sk-test');
         $mock->shouldReceive('get')->andReturn(null);
-        $mock->shouldNotReceive('set');
+        $mock->shouldReceive('set')->with(Mockery::any(), Mockery::any());
 
         $component = new AiAssistantPage();
         $component->mount($mock);
         $component->ai_enabled = true;
-        $component->max_context_tokens = -100;
+        $component->default_provider = 'openai';
         $component->save($mock);
 
-        $this->assertFalse($component->saved);
-        $this->assertArrayHasKey('max_context_tokens', $component->formErrors);
+        $this->assertTrue($component->saved);
+        $this->assertArrayNotHasKey('default_provider', $component->formErrors);
+    }
+
+    public function test_mount_marks_provider_configured_from_credentials(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        // Specific expectations first; Mockery matches in declaration order.
+        $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn('sk-test');
+        $mock->shouldReceive('get')->with('ai.gigachat_client_secret')->andReturn('secret');
+        $mock->shouldReceive('get')->andReturn(null);
+
+        $component = new AiAssistantPage();
+        $component->mount($mock);
+
+        $this->assertTrue($component->providerConfigured['openai']);
+        $this->assertFalse($component->providerConfigured['deepseek']);
+        $this->assertTrue($component->providerConfigured['gigachat']);
     }
 
     public function test_save_accepts_all_valid_providers(): void
@@ -208,7 +218,8 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.auto_escalation')->andReturn(true);
         $mock->shouldReceive('get')->with('ai.enable_logging')->andReturn(true);
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn('Original');
-        $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
+        // openai has access configured → it stays the active stored provider.
+        $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn('sk-test');
         $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.gigachat_client_secret')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.openai_model')->andReturn(null);
@@ -229,6 +240,55 @@ class AiAssistantPageTest extends TestCase
         $this->assertFalse($component->saved);
         $this->assertEmpty($component->formErrors);
         $this->assertFalse($component->showAutoReplyWarning);
+    }
+
+    // ── master AI toggle (instant persist) ────────────────────────────────────────
+
+    public function test_updated_ai_enabled_persists_immediately(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('set')->with('ai.enabled', true)->once();
+
+        // The hook resolves SettingsService from the container.
+        $this->app->instance(SettingsService::class, $mock);
+
+        $component = new AiAssistantPage();
+        $component->aiBotConnected = true; // AI bot integration is configured
+        $component->ai_enabled = true;     // simulate wire:model having set the value
+        $component->updatedAiEnabled(true);
+
+        // Stays enabled (not reverted) and persisted (mock ->once()).
+        $this->assertTrue($component->ai_enabled);
+    }
+
+    public function test_updated_ai_enabled_persists_disable_immediately(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('set')->with('ai.enabled', false)->once();
+
+        $this->app->instance(SettingsService::class, $mock);
+
+        $component = new AiAssistantPage();
+        $component->updatedAiEnabled(false);
+    }
+
+    public function test_updated_ai_enabled_blocked_when_ai_bot_not_connected(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        // Must NOT persist when the AI bot integration is not configured.
+        $mock->shouldNotReceive('set');
+
+        $this->app->instance(SettingsService::class, $mock);
+
+        $component = new AiAssistantPage();
+        $component->aiBotConnected = false; // AI bot integration missing
+        $component->updatedAiEnabled(true);
+
+        // Toggle reverts to off; nothing persisted.
+        $this->assertFalse($component->ai_enabled);
     }
 
     // ── auto-reply confirm flow ───────────────────────────────────────────────────
