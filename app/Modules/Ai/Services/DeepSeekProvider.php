@@ -39,7 +39,7 @@ class DeepSeekProvider extends BaseAiProvider
 
             return $this->parseApiResponse($response, $request);
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), [
+            Log::channel('app')->error($e->getMessage(), [
                 'source' => 'ai_error',
                 'user_id' => $request->userId,
                 'platform' => $request->platform,

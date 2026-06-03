@@ -74,7 +74,7 @@
 
             <div class="my-6 h-px bg-border-light"></div>
 
-            <form wire:submit="save" novalidate>
+            <form wire:submit="connect" novalidate>
                 @csrf
 
                 @if ($provider === 'openai')
@@ -406,11 +406,22 @@
                     <x-admin.button-secondary wire:click="cancel" type="button">
                         Отмена
                     </x-admin.button-secondary>
-                    <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="save">
-                        <span wire:loading.remove wire:target="save">Сохранить</span>
-                        <span wire:loading wire:target="save">Сохранение...</span>
+                    <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="connect">
+                        <span wire:loading.remove wire:target="connect">Проверить и сохранить</span>
+                        <span wire:loading wire:target="connect">Проверка подключения...</span>
                     </x-admin.button-primary>
                 </div>
+
+                {{-- Verification error notice --}}
+                @if ($verifyError)
+                    <div class="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        {{ $verifyError }}
+                    </div>
+                @endif
 
                 {{-- Success notice --}}
                 @if ($saved)
@@ -419,7 +430,7 @@
                              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
                         </svg>
-                        Настройки доступа сохранены.
+                        Доступы проверены и сохранены.
                     </div>
                 @endif
 

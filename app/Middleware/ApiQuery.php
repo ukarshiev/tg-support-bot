@@ -34,7 +34,7 @@ class ApiQuery
                 'external_id' => $request->route('external_id') ?? null,
             ]);
 
-            $this->sendRequestInLoki($request);
+            $this->logRequest($request);
             return $next($request);
         } catch (\Throwable $e) {
             return response()->json([
@@ -49,10 +49,10 @@ class ApiQuery
      *
      * @return void
      */
-    private function sendRequestInLoki(Request $request): void
+    private function logRequest(Request $request): void
     {
         $dataRequest = json_encode($request->all());
 
-        Log::channel('loki')->info($dataRequest, ['source' => 'api_request']);
+        Log::channel('app')->info($dataRequest, ['source' => 'api_request']);
     }
 }

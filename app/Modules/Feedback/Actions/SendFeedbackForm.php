@@ -46,7 +46,7 @@ class SendFeedbackForm
             'closed_at' => now(),
         ]);
 
-        Log::channel('loki')->info('SendFeedbackForm: created feedback record', [
+        Log::channel('app')->info('SendFeedbackForm: created feedback record', [
             'source' => 'feedback_form_created',
             'bot_user_id' => $botUser->id,
             'feedback_id' => $feedback->id,
@@ -72,7 +72,7 @@ class SendFeedbackForm
                 if ($channel !== null) {
                     $channel->sendFeedbackForm($botUser, $feedback->id);
 
-                    Log::channel('loki')->info('SendFeedbackForm: delivered via registered channel', [
+                    Log::channel('app')->info('SendFeedbackForm: delivered via registered channel', [
                         'source' => 'feedback_form_registered_channel',
                         'bot_user_id' => $botUser->id,
                         'feedback_id' => $feedback->id,
@@ -81,7 +81,7 @@ class SendFeedbackForm
                     break;
                 }
 
-                Log::channel('loki')->warning('SendFeedbackForm: unsupported platform, skipping delivery', [
+                Log::channel('app')->warning('SendFeedbackForm: unsupported platform, skipping delivery', [
                     'source' => 'feedback_form_unsupported_platform',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,

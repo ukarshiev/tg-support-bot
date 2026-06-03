@@ -47,7 +47,7 @@ class AiBotController
         $updateDto = TelegramUpdateDto::fromRequest($request);
 
         if ($updateDto === null) {
-            Log::channel('loki')->warning('AiBotController: DTO parsing returned null, skipping dispatch', [
+            Log::channel('app')->warning('AiBotController: DTO parsing returned null, skipping dispatch', [
                 'source' => 'ai_bot_dto_null',
                 'payload_keys' => array_keys($request->all()),
             ]);
@@ -56,7 +56,7 @@ class AiBotController
         }
 
         if ($updateDto->typeQuery !== 'callback_query') {
-            Log::channel('loki')->info('AiBotController: ignoring non-callback update', [
+            Log::channel('app')->info('AiBotController: ignoring non-callback update', [
                 'source' => 'ai_bot_ignored',
                 'type_query' => $updateDto->typeQuery,
                 'type_source' => $updateDto->typeSource,
@@ -68,19 +68,19 @@ class AiBotController
         $callbackData = (string) $updateDto->callbackData;
 
         if (preg_match('/^ai_message_send_[0-9]+$/', $callbackData)) {
-            Log::channel('loki')->info('AiBotController: accept callback', [
+            Log::channel('app')->info('AiBotController: accept callback', [
                 'source' => 'ai_callback_accept',
                 'callback_data' => $callbackData,
             ]);
             app(AiAcceptMessage::class)->execute($updateDto);
         } elseif (preg_match('/^ai_message_cancel_[0-9]+$/', $callbackData)) {
-            Log::channel('loki')->info('AiBotController: cancel callback', [
+            Log::channel('app')->info('AiBotController: cancel callback', [
                 'source' => 'ai_callback_cancel',
                 'callback_data' => $callbackData,
             ]);
             app(AiCancelMessage::class)->execute($updateDto);
         } else {
-            Log::channel('loki')->info('AiBotController: unrecognized callback_data, ignoring', [
+            Log::channel('app')->info('AiBotController: unrecognized callback_data, ignoring', [
                 'source' => 'ai_callback_unknown',
                 'callback_data' => $callbackData,
             ]);

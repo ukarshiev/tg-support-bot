@@ -92,6 +92,18 @@ _Enforced in:_ `IntegrationChannelPage::saveTelegram/TelegramAi/Vk/Max()` — ca
 **BR-014** — The primary «Сохранить» action in `IntegrationChannelPage` follows a **verify-before-save** sequence: (1) validate form fields; (2) resolve the token (form value if non-empty, otherwise stored fallback — so re-entering the secret is not required on edit); (3) call `WebhookRegistrationService::verifyX($token)` — if verification fails, set `$webhookMessage` / `$webhookSuccess = false` and **return without saving** any settings; (4) on success, persist via `saveX()`, then register the webhook (telegram|vk|max) or show a success notice (telegram_ai). The webhook registration and verification methods in `WebhookRegistrationService` never log tokens.
 _Enforced in:_ `IntegrationChannelPage::connect()` → `resolveVerificationToken()` + `validateFields()` + `WebhookRegistrationService::verifyX/registerX()`
 
+**BR-014a** — On the «Бот AI помощника» channel (`channel=telegram_ai`) the two inputs `telegram_ai.token` and `telegram_ai.secret` are **both required**: `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before verification when either is blank (fields are pre-filled from settings, so an existing config already passes). There is **no manual username field** — the bot's `telegram_ai.id` and `telegram_ai.username` are captured automatically from the `getMe` response during verification (`WebhookRegistrationService::verifyTelegram()` returns `botId`/`botUsername`) and persisted in `connect()`. Both are informational (not compared at runtime). Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`.
+_Enforced in:_ `IntegrationChannelPage::validateFields()` + `connect()` (telegram_ai branch); `WebhookRegistrationService::verifyTelegram()`; `app/Services/Settings/SettingKeyRegistry.php @ telegram_ai.id`; `resources/views/livewire/settings/integration-channel-page.blade.php`
+
+**BR-014b** — On the «Подключить Telegram» channel (`channel=telegram`) **all three fields are required**: `telegram.group_id`, `telegram.token`, `telegram.secret_key`. `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before verification when any is blank (group_id also keeps the ≤50-char check). Fields are pre-filled from settings, so editing an existing config already passes; the stored-token fallback (BR-014 step 2) is therefore not reached for telegram/telegram_ai (it remains effective for vk/max). Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`.
+_Enforced in:_ `IntegrationChannelPage::validateFields()` (telegram branch); `resources/views/livewire/settings/integration-channel-page.blade.php`
+
+**BR-014c** — On the «Подключить ВКонтакте» channel (`channel=vk`) **all three fields are required**: `vk.token`, `vk.secret_key`, `vk.confirm_code`. `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before VK verification when any is blank. Fields are pre-filled from settings, so editing an existing config already passes. Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`.
+_Enforced in:_ `IntegrationChannelPage::validateFields()` (vk branch); `resources/views/livewire/settings/integration-channel-page.blade.php`
+
+**BR-014d** — On the «Подключить MAX» channel (`channel=max`) **both fields are required**: `max.token`, `max.secret_key`. `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before MAX verification when either is blank. Fields are pre-filled from settings, so editing an existing config already passes. Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`. (All four channels now enforce required fields; the BR-014 stored-token fallback is consequently only reachable when a pre-filled secret field is manually cleared — which validation then rejects.)
+_Enforced in:_ `IntegrationChannelPage::validateFields()` (max branch); `resources/views/livewire/settings/integration-channel-page.blade.php`
+
 **BR-015** — Saving a secret field (token, key) with an empty string does NOT overwrite the existing secret in the DB. This prevents accidentally blanking credentials when only non-secret fields are edited.
 _Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — `if ($field !== '') { $settings->set(...) }`
 
@@ -239,7 +251,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 | Channel | Fields |
 |---|---|
 | Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id` |
-| Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.username`(string) |
+| Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret); `telegram_ai.id`(int) + `telegram_ai.username`(string) auto-captured from getMe |
 | VK | `vk.token`(secret), `vk.secret_key`(secret), `vk.confirm_code`(secret) |
 | MAX | `max.token`(secret), `max.secret_key`(secret) |
 

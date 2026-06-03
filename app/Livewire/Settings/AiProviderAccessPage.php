@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Settings;
 
+use App\Modules\Ai\Services\AiProviderVerificationService;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\File;
 use Livewire\Attributes\Layout;
@@ -113,6 +114,9 @@ class AiProviderAccessPage extends Component
     /** @var bool Config persisted successfully */
     public bool $saved = false;
 
+    /** @var string|null Verification failure notice (set when the connection check fails) */
+    public ?string $verifyError = null;
+
     /** @var array<string, string> Validation errors keyed by field name */
     public array $formErrors = [];
 
@@ -127,11 +131,15 @@ class AiProviderAccessPage extends Component
 
     /**
      * Save the current provider's form values via SettingsService.
+     *
+     * Settings-only path (no connectivity check). Kept for programmatic use and
+     * tests; the UI «Сохранить» button calls connect() (verify-before-save).
      */
     public function save(SettingsService $settings): void
     {
         $this->formErrors = [];
         $this->saved = false;
+        $this->verifyError = null;
 
         match ($this->provider) {
             'openai' => $this->saveOpenAi($settings),
@@ -142,12 +150,50 @@ class AiProviderAccessPage extends Component
     }
 
     /**
+     * Verify the entered credentials against the provider API, then save.
+     *
+     * Mirrors the channel-integration «verify-before-save» flow:
+     *   1. Resolve the secret to verify — entered value, else the stored one
+     *      (blank-secret guard). Resolve base URL / model / cert from the form.
+     *   2. Call AiProviderVerificationService::verifyX(). On failure → set
+     *      $verifyError and return WITHOUT persisting anything.
+     *   3. On success → persist via the existing saveX() path.
+     */
+    public function connect(SettingsService $settings, AiProviderVerificationService $verifier): void
+    {
+        $this->formErrors = [];
+        $this->saved = false;
+        $this->verifyError = null;
+
+        $result = match ($this->provider) {
+            'openai' => $this->verifyOpenAi($settings, $verifier),
+            'deepseek' => $this->verifyDeepSeek($settings, $verifier),
+            'gigachat' => $this->verifyGigaChat($settings, $verifier),
+            default => ['success' => false, 'message' => 'Неизвестный провайдер.'],
+        };
+
+        if (! $result['success']) {
+            // Field-level problems (empty key, etc.) are surfaced inline; a
+            // connection failure goes to the dedicated notice.
+            if (empty($this->formErrors)) {
+                $this->verifyError = $result['message'];
+            }
+
+            return;
+        }
+
+        // Verified — persist via the settings-only path.
+        $this->save($settings);
+    }
+
+    /**
      * Reset form to currently stored values.
      */
     public function cancel(SettingsService $settings): void
     {
         $this->formErrors = [];
         $this->saved = false;
+        $this->verifyError = null;
         $this->loadFields($settings);
     }
 
@@ -159,6 +205,125 @@ class AiProviderAccessPage extends Component
     public function render(): \Illuminate\View\View
     {
         return view('livewire.settings.ai-provider-access-page');
+    }
+
+    // ── Field validation ──────────────────────────────────────────────────────
+
+    /**
+     * Validate OpenAI form fields into $formErrors.
+     */
+    private function validateOpenAi(): void
+    {
+        if ($this->openai_max_tokens !== null && $this->openai_max_tokens < 1) {
+            $this->formErrors['openai_max_tokens'] = 'Макс. токенов должно быть положительным числом.';
+        }
+    }
+
+    /**
+     * Validate DeepSeek form fields into $formErrors.
+     */
+    private function validateDeepSeek(): void
+    {
+        if ($this->deepseek_max_tokens !== null && $this->deepseek_max_tokens < 1) {
+            $this->formErrors['deepseek_max_tokens'] = 'Макс. токенов должно быть положительным числом.';
+        }
+    }
+
+    /**
+     * Validate GigaChat form fields (incl. uploaded certificate) into $formErrors.
+     */
+    private function validateGigaChat(): void
+    {
+        if ($this->gigachat_max_tokens !== null && $this->gigachat_max_tokens < 1) {
+            $this->formErrors['gigachat_max_tokens'] = 'Макс. токенов должно быть положительным числом.';
+        }
+
+        if ($this->gigachat_cert_file !== null) {
+            $ext = strtolower((string) $this->gigachat_cert_file->getClientOriginalExtension());
+
+            if (! in_array($ext, ['crt', 'pem', 'cer'], true)) {
+                $this->formErrors['gigachat_cert_file'] = 'Допустимы файлы .crt, .pem, .cer.';
+            } elseif ($this->gigachat_cert_file->getSize() > 1024 * 1024) {
+                $this->formErrors['gigachat_cert_file'] = 'Файл слишком большой (макс. 1 МБ).';
+            }
+        }
+    }
+
+    // ── Pre-save verification (verify-before-save for connect()) ───────────────
+
+    /**
+     * Validate + verify OpenAI credentials against the API.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function verifyOpenAi(SettingsService $settings, AiProviderVerificationService $verifier): array
+    {
+        $this->validateOpenAi();
+
+        if (! empty($this->formErrors)) {
+            return ['success' => false, 'message' => ''];
+        }
+
+        $key = ($this->openai_api_key !== null && $this->openai_api_key !== '')
+            ? $this->openai_api_key
+            : (string) ($settings->get('ai.openai_api_key') ?? '');
+
+        return $verifier->verifyOpenai($key, (string) ($this->openai_base_url ?? ''), (string) ($this->openai_model ?? ''));
+    }
+
+    /**
+     * Validate + verify DeepSeek credentials against the API.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function verifyDeepSeek(SettingsService $settings, AiProviderVerificationService $verifier): array
+    {
+        $this->validateDeepSeek();
+
+        if (! empty($this->formErrors)) {
+            return ['success' => false, 'message' => ''];
+        }
+
+        $secret = ($this->deepseek_client_secret !== null && $this->deepseek_client_secret !== '')
+            ? $this->deepseek_client_secret
+            : (string) ($settings->get('ai.deepseek_client_secret') ?? '');
+
+        return $verifier->verifyDeepseek($secret, (string) ($this->deepseek_base_url ?? ''), (string) ($this->deepseek_model ?? ''));
+    }
+
+    /**
+     * Validate + verify GigaChat credentials against the OAuth endpoint.
+     *
+     * @return array{success: bool, message: string}
+     */
+    private function verifyGigaChat(SettingsService $settings, AiProviderVerificationService $verifier): array
+    {
+        $this->validateGigaChat();
+
+        if (! empty($this->formErrors)) {
+            return ['success' => false, 'message' => ''];
+        }
+
+        $secret = ($this->gigachat_client_secret !== null && $this->gigachat_client_secret !== '')
+            ? $this->gigachat_client_secret
+            : (string) ($settings->get('ai.gigachat_client_secret') ?? '');
+
+        return $verifier->verifyGigachat($secret, $this->resolveGigachatCertPath());
+    }
+
+    /**
+     * Resolve the absolute path of the GigaChat CA certificate for verification:
+     * a freshly uploaded file's temp path, else the already-stored cert, else ''.
+     */
+    private function resolveGigachatCertPath(): string
+    {
+        if ($this->gigachat_cert_file !== null) {
+            return (string) ($this->gigachat_cert_file->getRealPath() ?: '');
+        }
+
+        $stored = storage_path(self::GIGACHAT_CERT_RELATIVE);
+
+        return File::exists($stored) ? $stored : '';
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -205,9 +370,7 @@ class AiProviderAccessPage extends Component
      */
     private function saveOpenAi(SettingsService $settings): void
     {
-        if ($this->openai_max_tokens !== null && $this->openai_max_tokens < 1) {
-            $this->formErrors['openai_max_tokens'] = 'Макс. токенов должно быть положительным числом.';
-        }
+        $this->validateOpenAi();
 
         if (! empty($this->formErrors)) {
             return;
@@ -235,9 +398,7 @@ class AiProviderAccessPage extends Component
      */
     private function saveDeepSeek(SettingsService $settings): void
     {
-        if ($this->deepseek_max_tokens !== null && $this->deepseek_max_tokens < 1) {
-            $this->formErrors['deepseek_max_tokens'] = 'Макс. токенов должно быть положительным числом.';
-        }
+        $this->validateDeepSeek();
 
         if (! empty($this->formErrors)) {
             return;
@@ -267,19 +428,7 @@ class AiProviderAccessPage extends Component
      */
     private function saveGigaChat(SettingsService $settings): void
     {
-        if ($this->gigachat_max_tokens !== null && $this->gigachat_max_tokens < 1) {
-            $this->formErrors['gigachat_max_tokens'] = 'Макс. токенов должно быть положительным числом.';
-        }
-
-        if ($this->gigachat_cert_file !== null) {
-            $ext = strtolower((string) $this->gigachat_cert_file->getClientOriginalExtension());
-
-            if (! in_array($ext, ['crt', 'pem', 'cer'], true)) {
-                $this->formErrors['gigachat_cert_file'] = 'Допустимы файлы .crt, .pem, .cer.';
-            } elseif ($this->gigachat_cert_file->getSize() > 1024 * 1024) {
-                $this->formErrors['gigachat_cert_file'] = 'Файл слишком большой (макс. 1 МБ).';
-            }
-        }
+        $this->validateGigaChat();
 
         if (! empty($this->formErrors)) {
             return;

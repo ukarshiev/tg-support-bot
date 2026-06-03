@@ -104,6 +104,17 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 
 > The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens. The underlying models, services, and artisan commands are unchanged.
 
+### Monitoring (Laravel Telescope)
+
+> Debug/inspection dashboard provided by the `laravel/telescope` package (registered automatically).
+> Rendered server-side — no Swagger annotation required. Entries stored in the `telescope_entries` tables (PostgreSQL); pruned daily by the scheduled `telescope:prune --hours=48`.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/telescope` | `APP_DEBUG=true` + `viewTelescope` gate (all envs) | Telescope dashboard — requests, exceptions, logs, queries, jobs, cache, redis, events, etc. Path configurable via `TELESCOPE_PATH` |
+
+> Authorization: `TelescopeServiceProvider::authorization()` requires **both** `APP_DEBUG=true` **and** the `viewTelescope` gate (`User::isAdmin()`). The gate is enforced in **every** environment — unlike the package default, Telescope is NOT open in `local`. With `APP_DEBUG=false` (e.g. production) the dashboard is unreachable for everyone; guests are always denied.
+
 ### Telegram callback_data prefixes (main bot webhook)
 
 | Prefix | Handler | Description |

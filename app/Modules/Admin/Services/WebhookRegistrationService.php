@@ -38,19 +38,20 @@ class WebhookRegistrationService
      * @param string|null $groupId Optional Telegram group/chat ID — when provided (non-empty),
      *                             also verifies the bot can access that chat via getChat.
      *
-     * @return array{success: bool, message: string}
+     * @return array{success: bool, message: string, botId: int|null, botUsername: string|null}
+     *                                                                                          On success, botId/botUsername carry the identity returned by getMe.
      */
     public function verifyTelegram(string $token, ?string $groupId = null): array
     {
         if ($token === '') {
-            return ['success' => false, 'message' => 'Токен Telegram не задан.'];
+            return ['success' => false, 'message' => 'Токен Telegram не задан.', 'botId' => null, 'botUsername' => null];
         }
 
         try {
             $result = TelegramMethods::sendQueryTelegram('getMe', [], $token);
 
             if ($result->ok !== true) {
-                return ['success' => false, 'message' => 'Неверный токен Telegram.'];
+                return ['success' => false, 'message' => 'Неверный токен Telegram.', 'botId' => null, 'botUsername' => null];
             }
 
             // Optionally verify the bot has access to the configured group.
@@ -58,13 +59,21 @@ class WebhookRegistrationService
                 $chat = TelegramMethods::sendQueryTelegram('getChat', ['chat_id' => $groupId], $token);
 
                 if ($chat->ok !== true) {
-                    return ['success' => false, 'message' => 'Неверный ID группы или бот не добавлен в группу.'];
+                    return ['success' => false, 'message' => 'Неверный ID группы или бот не добавлен в группу.', 'botId' => null, 'botUsername' => null];
                 }
             }
 
-            return ['success' => true, 'message' => 'Токен Telegram прошёл проверку.'];
+            // Identity captured from getMe (used to auto-store the AI bot id/username).
+            $me = $result->rawData['result'] ?? [];
+
+            return [
+                'success' => true,
+                'message' => 'Токен Telegram прошёл проверку.',
+                'botId' => isset($me['id']) ? (int) $me['id'] : null,
+                'botUsername' => isset($me['username']) ? (string) $me['username'] : null,
+            ];
         } catch (\Throwable) {
-            return ['success' => false, 'message' => 'Не удалось связаться с API платформы.'];
+            return ['success' => false, 'message' => 'Не удалось связаться с API платформы.', 'botId' => null, 'botUsername' => null];
         }
     }
 
@@ -160,14 +169,14 @@ class WebhookRegistrationService
         $result = TelegramMethods::sendQueryTelegram('setWebhook', $queryParams, $token);
 
         if ($result->ok === true) {
-            Log::channel('loki')->info('WebhookRegistrationService: Telegram webhook registered', [
+            Log::channel('app')->info('WebhookRegistrationService: Telegram webhook registered', [
                 'url' => $url,
             ]);
 
             return ['success' => true, 'message' => 'Вебхук Telegram зарегистрирован.'];
         }
 
-        Log::channel('loki')->error('WebhookRegistrationService: Telegram webhook registration failed', [
+        Log::channel('app')->error('WebhookRegistrationService: Telegram webhook registration failed', [
             'raw' => $result->rawData ?? null,
         ]);
 
@@ -205,14 +214,14 @@ class WebhookRegistrationService
         $result = VkMethods::sendQueryVk('groups.getById', []);
 
         if ($result->response_code !== 500 && empty($result->error_message)) {
-            Log::channel('loki')->info('WebhookRegistrationService: VK connectivity verified');
+            Log::channel('app')->info('WebhookRegistrationService: VK connectivity verified');
 
             return ['success' => true, 'message' => 'Подключение к VK API подтверждено. Убедитесь, что вебхук URL зарегистрирован в настройках группы ВКонтакте.'];
         }
 
         $errMsg = $result->error_message ?? 'неизвестная ошибка';
 
-        Log::channel('loki')->error('WebhookRegistrationService: VK verification failed', [
+        Log::channel('app')->error('WebhookRegistrationService: VK verification failed', [
             'error' => $errMsg,
         ]);
 
@@ -245,7 +254,7 @@ class WebhookRegistrationService
             ]);
 
         if ($response->successful()) {
-            Log::channel('loki')->info('WebhookRegistrationService: MAX webhook registered', [
+            Log::channel('app')->info('WebhookRegistrationService: MAX webhook registered', [
                 'url' => $webhookUrl,
             ]);
 
@@ -254,7 +263,7 @@ class WebhookRegistrationService
 
         $body = $response->body();
 
-        Log::channel('loki')->error('WebhookRegistrationService: MAX webhook registration failed', [
+        Log::channel('app')->error('WebhookRegistrationService: MAX webhook registration failed', [
             'status' => $response->status(),
         ]);
 

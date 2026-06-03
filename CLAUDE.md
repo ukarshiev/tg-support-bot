@@ -43,7 +43,7 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 
 **Key integrations:**
 - AI providers: OpenAI, DeepSeek, GigaChat (draft responses for manager review)
-- Monitoring: Grafana + Loki + Sentry
+- Monitoring: Laravel Telescope (requests/logs/queries/jobs/exceptions debug dashboard) + Sentry (error tracking)
 - Live chat: Node.js server (port 3001)
 
 ---
@@ -63,7 +63,8 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 | Testing | PHPUnit 11 + Mockery |
 | Admin Panel | Filament 3 |
 | Error Tracking | Sentry |
-| Log Aggregation | Loki + Grafana + Promtail |
+| Logs | Rotating files (`storage/logs/`), viewed via `php artisan pail` or Telescope |
+| Debug / Monitoring | Laravel Telescope (`/telescope`) |
 | Telegram Logging | prog-time/tg-logger |
 
 ---
@@ -140,7 +141,6 @@ app/
 ├── Helpers/          # Utilities (TelegramHelper, AiHelper, DateHelper)
 ├── Http/
 │   └── Controllers/  # SimplePage, FilesController, SwaggerController, PreviewController
-├── Logging/          # LokiHandler
 ├── Models/           # BotUser, Message, ExternalMessage, ExternalSource, AiMessage, etc.
 ├── Modules/
 │   ├── Admin/        # Admin panel — custom Livewire screens (Filament kept for authentication only)
@@ -274,7 +274,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 ### AI Assistant
 
-- AI is disabled by default (`ai.enabled = false` in settings DB); can be toggled from the admin panel at `/admin/settings/ai`
+- AI is disabled by default (`ai.enabled = false` in settings DB); can be toggled from the admin panel at `/admin/settings/ai`. The master toggle **cannot be enabled** until the «Бот AI помощника» integration is configured (`telegram_ai.token` set — `ChannelStatusService::telegramAi()`): AI replies post to the supergroup as the AI bot, so without it they fail (Telegram 404). The page shows a notice + link to configure it; disabling is always allowed
 - AI runs through a **separate Telegram bot** (token stored as `telegram_ai.token` in settings DB) that is added to the same supergroup
 - The AI bot webhook URL is `POST /api/ai-bot/webhook`, protected by `AiBotQuery` middleware (secret stored as `telegram_ai.secret` in settings DB)
 - `ai.auto_reply = false` (default): AI posts a draft with "Accept / Cancel" inline buttons; manager reviews before sending
@@ -285,8 +285,8 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Register the AI bot webhook with: `docker exec -it pet php artisan ai-bot:set-webhook`
 - AI conversation history is sourced from the `messages` table (no Redis cache), bounded by `ai.max_context_tokens` (default 3000, stored in settings DB) using a `mb_strlen / 4` token heuristic with sliding-window trimming
 - AI system prompt: stored in `settings` DB under key `ai.system_prompt` (editable from `/admin/settings/ai`); the Blade fallback at `resources/ai/system-prompt.blade.php` is NOT overwritten by the admin UI
-- AI provider credentials (API keys, base URLs, models, tokens, cert path) are managed at `/admin/settings/ai/{provider}` and stored encrypted in the `settings` table via `SettingsService`
-- AI behaviour settings (`ai.confidence_threshold`, `ai.rate_limit.*`, `ai.disable_timeout`, `ai.auto_escalation`, `ai.enable_logging`) are managed from `/admin/settings/ai`
+- AI provider credentials (API keys, base URLs, models, tokens, cert path) are managed at `/admin/settings/ai/{provider}` and stored encrypted in the `settings` table via `SettingsService`. The «Проверить и сохранить» button runs a **verify-before-save** flow (`AiProviderAccessPage::connect()` → `App\Modules\Ai\Services\AiProviderVerificationService`): credentials are checked against the provider API (OpenAI/DeepSeek minimal chat-completion; GigaChat OAuth token request) and nothing is persisted on failure — analogous to channel integrations' `WebhookRegistrationService::verifyX()`
+- AI behaviour settings managed from `/admin/settings/ai`: `ai.rate_limit.*`, `ai.disable_timeout`. The `ai.max_context_tokens`, `ai.confidence_threshold`, `ai.auto_escalation` and `ai.enable_logging` keys are NOT exposed in the UI — `max_context_tokens`/`confidence_threshold` run on their registry defaults (3000 / 0.8); `auto_escalation`/`enable_logging` are vestigial (logging is always on)
 - AI drafts NEVER write to `messages` (only to `ai_messages`); a `messages` row appears only when the message is actually sent to the user — this invariant is what makes "any outgoing row = delivered" safe for the chat-history assembler
 - AI runs across all user platforms (`telegram`, `vk`, `max`). Triggers: `TelegramBotController::maybeDispatchAi()` for TG, `VkMessageService::maybeDispatchAi()` for VK, `MaxMessageService::maybeDispatchAi()` for Max. Triggering is text-only — attachments do not start AI. Gating still goes through `ShouldAiReply` (TG-DTO and platform-agnostic variants share the same rules: AI_ENABLED, `MANAGER_INTERFACE=telegram_group`, replyable text, user active)
 - Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. Any other platform is delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry` by a pluggable module (e.g. the paid Avito package). The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
@@ -307,8 +307,8 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 - The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, Telegram AI bot, VK, MAX channel cards with connection status computed by `ChannelStatusService`
 - Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens, keys, and identifiers for each platform. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`
-- Telegram channel page (`channel=telegram`) covers: `telegram.group_id`, `telegram.token`, `telegram.secret_key`. The `telegram.template_topic_name` field moved to the General settings screen; the `telegram.bot_id` setting was removed (unused at runtime)
-- Telegram AI bot page (`channel=telegram_ai`) covers: `telegram_ai.token`(secret), `telegram_ai.secret`(secret), `telegram_ai.username`. Action is save-only — webhook registration uses `php artisan ai-bot:set-webhook` (shown in the instruction panel)
+- Telegram channel page (`channel=telegram`) covers: `telegram.group_id`, `telegram.token`(secret), `telegram.secret_key`(secret) — **all three required** (`IntegrationChannelPage::validateFields()` blocks «Сохранить»/`connect()` with per-field errors until each is filled; fields are pre-filled from settings, so an existing config already satisfies this). The `telegram.template_topic_name` field moved to the General settings screen; the `telegram.bot_id` setting was removed (unused at runtime)
+- Telegram AI bot page (`channel=telegram_ai`) has two inputs: `telegram_ai.token`(secret) and `telegram_ai.secret`(secret) — **both required** (`IntegrationChannelPage::validateFields()` blocks «Сохранить»/`connect()` with per-field errors until filled; fields are pre-filled from settings, so an existing config already satisfies this). The bot's **`telegram_ai.id` and `telegram_ai.username` are captured automatically** from `getMe` during the verify-before-save step and persisted — there is no manual username field. (`telegram_ai.id`/`telegram_ai.username` are informational — not compared at runtime.) Webhook registration uses `php artisan ai-bot:set-webhook` (shown in the instruction panel)
 - Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`
 - All secret fields (tokens, keys) are rendered as `type="password"` inputs; blank submission does not overwrite an existing stored secret
 - The primary action button is **«Сохранить»** and follows a **verify-before-save** flow: (1) field validation, (2) resolve verification token (entered value or stored fallback), (3) call `WebhookRegistrationService::verifyX($token)` — if it fails, show error and do NOT persist anything; (4) on success, persist via `SettingsService`, then register webhook (telegram|vk|max) or show success notice (telegram_ai)

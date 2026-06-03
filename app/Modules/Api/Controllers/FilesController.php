@@ -33,7 +33,7 @@ class FilesController
         try {
             return $this->fileService->streamFile($fileId);
         } catch (\Throwable $e) {
-            Log::channel('loki')->info($e->getMessage(), ['source' => 'tg_request']);
+            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
             die();
         }
     }
@@ -50,7 +50,7 @@ class FilesController
         try {
             return $this->fileService->downloadFile($fileId);
         } catch (\Throwable $e) {
-            Log::channel('loki')->info($e->getMessage(), ['source' => 'tg_request']);
+            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
             die();
         }
     }

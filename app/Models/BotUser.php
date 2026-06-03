@@ -97,7 +97,7 @@ class BotUser extends Model
 
             return $botUser ? $botUser->platform : null;
         } catch (\Throwable $e) {
-            Log::channel('loki')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
+            Log::channel('app')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
             return null;
         }
     }
@@ -118,7 +118,7 @@ class BotUser extends Model
 
             return $botUser->platform ?? null;
         } catch (\Throwable $e) {
-            Log::channel('loki')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
+            Log::channel('app')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
             return null;
         }
     }

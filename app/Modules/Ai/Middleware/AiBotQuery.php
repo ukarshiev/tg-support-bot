@@ -34,11 +34,11 @@ class AiBotQuery
                 throw new \RuntimeException('Secret-Token is invalid!');
             }
 
-            Log::channel('loki')->info(json_encode($request->all()), ['source' => 'ai_bot_request']);
+            Log::channel('app')->info(json_encode($request->all()), ['source' => 'ai_bot_request']);
 
             return $next($request);
         } catch (\Throwable $e) {
-            Log::channel('loki')->warning('AiBotQuery: rejected with 403', [
+            Log::channel('app')->warning('AiBotQuery: rejected with 403', [
                 'source' => 'ai_bot_forbidden',
                 'reason' => $e->getMessage(),
                 'has_secret_header' => $request->hasHeader('X-Telegram-Bot-Api-Secret-Token'),

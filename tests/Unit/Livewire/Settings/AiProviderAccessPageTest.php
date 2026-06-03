@@ -364,4 +364,96 @@ class AiProviderAccessPageTest extends TestCase
         // Secret must remain null after cancel
         $this->assertNull($component->openai_api_key);
     }
+
+    // ── connect() — verify-before-save ─────────────────────────────────────────────
+
+    public function test_connect_openai_persists_when_verification_succeeds(): void
+    {
+        \Illuminate\Support\Facades\Http::fake(['*' => \Illuminate\Support\Facades\Http::response(['choices' => [['message' => ['content' => 'ok']]]], 200)]);
+
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.openai_api_key', 'sk-test')->once();
+        $mock->shouldReceive('set'); // other non-secret keys
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        $component->openai_api_key = 'sk-test';
+        $component->openai_base_url = 'https://api.openai.com/v1';
+        $component->openai_model = 'gpt-4o-mini';
+
+        $component->connect($mock, new \App\Modules\Ai\Services\AiProviderVerificationService());
+
+        $this->assertTrue($component->saved);
+        $this->assertNull($component->verifyError);
+    }
+
+    public function test_connect_openai_blocks_save_when_verification_fails(): void
+    {
+        \Illuminate\Support\Facades\Http::fake(['*' => \Illuminate\Support\Facades\Http::response([], 401)]);
+
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        // Nothing must be persisted when verification fails.
+        $mock->shouldNotReceive('set');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        $component->openai_api_key = 'bad-key';
+        $component->openai_base_url = 'https://api.openai.com/v1';
+        $component->openai_model = 'gpt-4o-mini';
+
+        $component->connect($mock, new \App\Modules\Ai\Services\AiProviderVerificationService());
+
+        $this->assertFalse($component->saved);
+        $this->assertNotNull($component->verifyError);
+        $this->assertStringContainsString('401', (string) $component->verifyError);
+    }
+
+    public function test_connect_openai_uses_stored_secret_when_field_blank(): void
+    {
+        \Illuminate\Support\Facades\Http::fake(['*' => \Illuminate\Support\Facades\Http::response(['choices' => []], 200)]);
+
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        // Stored API key is used because the field is left blank.
+        $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn('stored-key');
+        $mock->shouldReceive('get')->andReturn(null);
+        // Non-secret keys are persisted; the blank api_key field is NOT (blank-secret guard).
+        $mock->shouldReceive('set');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('openai', $mock);
+        $component->openai_api_key = null; // blank → fall back to stored
+        $component->openai_base_url = 'https://api.openai.com/v1';
+        $component->openai_model = 'gpt-4o-mini';
+
+        $component->connect($mock, new \App\Modules\Ai\Services\AiProviderVerificationService());
+
+        $this->assertTrue($component->saved);
+        \Illuminate\Support\Facades\Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer stored-key'));
+    }
+
+    public function test_connect_gigachat_blocks_when_certificate_missing(): void
+    {
+        \Illuminate\Support\Facades\Http::fake();
+
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldNotReceive('set');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('gigachat', $mock);
+        $component->gigachat_client_secret = 'base64secret';
+        // No cert uploaded and none stored → verification must fail before any HTTP call.
+
+        $component->connect($mock, new \App\Modules\Ai\Services\AiProviderVerificationService());
+
+        $this->assertFalse($component->saved);
+        $this->assertNotNull($component->verifyError);
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+    }
 }

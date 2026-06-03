@@ -80,25 +80,25 @@ abstract class AbstractSendMessageJob implements ShouldQueue
     {
         if ($response->response_code === 429) {
             $retryAfter = $response->parameters->retry_after ?? 3;
-            Log::channel('loki')->warning("429 Too Many Requests. Replay {$retryAfter}");
+            Log::channel('app')->warning("429 Too Many Requests. Replay {$retryAfter}");
             $this->release($retryAfter);
             return;
         }
 
         if ($response->response_code === 400 && $response->type_error === 'MESSAGE_TEXT_IS_EMPTY') {
-            Log::channel('loki')->warning('MESSAGE_TEXT_IS_EMPTY -> message not sent');
+            Log::channel('app')->warning('MESSAGE_TEXT_IS_EMPTY -> message not sent');
             return;
         }
 
         if ($response->response_code === 400 && $response->type_error === 'MARKDOWN_ERROR') {
-            Log::channel('loki')->warning('MARKDOWN_ERROR -> switching parse_mode to HTML');
+            Log::channel('app')->warning('MARKDOWN_ERROR -> switching parse_mode to HTML');
             $this->queryParams->parse_mode = 'html';
             $this->release(1);
             return;
         }
 
         if ($response->response_code === 400 && in_array($response->type_error, ['TOPIC_NOT_FOUND', 'TOPIC_DELETED', 'TOPIC_ID_INVALID'])) {
-            Log::channel('loki')->warning('TOPIC_NOT_FOUND/TOPIC_DELETED -> creating new topic');
+            Log::channel('app')->warning('TOPIC_NOT_FOUND/TOPIC_DELETED -> creating new topic');
 
             $retryJob = $this->getRetryJobInstance();
             if ($retryJob !== null) {
@@ -115,13 +115,13 @@ abstract class AbstractSendMessageJob implements ShouldQueue
         }
 
         if ($response->response_code === 403) {
-            Log::channel('loki')->warning('403 - user blocked the bot');
+            Log::channel('app')->warning('403 - user blocked the bot');
             app(BanMessage::class)->execute($this->botUserId, $this->updateDto);
             return;
         }
 
         if ($response->response_code === 400 && in_array($response->type_error, ['TOPIC_NOT_MODIFIED', 'MESSAGE_NOT_MODIFIED'])) {
-            Log::channel('loki')->info("{$response->type_error} -> no-op, skipping", [
+            Log::channel('app')->info("{$response->type_error} -> no-op, skipping", [
                 'job' => static::class,
                 'bot_user_id' => $this->botUserId,
             ]);
@@ -130,7 +130,7 @@ abstract class AbstractSendMessageJob implements ShouldQueue
 
         $description = $response->rawData['description'] ?? null;
 
-        Log::channel('loki')->error(
+        Log::channel('app')->error(
             sprintf(
                 'Unhandled Telegram API error [code=%s, type=%s]',
                 $response->response_code ?? 'null',

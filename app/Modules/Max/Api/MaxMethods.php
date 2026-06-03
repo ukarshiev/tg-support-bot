@@ -61,7 +61,7 @@ class MaxMethods
         } catch (\Throwable $e) {
             $isRetryable = str_contains($e->getMessage(), 'attachment.not.ready');
 
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $isRetryable ? 'info' : 'error',
                 'MaxMethods::sendQuery failed | ' . get_class($e) . ': ' . $e->getMessage(),
                 [
@@ -110,7 +110,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendMessageWithKeyboard response', [
+        Log::channel('app')->info('MaxMethods::sendMessageWithKeyboard response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);
@@ -153,7 +153,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendImageMessage response', [
+        Log::channel('app')->info('MaxMethods::sendImageMessage response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);
@@ -194,7 +194,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendAudioMessage response', [
+        Log::channel('app')->info('MaxMethods::sendAudioMessage response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);
@@ -237,7 +237,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendFileMessage response', [
+        Log::channel('app')->info('MaxMethods::sendFileMessage response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);

@@ -111,11 +111,13 @@
                             label="ID группы"
                             for="telegram_group_id"
                             hint="ID Telegram-группы для приёма обращений"
+                            :required="true"
                             :error="$formErrors['telegram_group_id'] ?? null"
                         >
                             <input
                                 id="telegram_group_id"
                                 type="text"
+                                required
                                 wire:model="telegram_group_id"
                                 placeholder="-100XXXXXXXXXX"
                                 class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
@@ -128,11 +130,13 @@
                             label="Токен бота"
                             for="telegram_token"
                             hint="Токен от @BotFather"
+                            :required="true"
                             :error="$formErrors['telegram_token'] ?? null"
                         >
                             <input
                                 id="telegram_token"
                                 type="password"
+                                required
                                 wire:model="telegram_token"
                                 autocomplete="new-password"
                                 placeholder="110201543:AAHdqTcvCH1vGWJxfSeo..."
@@ -146,11 +150,13 @@
                             label="Секретный ключ Webhook"
                             for="telegram_secret_key"
                             hint="Для верификации запросов от Telegram"
+                            :required="true"
                             :error="$formErrors['telegram_secret_key'] ?? null"
                         >
                             <input
                                 id="telegram_secret_key"
                                 type="password"
+                                required
                                 wire:model="telegram_secret_key"
                                 autocomplete="new-password"
                                 placeholder="your-secret-key"
@@ -170,11 +176,13 @@
                             label="Токен AI-бота"
                             for="telegram_ai_token"
                             hint="Токен отдельного бота для черновиков и автоответов ИИ"
+                            :required="true"
                             :error="$formErrors['telegram_ai_token'] ?? null"
                         >
                             <input
                                 id="telegram_ai_token"
                                 type="password"
+                                required
                                 wire:model="telegram_ai_token"
                                 autocomplete="new-password"
                                 placeholder="110201543:AAHdqTcvCH1vGWJxfSeo..."
@@ -188,32 +196,18 @@
                             label="Секретный ключ Webhook"
                             for="telegram_ai_secret"
                             hint="Для верификации входящих запросов от AI-бота"
+                            :required="true"
                             :error="$formErrors['telegram_ai_secret'] ?? null"
                         >
                             <input
                                 id="telegram_ai_secret"
                                 type="password"
+                                required
                                 wire:model="telegram_ai_secret"
                                 autocomplete="new-password"
                                 placeholder="your-secret-key"
                                 class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
                                     @if (!empty($formErrors['telegram_ai_secret'])) border-red-400 @endif"
-                            />
-                        </x-admin.form-field>
-
-                        {{-- Username AI-бота --}}
-                        <x-admin.form-field
-                            label="Username AI-бота"
-                            for="telegram_ai_username"
-                            hint="Например @my_ai_bot"
-                            :error="$formErrors['telegram_ai_username'] ?? null"
-                        >
-                            <input
-                                id="telegram_ai_username"
-                                type="text"
-                                wire:model="telegram_ai_username"
-                                placeholder="@my_ai_bot"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
                             />
                         </x-admin.form-field>
 
@@ -228,11 +222,13 @@
                             label="Токен"
                             for="vk_token"
                             hint="Токен доступа сообщества"
+                            :required="true"
                             :error="$formErrors['vk_token'] ?? null"
                         >
                             <input
                                 id="vk_token"
                                 type="password"
+                                required
                                 wire:model="vk_token"
                                 autocomplete="new-password"
                                 placeholder="vk1.a.xxxxxxxxxxxx"
@@ -245,11 +241,13 @@
                             label="Секретный ключ Webhook"
                             for="vk_secret_key"
                             hint="Для верификации входящих запросов"
+                            :required="true"
                             :error="$formErrors['vk_secret_key'] ?? null"
                         >
                             <input
                                 id="vk_secret_key"
                                 type="password"
+                                required
                                 wire:model="vk_secret_key"
                                 autocomplete="new-password"
                                 placeholder="your-secret-key"
@@ -262,11 +260,13 @@
                             label="Код подтверждения"
                             for="vk_confirm_code"
                             hint="Строка подтверждения сервера из настроек Callback API"
+                            :required="true"
                             :error="$formErrors['vk_confirm_code'] ?? null"
                         >
                             <input
                                 id="vk_confirm_code"
                                 type="password"
+                                required
                                 wire:model="vk_confirm_code"
                                 autocomplete="new-password"
                                 placeholder="abc123"
@@ -285,11 +285,13 @@
                             label="Токен"
                             for="max_token"
                             hint="Токен бота из настроек MAX"
+                            :required="true"
                             :error="$formErrors['max_token'] ?? null"
                         >
                             <input
                                 id="max_token"
                                 type="password"
+                                required
                                 wire:model="max_token"
                                 autocomplete="new-password"
                                 placeholder="max-bot-token-xxxxxxxxxxxx"
@@ -302,11 +304,13 @@
                             label="Секретный ключ Webhook"
                             for="max_secret_key"
                             hint="Для верификации входящих запросов от MAX"
+                            :required="true"
                             :error="$formErrors['max_secret_key'] ?? null"
                         >
                             <input
                                 id="max_secret_key"
                                 type="password"
+                                required
                                 wire:model="max_secret_key"
                                 autocomplete="new-password"
                                 placeholder="your-secret-key"

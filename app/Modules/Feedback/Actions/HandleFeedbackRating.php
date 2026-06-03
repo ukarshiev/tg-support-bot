@@ -34,7 +34,7 @@ class HandleFeedbackRating
     {
         $parsed = $this->parseCallbackData($callbackData);
         if ($parsed === null) {
-            Log::channel('loki')->warning('HandleFeedbackRating: invalid callback_data', [
+            Log::channel('app')->warning('HandleFeedbackRating: invalid callback_data', [
                 'source' => 'feedback_rating_invalid',
                 'callback_data' => $callbackData,
             ]);
@@ -45,7 +45,7 @@ class HandleFeedbackRating
 
         $feedback = Feedback::find($feedbackId);
         if ($feedback === null) {
-            Log::channel('loki')->warning('HandleFeedbackRating: feedback record not found', [
+            Log::channel('app')->warning('HandleFeedbackRating: feedback record not found', [
                 'source' => 'feedback_rating_not_found',
                 'feedback_id' => $feedbackId,
             ]);
@@ -57,7 +57,7 @@ class HandleFeedbackRating
             'status' => 'completed_no_comment',
         ]);
 
-        Log::channel('loki')->info('HandleFeedbackRating: rating saved', [
+        Log::channel('app')->info('HandleFeedbackRating: rating saved', [
             'source' => 'feedback_rating_saved',
             'feedback_id' => $feedbackId,
             'rating' => $score,

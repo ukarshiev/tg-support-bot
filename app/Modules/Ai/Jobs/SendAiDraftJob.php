@@ -62,7 +62,7 @@ class SendAiDraftJob implements ShouldQueue
             // For brand-new VK/Max users the topic may still be in flight via
             // TopicCreateJob — retry shortly so we don't post into thread_id=null.
             if (empty($botUser->topic_id)) {
-                Log::channel('loki')->info('SendAiDraftJob: topic_id not ready, releasing', [
+                Log::channel('app')->info('SendAiDraftJob: topic_id not ready, releasing', [
                     'source' => 'send_ai_draft_topic_pending',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,
@@ -115,7 +115,7 @@ class SendAiDraftJob implements ShouldQueue
                 'reply_markup' => AiHelper::preparedAiReplyMarkup((int) $aiMessage->message_id, $aiResponse->response),
             ]);
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['source' => 'send_ai_draft_error', 'file' => $e->getFile(), 'line' => $e->getLine()]

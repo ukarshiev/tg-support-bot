@@ -37,7 +37,7 @@ rules/
 │  └─ endpoints.md                    ← API contract rules and Swagger reference
 └─ process/
    ├─ architecture-design.md          ← Design before implementation
-   ├─ observability.md                ← Logging, metrics, monitoring (Loki + Grafana)
+   ├─ observability.md                ← Logging, metrics, monitoring (Telescope + Sentry)
    ├─ ai-workflow.md                  ← AI agent lifecycle rules
    ├─ ci-cd.md                        ← CI/CD and pipeline rules
    ├─ security.md                     ← Security and safe coding rules
@@ -57,7 +57,7 @@ rules/
 | Database | PostgreSQL |
 | Queue | Laravel Queue (Redis) |
 | Containers | Docker |
-| Monitoring | Grafana + Loki + Sentry |
+| Monitoring | Laravel Telescope + Sentry |
 | Live Chat | Node.js (port 3001) |
 | AI Providers | OpenAI, DeepSeek, GigaChat |
 

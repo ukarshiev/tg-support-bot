@@ -47,7 +47,7 @@ class AiAssistantService
 
             return $this->provider->processMessage($requestWithContext);
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), ['source' => 'ai_error']);
+            Log::channel('app')->error($e->getMessage(), ['source' => 'ai_error']);
 
             return null;
         }
@@ -90,7 +90,7 @@ class AiAssistantService
 
             return $response->response;
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), ['source' => 'ai_generate_reply_error']);
+            Log::channel('app')->error($e->getMessage(), ['source' => 'ai_generate_reply_error']);
 
             return null;
         }

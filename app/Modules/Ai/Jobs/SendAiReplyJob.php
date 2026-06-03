@@ -62,7 +62,7 @@ class SendAiReplyJob implements ShouldQueue
             // For brand-new VK/Max users the supergroup topic may still be in flight;
             // wait for it before we try to post the AI reply marker into thread_id=null.
             if (empty($botUser->topic_id)) {
-                Log::channel('loki')->info('SendAiReplyJob: topic_id not ready, releasing', [
+                Log::channel('app')->info('SendAiReplyJob: topic_id not ready, releasing', [
                     'source' => 'send_ai_reply_topic_pending',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,
@@ -109,14 +109,14 @@ class SendAiReplyJob implements ShouldQueue
                 throw new \RuntimeException('AI auto-reply delivery skipped: unsupported platform', 1);
             }
 
-            Log::channel('loki')->info('SendAiReplyJob: AI reply delivered', [
+            Log::channel('app')->info('SendAiReplyJob: AI reply delivered', [
                 'source' => 'ai_reply_sent',
                 'bot_user_id' => $botUser->id,
                 'platform' => $botUser->platform,
                 'supergroup_message_id' => $supergroupResponse->message_id,
             ]);
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['source' => 'send_ai_reply_error', 'file' => $e->getFile(), 'line' => $e->getLine()]

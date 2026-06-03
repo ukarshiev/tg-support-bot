@@ -40,7 +40,7 @@ class SendMaxSimpleMessageJob extends AbstractSendMessageJob
         try {
             $this->maxMethods->sendQuery($this->queryParams->methodQuery, $this->queryParams->toArray());
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['file' => $e->getFile(), 'line' => $e->getLine()]
