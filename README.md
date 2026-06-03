@@ -109,8 +109,8 @@
 - WebSocket поддержка через Socket.io
 
 ### Управление и мониторинг
-- **Grafana**: Визуализация метрик и статистики
-- **Loki**: Централизованное логирование
+- **Laravel Telescope**: Дашборд отладки (`/telescope`) — запросы, исключения, логи, SQL, очереди, кэш
+- **Логи**: Ротируемые файлы в `storage/logs/`, просмотр через `php artisan pail` или во вкладке Logs Telescope
 - **PgAdmin**: Управление базой данных
 - **RedisInsight**: Мониторинг Redis
 - Интеграция с Sentry для отслеживания ошибок
@@ -147,9 +147,8 @@
 - Certbot (SSL сертификаты)
 
 **Monitoring & Logging:**
-- Grafana (дашборды)
-- Loki (логи)
-- Promtail (сбор логов)
+- Laravel Telescope (дашборд отладки: запросы, логи, SQL, очереди, исключения)
+- Ротируемые лог-файлы (`storage/logs/`, `php artisan pail`)
 - Sentry (error tracking)
 
 **Development:**
@@ -364,18 +363,23 @@ curl -X POST https://yourdomain.com/api/external/message \
 
 ## Мониторинг и логирование
 
-### Grafana
+### Laravel Telescope
 
-**URL:** `https://grafana.yourdomain.com`
+**URL:** `https://yourdomain.com/telescope` (доступ только при `APP_DEBUG=true` и роли админа — gate `viewTelescope`, во всех окружениях)
 
-Логин: значение из `GRAFANA_USER`
-Пароль: значение из `GRAFANA_PASSWORD`
+Дашборд отладки: запросы, исключения, логи (`Log::channel('app')`), SQL-запросы, очереди/джобы, кэш, redis, события. Записи хранятся в таблицах `telescope_entries` (PostgreSQL) и обрезаются ежедневно (`telescope:prune --hours=48`). В окружении `local` пишется всё; в остальных — только сбои/исключения/расписание.
 
-Grafana подключена к Loki для визуализации логов и создания дашбордов.
+### Логи
 
-### Loki
+Логи приложения пишутся в ротируемые файлы `storage/logs/` (`laravel-*.log` — общий стек, `app-*.log` — события через `Log::channel('app')`). Просмотр в реальном времени:
 
-Централизованное хранилище логов. Доступен на `http://loki:3100`.
+```bash
+docker exec -it pet php artisan pail
+# или
+tail -f storage/logs/laravel-$(date +%F).log
+```
+
+Ошибки также агрегируются в Sentry.
 
 ### PgAdmin
 
@@ -556,7 +560,7 @@ SENTRY_TRACES_SAMPLE_RATE=0.1
 
 **Nginx**: Веб-сервер, reverse proxy, SSL termination
 
-**Monitoring Stack**: Grafana + Loki + Promtail для мониторинга
+**Monitoring Stack**: Laravel Telescope (отладка: запросы/логи/SQL/очереди) + Sentry (ошибки)
 
 ---
 
