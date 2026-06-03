@@ -121,7 +121,8 @@ class IntegrationChannelPageTest extends TestCase
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
             ->assertSee('Токен AI-бота')
             ->assertSee('Секретный ключ Webhook')
-            ->assertSee('Username AI-бота')
+            // The manual username field was removed — id/@username come from getMe.
+            ->assertDontSee('Username AI-бота')
             ->assertSee('Сохранить');
     }
 
@@ -239,18 +240,20 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertDatabaseHas('settings', ['key' => 'telegram.token']);
     }
 
-    public function test_save_telegram_ai_persists_id_and_username(): void
+    public function test_save_telegram_ai_persists_secrets(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
-            ->set('telegram_ai_username', '@my_ai_bot')
+            ->set('telegram_ai_token', 'ai-tok-123')
+            ->set('telegram_ai_secret', 'ai-sec-123')
             ->call('save')
             ->assertSet('saved', true)
             ->assertSet('formErrors', []);
 
-        $this->assertDatabaseHas('settings', ['key' => 'telegram_ai.username', 'value' => '@my_ai_bot']);
+        $this->assertDatabaseHas('settings', ['key' => 'telegram_ai.token']);
+        $this->assertDatabaseHas('settings', ['key' => 'telegram_ai.secret']);
     }
 
     public function test_save_telegram_ai_does_not_overwrite_token_when_blank(): void
@@ -270,10 +273,10 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertDatabaseHas('settings', ['key' => 'telegram_ai.token']);
     }
 
-    public function test_connect_telegram_ai_saves_without_webhook_registration(): void
+    public function test_connect_telegram_ai_saves_and_captures_bot_identity(): void
     {
         Http::fake([
-            'https://api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true, 'first_name' => 'AI Bot']], 200),
+            'https://api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['id' => 4242, 'is_bot' => true, 'first_name' => 'AI Bot', 'username' => 'my_ai_bot']], 200),
         ]);
 
         $admin = User::factory()->create(['role' => UserRole::Admin]);
@@ -281,10 +284,15 @@ class IntegrationChannelPageTest extends TestCase
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram_ai'])
             ->set('telegram_ai_token', 'ai-bot-token:valid')
-            ->set('telegram_ai_username', '@bot')
+            ->set('telegram_ai_secret', 'ai-secret')
             ->call('connect')
             ->assertSet('saved', true)
             ->assertSet('webhookSuccess', true);
+
+        // Bot id/@username captured automatically from getMe — no manual entry.
+        $settings = app(SettingsService::class);
+        $this->assertSame(4242, (int) $settings->get('telegram_ai.id'));
+        $this->assertSame('@my_ai_bot', (string) $settings->get('telegram_ai.username'));
     }
 
     public function test_save_vk_persists_credentials(): void
@@ -494,12 +502,12 @@ class IntegrationChannelPageTest extends TestCase
             ->assertSet('webhookSuccess', true);
     }
 
-    public function test_connect_sets_error_when_no_token_available(): void
+    public function test_connect_telegram_blocks_when_required_field_blank(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
-        // Ensure no telegram token is stored.
+        // Ensure no telegram token is stored, then leave the field blank.
         $settings = app(\App\Services\Settings\SettingsService::class);
         $settings->forget('telegram.token');
         \Illuminate\Support\Facades\Cache::flush();
@@ -511,7 +519,8 @@ class IntegrationChannelPageTest extends TestCase
             ->assertSet('saved', false)
             ->assertSet('webhookSuccess', false);
 
-        $this->assertStringContainsString('Введите токен', (string) $component->get('webhookMessage'));
+        // Required-field validation blocks the save before verification.
+        $this->assertArrayHasKey('telegram_token', $component->get('formErrors'));
     }
 
     // ── Webhook registration (standalone, backward-compat) ────────────────────

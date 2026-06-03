@@ -76,6 +76,13 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => false,
         ],
+        // Numeric id + @username are captured automatically from getMe on save
+        // (no manual entry). Informational — not compared at runtime.
+        'telegram_ai.id' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
 
         // ── VK ───────────────────────────────────────────────────────────────
         'vk.token' => [

@@ -63,9 +63,6 @@ class IntegrationChannelPage extends Component
     /** @var string|null AI-bot webhook secret (pre-filled from settings, like the main bot) */
     public ?string $telegram_ai_secret = null;
 
-    /** @var string|null AI-bot @username */
-    public ?string $telegram_ai_username = null;
-
     // ── VK fields ─────────────────────────────────────────────────────────────
 
     /** @var string|null */
@@ -183,6 +180,17 @@ class IntegrationChannelPage extends Component
 
         // telegram_ai: no webhook registration via UI — artisan command only.
         if ($this->channel === 'telegram_ai') {
+            // Persist the bot identity captured from getMe (no manual entry).
+            $botId = $verifyResult['botId'] ?? null;
+            if ($botId !== null) {
+                $settings->set('telegram_ai.id', $botId);
+            }
+
+            $botUsername = $verifyResult['botUsername'] ?? null;
+            if ($botUsername !== null && $botUsername !== '') {
+                $settings->set('telegram_ai.username', '@' . ltrim($botUsername, '@'));
+            }
+
             $this->webhookSuccess = true;
             $this->webhookMessage = 'Настройки AI-бота сохранены.';
 
@@ -275,10 +283,71 @@ class IntegrationChannelPage extends Component
     private function validateFields(): ?string
     {
         if ($this->channel === 'telegram') {
-            if (strlen((string) $this->telegram_group_id) > 50) {
+            // All Telegram fields are required. Secret fields are pre-filled from
+            // settings, so an existing config already satisfies these checks.
+            if (trim((string) $this->telegram_group_id) === '') {
+                $this->formErrors['telegram_group_id'] = 'Укажите ID группы.';
+            } elseif (strlen((string) $this->telegram_group_id) > 50) {
                 $this->formErrors['telegram_group_id'] = 'Максимальная длина — 50 символов.';
+            }
+            if (trim((string) $this->telegram_token) === '') {
+                $this->formErrors['telegram_token'] = 'Укажите токен бота.';
+            }
+            if (trim((string) $this->telegram_secret_key) === '') {
+                $this->formErrors['telegram_secret_key'] = 'Укажите секретный ключ Webhook.';
+            }
 
-                return 'telegram_group_id';
+            if (! empty($this->formErrors)) {
+                return (string) array_key_first($this->formErrors);
+            }
+        }
+
+        if ($this->channel === 'telegram_ai') {
+            // Token + secret are required. The bot id/@username are derived from
+            // getMe on save, so they are not entered manually. Secret fields are
+            // pre-filled from settings, so an existing config already passes.
+            if (trim((string) $this->telegram_ai_token) === '') {
+                $this->formErrors['telegram_ai_token'] = 'Укажите токен AI-бота.';
+            }
+            if (trim((string) $this->telegram_ai_secret) === '') {
+                $this->formErrors['telegram_ai_secret'] = 'Укажите секретный ключ Webhook.';
+            }
+
+            if (! empty($this->formErrors)) {
+                return (string) array_key_first($this->formErrors);
+            }
+        }
+
+        if ($this->channel === 'vk') {
+            // All VK fields are required. Secret fields are pre-filled from
+            // settings, so an existing config already satisfies these checks.
+            if (trim((string) $this->vk_token) === '') {
+                $this->formErrors['vk_token'] = 'Укажите токен VK.';
+            }
+            if (trim((string) $this->vk_secret_key) === '') {
+                $this->formErrors['vk_secret_key'] = 'Укажите секретный ключ Webhook.';
+            }
+            if (trim((string) $this->vk_confirm_code) === '') {
+                $this->formErrors['vk_confirm_code'] = 'Укажите код подтверждения.';
+            }
+
+            if (! empty($this->formErrors)) {
+                return (string) array_key_first($this->formErrors);
+            }
+        }
+
+        if ($this->channel === 'max') {
+            // All MAX fields are required. Secret fields are pre-filled from
+            // settings, so an existing config already satisfies these checks.
+            if (trim((string) $this->max_token) === '') {
+                $this->formErrors['max_token'] = 'Укажите токен MAX.';
+            }
+            if (trim((string) $this->max_secret_key) === '') {
+                $this->formErrors['max_secret_key'] = 'Укажите секретный ключ Webhook.';
+            }
+
+            if (! empty($this->formErrors)) {
+                return (string) array_key_first($this->formErrors);
             }
         }
 
@@ -347,8 +416,9 @@ class IntegrationChannelPage extends Component
         $this->telegram_token = (string) ($settings->get('telegram.token') ?? '');
         $this->telegram_secret_key = (string) ($settings->get('telegram.secret_key') ?? '');
 
-        // AI-bot fields — pre-filled from settings, same as the main bot / VK / MAX fields.
-        $this->telegram_ai_username = (string) ($settings->get('telegram_ai.username') ?? '');
+        // AI-bot secrets — pre-filled from settings, same as the main bot fields.
+        // The bot id/@username are captured automatically from getMe on save,
+        // so there is no manual username field to load.
         $this->telegram_ai_token = (string) ($settings->get('telegram_ai.token') ?? '');
         $this->telegram_ai_secret = (string) ($settings->get('telegram_ai.secret') ?? '');
 
@@ -395,9 +465,8 @@ class IntegrationChannelPage extends Component
             return;
         }
 
-        $settings->set('telegram_ai.username', $this->telegram_ai_username ?? '');
-
-        // Save secrets only when non-empty (do not overwrite existing secrets with blank)
+        // Save secrets only when non-empty (do not overwrite existing secrets with blank).
+        // The bot id/@username are persisted separately in connect() from getMe.
         if ($this->telegram_ai_token !== '' && $this->telegram_ai_token !== null) {
             $settings->set('telegram_ai.token', $this->telegram_ai_token);
         }

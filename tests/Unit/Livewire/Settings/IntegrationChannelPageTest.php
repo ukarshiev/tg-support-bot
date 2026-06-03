@@ -147,16 +147,17 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertTrue($component->channelConnected);
     }
 
-    public function test_save_telegram_ai_persists_id_username_and_nonempty_secrets(): void
+    public function test_save_telegram_ai_persists_nonempty_secrets(): void
     {
         $settings = $this->settingsMock();
-        $settings->shouldReceive('set')->with('telegram_ai.username', '@ai_bot')->once();
         $settings->shouldReceive('set')->with('telegram_ai.token', 'ai-tok')->once();
         $settings->shouldReceive('set')->with('telegram_ai.secret', 'ai-sec')->once();
+        // username/id are NOT set via save() — they come from getMe in connect().
+        $settings->shouldNotReceive('set')->with('telegram_ai.username', Mockery::any());
+        $settings->shouldNotReceive('set')->with('telegram_ai.id', Mockery::any());
 
         $component = new IntegrationChannelPage();
         $component->mount('telegram_ai', $settings, $this->statusMock());
-        $component->telegram_ai_username = '@ai_bot';
         $component->telegram_ai_token = 'ai-tok';
         $component->telegram_ai_secret = 'ai-sec';
         $component->save($settings);
@@ -168,7 +169,6 @@ class IntegrationChannelPageTest extends TestCase
     public function test_save_telegram_ai_skips_blank_secrets(): void
     {
         $settings = $this->settingsMock();
-        $settings->shouldReceive('set')->with('telegram_ai.username', Mockery::type('string'))->once();
         $settings->shouldReceive('set')->with('telegram_ai.token', Mockery::any())->never();
         $settings->shouldReceive('set')->with('telegram_ai.secret', Mockery::any())->never();
 
@@ -185,24 +185,51 @@ class IntegrationChannelPageTest extends TestCase
     {
         $settings = $this->settingsMock();
         $settings->shouldReceive('get')->with('telegram_ai.token')->andReturn('');
-        $settings->shouldReceive('set')->with('telegram_ai.username', Mockery::type('string'))->once();
         $settings->shouldReceive('set')->with('telegram_ai.token', 'ai-tok')->once();
+        $settings->shouldReceive('set')->with('telegram_ai.secret', 'ai-sec')->once();
+        // Bot id/@username are captured automatically from getMe.
+        $settings->shouldReceive('set')->with('telegram_ai.id', 4242)->once();
+        $settings->shouldReceive('set')->with('telegram_ai.username', '@ai_bot')->once();
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
-        $webhook->shouldReceive('verifyTelegram')->with('ai-tok', \Mockery::any())->once()->andReturn(['success' => true, 'message' => 'OK']);
+        $webhook->shouldReceive('verifyTelegram')->with('ai-tok', \Mockery::any())->once()
+            ->andReturn(['success' => true, 'message' => 'OK', 'botId' => 4242, 'botUsername' => 'ai_bot']);
         $webhook->shouldNotReceive('registerTelegram');
         $webhook->shouldNotReceive('registerVk');
         $webhook->shouldNotReceive('registerMax');
 
         $component = new IntegrationChannelPage();
         $component->mount('telegram_ai', $settings, $this->statusMock());
+        // Token + secret are required; username/id are derived from getMe.
         $component->telegram_ai_token = 'ai-tok';
+        $component->telegram_ai_secret = 'ai-sec';
         $component->connect($settings, $webhook);
 
         $this->assertTrue($component->saved);
         $this->assertTrue($component->webhookSuccess);
         $this->assertNotNull($component->webhookMessage);
+    }
+
+    public function test_connect_telegram_ai_requires_token_and_secret(): void
+    {
+        $settings = $this->settingsMock();
+
+        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
+        $webhook = Mockery::mock(WebhookRegistrationService::class);
+        // Validation fails before any verification / persistence.
+        $webhook->shouldNotReceive('verifyTelegram');
+        $settings->shouldNotReceive('set');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram_ai', $settings, $this->statusMock());
+        $component->telegram_ai_token = 'ai-tok';
+        $component->telegram_ai_secret = ''; // missing
+        $component->connect($settings, $webhook);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('telegram_ai_secret', $component->formErrors);
+        $this->assertArrayNotHasKey('telegram_ai_token', $component->formErrors);
     }
 
     // ── VK tests ──────────────────────────────────────────────────────────────
@@ -224,6 +251,50 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertTrue($component->saved);
     }
 
+    public function test_connect_vk_requires_all_fields(): void
+    {
+        $settings = $this->settingsMock();
+        // Validation fails before any verification / persistence.
+        $settings->shouldNotReceive('set');
+
+        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
+        $webhook = Mockery::mock(WebhookRegistrationService::class);
+        $webhook->shouldNotReceive('verifyVk');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('vk', $settings, $this->statusMock());
+        $component->vk_token = 'vktok';
+        $component->vk_secret_key = '';   // missing
+        $component->vk_confirm_code = ''; // missing
+        $component->connect($settings, $webhook);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('vk_secret_key', $component->formErrors);
+        $this->assertArrayHasKey('vk_confirm_code', $component->formErrors);
+        $this->assertArrayNotHasKey('vk_token', $component->formErrors);
+    }
+
+    public function test_connect_max_requires_all_fields(): void
+    {
+        $settings = $this->settingsMock();
+        // Validation fails before any verification / persistence.
+        $settings->shouldNotReceive('set');
+
+        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
+        $webhook = Mockery::mock(WebhookRegistrationService::class);
+        $webhook->shouldNotReceive('verifyMax');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('max', $settings, $this->statusMock());
+        $component->max_token = 'maxtok';
+        $component->max_secret_key = ''; // missing
+        $component->connect($settings, $webhook);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('max_secret_key', $component->formErrors);
+        $this->assertArrayNotHasKey('max_token', $component->formErrors);
+    }
+
     // ── connect() tests ───────────────────────────────────────────────────────
 
     public function test_connect_saves_then_registers_webhook_for_telegram(): void
@@ -232,6 +303,7 @@ class IntegrationChannelPageTest extends TestCase
         $settings->shouldReceive('get')->with('telegram.token')->andReturn('');
         $settings->shouldReceive('set')->with('telegram.group_id', '-100')->once();
         $settings->shouldReceive('set')->with('telegram.token', 'tok123')->once();
+        $settings->shouldReceive('set')->with('telegram.secret_key', 'sec123')->once();
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
         $webhook = Mockery::mock(WebhookRegistrationService::class);
@@ -242,6 +314,7 @@ class IntegrationChannelPageTest extends TestCase
         $component->mount('telegram', $settings, $this->statusMock());
         $component->telegram_group_id = '-100';
         $component->telegram_token = 'tok123';
+        $component->telegram_secret_key = 'sec123';
         $component->connect($settings, $webhook);
 
         $this->assertTrue($component->saved);
@@ -282,6 +355,7 @@ class IntegrationChannelPageTest extends TestCase
         $component->mount('telegram', $settings, $this->statusMock());
         $component->telegram_group_id = '-100';
         $component->telegram_token = 'bad_tok';
+        $component->telegram_secret_key = 'sec';
         $component->connect($settings, $webhook);
 
         $this->assertFalse($component->saved);
@@ -289,39 +363,10 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertSame('Неверный токен Telegram.', $component->webhookMessage);
     }
 
-    public function test_connect_uses_stored_token_when_form_field_is_blank(): void
+    public function test_connect_telegram_requires_all_fields(): void
     {
-        // Build mock from scratch so specific expectations take priority over catch-all.
-        /** @var \Mockery\MockInterface&SettingsService $settings */
-        $settings = Mockery::mock(SettingsService::class);
-        // loadFields() reads all known keys; resolve reads telegram.token again for fallback.
-        $settings->shouldReceive('get')->with('telegram.token')->andReturn('stored_tok');
-        $settings->shouldReceive('get')->andReturn('');  // catch-all for all other keys
-        $settings->shouldReceive('set')->with('telegram.group_id', '-100')->once();
-
-        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
-        $webhook = Mockery::mock(WebhookRegistrationService::class);
-        // verify must be called with the stored token, not the blank form field
-        $webhook->shouldReceive('verifyTelegram')->with('stored_tok', \Mockery::any())->once()->andReturn(['success' => true, 'message' => 'OK']);
-        $webhook->shouldReceive('registerTelegram')->once()->andReturn(['success' => true, 'message' => 'Registered']);
-
-        $component = new IntegrationChannelPage();
-        $component->mount('telegram', $settings, $this->statusMock());
-        $component->telegram_group_id = '-100';
-        $component->telegram_token = '';   // blank — must fall back to stored
-        $component->connect($settings, $webhook);
-
-        $this->assertTrue($component->saved);
-        $this->assertTrue($component->webhookSuccess);
-    }
-
-    public function test_connect_sets_error_when_no_token_available(): void
-    {
-        // Build mock from scratch so specific expectations take priority over catch-all.
-        /** @var \Mockery\MockInterface&SettingsService $settings */
-        $settings = Mockery::mock(SettingsService::class);
-        $settings->shouldReceive('get')->with('telegram.token')->andReturn('');
-        $settings->shouldReceive('get')->andReturn('');  // catch-all for all other keys
+        $settings = $this->settingsMock();
+        // Validation fails before any verification / persistence.
         $settings->shouldNotReceive('set');
 
         /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
@@ -332,12 +377,34 @@ class IntegrationChannelPageTest extends TestCase
         $component = new IntegrationChannelPage();
         $component->mount('telegram', $settings, $this->statusMock());
         $component->telegram_group_id = '-100';
-        $component->telegram_token = '';   // blank — no stored token either
+        $component->telegram_token = '';        // missing
+        $component->telegram_secret_key = '';   // missing
         $component->connect($settings, $webhook);
 
         $this->assertFalse($component->saved);
-        $this->assertFalse($component->webhookSuccess);
-        $this->assertStringContainsString('Введите токен', (string) $component->webhookMessage);
+        $this->assertArrayHasKey('telegram_token', $component->formErrors);
+        $this->assertArrayHasKey('telegram_secret_key', $component->formErrors);
+        $this->assertArrayNotHasKey('telegram_group_id', $component->formErrors);
+    }
+
+    public function test_connect_telegram_requires_group_id(): void
+    {
+        $settings = $this->settingsMock();
+        $settings->shouldNotReceive('set');
+
+        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
+        $webhook = Mockery::mock(WebhookRegistrationService::class);
+        $webhook->shouldNotReceive('verifyTelegram');
+
+        $component = new IntegrationChannelPage();
+        $component->mount('telegram', $settings, $this->statusMock());
+        $component->telegram_group_id = '';     // missing
+        $component->telegram_token = 'tok';
+        $component->telegram_secret_key = 'sec';
+        $component->connect($settings, $webhook);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('telegram_group_id', $component->formErrors);
     }
 
     // ── cancel() test ─────────────────────────────────────────────────────────
