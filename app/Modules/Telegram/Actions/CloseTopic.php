@@ -57,7 +57,7 @@ class CloseTopic
         try {
             app(SendFeedbackForm::class)->execute($botUser);
         } catch (\Throwable $e) {
-            Log::channel('loki')->error('CloseTopic: feedback form delivery failed, topic close completed regardless', [
+            Log::channel('app')->error('CloseTopic: feedback form delivery failed, topic close completed regardless', [
                 'source' => 'close_topic_feedback_failed',
                 'bot_user_id' => $botUser->id,
                 'platform' => $botUser->platform,

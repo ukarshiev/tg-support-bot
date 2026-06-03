@@ -44,7 +44,7 @@ class MaxMessageService extends ToTgMessageService
                 throw new \Exception('Unknown event type', 1);
             }
 
-            Log::channel('loki')->info('MaxMessageService: incoming update', [
+            Log::channel('app')->info('MaxMessageService: incoming update', [
                 'text' => $this->update->text,
                 'listFileUrl' => $this->update->listFileUrl,
                 'listAttachments' => $this->update->listAttachments,
@@ -57,7 +57,7 @@ class MaxMessageService extends ToTgMessageService
                 $this->sendMessage();
             }
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['file' => $e->getFile(), 'line' => $e->getLine()]
@@ -107,7 +107,7 @@ class MaxMessageService extends ToTgMessageService
                     break;
 
                 default:
-                    Log::channel('loki')->warning('MaxMessageService: unsupported attachment type', [
+                    Log::channel('app')->warning('MaxMessageService: unsupported attachment type', [
                         'type' => $type,
                         'url' => $url,
                     ]);
@@ -134,7 +134,7 @@ class MaxMessageService extends ToTgMessageService
             'caption' => $caption !== '' ? $caption : null,
         ]);
 
-        Log::channel('loki')->info('MaxMessageService: dispatchPhoto', [
+        Log::channel('app')->info('MaxMessageService: dispatchPhoto', [
             'photo' => $url,
             'caption' => $caption,
         ]);
@@ -165,7 +165,7 @@ class MaxMessageService extends ToTgMessageService
             'caption' => $caption !== '' ? $caption : null,
         ]);
 
-        Log::channel('loki')->info('MaxMessageService: dispatchDocument', [
+        Log::channel('app')->info('MaxMessageService: dispatchDocument', [
             'document' => $url,
             'caption' => $caption,
             'fileName' => $fileName,
@@ -194,7 +194,7 @@ class MaxMessageService extends ToTgMessageService
             'voice' => $url,
         ]);
 
-        Log::channel('loki')->info('MaxMessageService: dispatchVoice', [
+        Log::channel('app')->info('MaxMessageService: dispatchVoice', [
             'voice' => $url,
         ]);
 

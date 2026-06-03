@@ -37,7 +37,7 @@ class DeliverAiAnswerToUser
      */
     public function execute(BotUser $botUser, string $text, ?TelegramUpdateDto $updateDto = null): bool
     {
-        Log::channel('loki')->info('DeliverAiAnswerToUser: routing', [
+        Log::channel('app')->info('DeliverAiAnswerToUser: routing', [
             'source' => 'ai_deliver_routing',
             'bot_user_id' => $botUser->id,
             'platform' => $botUser->platform,
@@ -91,7 +91,7 @@ class DeliverAiAnswerToUser
                 if ($channel !== null) {
                     $channel->deliverAiAnswer($botUser, $text, $updateDto);
 
-                    Log::channel('loki')->info('DeliverAiAnswerToUser: delivered via registered channel', [
+                    Log::channel('app')->info('DeliverAiAnswerToUser: delivered via registered channel', [
                         'source' => 'ai_deliver_registered_channel',
                         'bot_user_id' => $botUser->id,
                         'platform' => $botUser->platform,
@@ -100,7 +100,7 @@ class DeliverAiAnswerToUser
                     return true;
                 }
 
-                Log::channel('loki')->warning('DeliverAiAnswerToUser: unsupported platform', [
+                Log::channel('app')->warning('DeliverAiAnswerToUser: unsupported platform', [
                     'source' => 'ai_deliver_unsupported_platform',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,

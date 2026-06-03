@@ -131,8 +131,7 @@ jobs:
           mapfile -t md_files < <(find . -type f -name "*.md" \
             -not -path "./node_modules/*" \
             -not -path "./_site/*" \
-            -not -path "./vendor/*" \
-            -not -path "./docker/grafana/plugins/*")
+            -not -path "./vendor/*")
 
           if [ ${#md_files[@]} -eq 0 ]; then
             echo "⚠️ No .md files found. Skipping."

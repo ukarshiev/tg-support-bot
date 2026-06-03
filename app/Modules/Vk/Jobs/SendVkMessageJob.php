@@ -47,7 +47,7 @@ class SendVkMessageJob extends AbstractSendMessageJob
             $methodQuery = $this->queryParams->methodQuery;
             $dataQuery = $this->queryParams->toArray();
 
-            Log::channel('loki')->info('SendVkMessageJob: sending', [
+            Log::channel('app')->info('SendVkMessageJob: sending', [
                 'source' => 'send_vk_message_start',
                 'bot_user_id' => $this->botUserId,
                 'method' => $methodQuery,
@@ -61,7 +61,7 @@ class SendVkMessageJob extends AbstractSendMessageJob
                 $this->updateTopic($botUser, $this->typeMessage);
                 return;
             } elseif (!empty($response->error_message)) {
-                Log::channel('loki')->error('SendVkMessageJob: VK API error', [
+                Log::channel('app')->error('SendVkMessageJob: VK API error', [
                     'source' => 'send_vk_message_api_error',
                     'bot_user_id' => $this->botUserId,
                     'method' => $methodQuery,
@@ -73,7 +73,7 @@ class SendVkMessageJob extends AbstractSendMessageJob
 
             throw new \Exception('SendVkMessageJob: unknown error', 1);
         } catch (\Throwable $e) {
-            Log::channel('loki')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
         }
     }
 

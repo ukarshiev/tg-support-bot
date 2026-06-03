@@ -181,7 +181,7 @@ class ShouldAiReply
      */
     private function logSkip(string $reason, TelegramUpdateDto $update, ?BotUser $botUser, array $extra = []): void
     {
-        Log::channel('loki')->info("ShouldAiReply: skipped [{$reason}]", array_merge([
+        Log::channel('app')->info("ShouldAiReply: skipped [{$reason}]", array_merge([
             'source' => 'ai_should_reply_skipped',
             'reason' => $reason,
             'bot_user_id' => $botUser?->id,
@@ -201,7 +201,7 @@ class ShouldAiReply
      */
     private function logExternalSkip(string $reason, ?BotUser $botUser, array $extra = []): void
     {
-        Log::channel('loki')->info("ShouldAiReply: skipped [{$reason}]", array_merge([
+        Log::channel('app')->info("ShouldAiReply: skipped [{$reason}]", array_merge([
             'source' => 'ai_should_reply_skipped',
             'reason' => $reason,
             'bot_user_id' => $botUser?->id,

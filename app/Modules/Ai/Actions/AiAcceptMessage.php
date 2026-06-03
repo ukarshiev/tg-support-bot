@@ -52,7 +52,7 @@ class AiAcceptMessage extends AiAction
                 'incoming',
             );
 
-            Log::channel('loki')->info('AiAcceptMessage: delivering AI answer to user', [
+            Log::channel('app')->info('AiAcceptMessage: delivering AI answer to user', [
                 'source' => 'ai_accept_deliver',
                 'bot_user_id' => $botUser->id,
                 'platform' => $botUser->platform,
@@ -61,7 +61,7 @@ class AiAcceptMessage extends AiAction
 
             app(DeliverAiAnswerToUser::class)->execute($botUser, $messageData->text_ai, $update);
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), ['source' => 'ai_error']);
+            Log::channel('app')->error($e->getMessage(), ['source' => 'ai_error']);
         }
     }
 }

@@ -29,14 +29,14 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         /**
-         * Sending log in Loki
+         * Log unhandled exceptions to the application log file channel.
          */
         $exceptions->render(function (Throwable $e, Request $request) {
             if ($e instanceof HttpExceptionInterface || $e instanceof RouteNotFoundException) {
                 return null;
             }
 
-            Log::channel('loki')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
+            Log::channel('app')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
 
             if (env('APP_DEBUG') === false) {
                 return response('ok', 200);

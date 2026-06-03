@@ -126,9 +126,6 @@ The application runs in Docker. All development commands must be run inside the 
 | Nginx | `nginx` | Web server |
 | Queue worker | `queue` | `php artisan queue:work` |
 | Node.js | `node` | Live chat server |
-| Loki | `loki` | Log aggregation |
-| Grafana | `grafana` | Monitoring dashboard |
-| Promtail | `promtail` | Log forwarding |
 
 Queue worker config:
 - Tries: 3

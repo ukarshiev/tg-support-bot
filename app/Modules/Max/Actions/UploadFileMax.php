@@ -39,7 +39,7 @@ class UploadFileMax
 
             $uploadResult = $client->uploads->getUploadUrl($type);
 
-            Log::channel('loki')->info('UploadFileMax: uploading to CDN', [
+            Log::channel('app')->info('UploadFileMax: uploading to CDN', [
                 'type' => $type,
                 'filename' => $filename,
                 'size' => strlen($fileResponse->body()),
@@ -54,7 +54,7 @@ class UploadFileMax
 
             $cdnData = $cdnResponse->json() ?? [];
 
-            Log::channel('loki')->info('UploadFileMax: CDN response | type=' . $type . ' data=' . json_encode($cdnData));
+            Log::channel('app')->info('UploadFileMax: CDN response | type=' . $type . ' data=' . json_encode($cdnData));
 
             $token = $uploadResult->token
                 ?? $cdnData['token']
@@ -65,11 +65,11 @@ class UploadFileMax
                 throw new \RuntimeException('No token received. CDN response: ' . json_encode($cdnData));
             }
 
-            Log::channel('loki')->info('UploadFileMax: upload succeeded', ['type' => $type]);
+            Log::channel('app')->info('UploadFileMax: upload succeeded', ['type' => $type]);
 
             return $token;
         } catch (\Throwable $e) {
-            Log::channel('loki')->error('UploadFileMax: upload failed | ' . get_class($e) . ': ' . $e->getMessage(), [
+            Log::channel('app')->error('UploadFileMax: upload failed | ' . get_class($e) . ': ' . $e->getMessage(), [
                 'type' => $type,
                 'filename' => $filename,
                 'exception' => get_class($e),

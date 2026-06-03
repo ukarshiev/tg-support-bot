@@ -53,7 +53,7 @@ class AiCancelMessage extends AiAction
 
             AiMessage::where('message_id', $messageData->message_id)->delete();
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), ['source' => 'ai_error']);
+            Log::channel('app')->error($e->getMessage(), ['source' => 'ai_error']);
         }
     }
 }

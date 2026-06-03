@@ -7,7 +7,6 @@ services:
         depends_on:
             - pgdb
             - redis
-            - loki
         env_file:
             - .env
         working_dir: /var/www/
@@ -82,18 +81,6 @@ services:
         networks:
             - pet
 
-    grafana:
-        image: grafana/grafana:latest
-        container_name: grafana
-        user: "472"
-        environment:
-            GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
-            GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
-        depends_on:
-            - loki
-        networks:
-            - pet
-
     queue:
         build: .
         container_name: laravel_queue
@@ -125,14 +112,6 @@ services:
             - .env
         ports:
             - "3001:3000"
-        networks:
-            - pet
-
-    loki:
-        image: grafana/loki:latest
-        container_name: loki
-        ports:
-            - ${LOKI_PORT}
         networks:
             - pet
 

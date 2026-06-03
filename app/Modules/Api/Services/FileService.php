@@ -56,7 +56,7 @@ class FileService
                 'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
             ]);
         } catch (\Throwable $e) {
-            Log::channel('loki')->info($e->getMessage(), ['source' => 'tg_request']);
+            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
             die();
         }
     }
@@ -87,7 +87,7 @@ class FileService
                 ->header('Content-Type', $contentType)
                 ->header('Content-Disposition', 'attachment; filename="' . basename($filePath) . '"');
         } catch (\Throwable $e) {
-            Log::channel('loki')->info($e->getMessage(), ['source' => 'tg_request']);
+            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
             die();
         }
     }
