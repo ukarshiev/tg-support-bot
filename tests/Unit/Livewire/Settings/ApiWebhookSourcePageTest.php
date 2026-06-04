@@ -73,10 +73,12 @@ class ApiWebhookSourcePageTest extends TestCase
             ->assertSee('API и вебхуки')   // breadcrumb
             ->assertSee('Ключ API')
             ->assertSee('URL вебхука')
-            ->assertSee('Секретный ключ')
-            ->assertSee('События')
+            ->assertSee('Разрешённые IP-адреса')
             ->assertSee('REST API')
-            ->assertSee('Swagger');
+            ->assertSee('Swagger')
+            // Removed sections must no longer render.
+            ->assertDontSee('Секретный ключ')
+            ->assertDontSee('События');
     }
 
     public function test_renders_masked_token_when_token_exists(): void
@@ -244,5 +246,76 @@ class ApiWebhookSourcePageTest extends TestCase
             ->call('saveWebhookUrl');
 
         $this->assertTrue($component->get('saved'));
+    }
+
+    // ── Allowed IPs ─────────────────────────────────────────────────────────────
+
+    public function test_mount_loads_allowed_ips_as_lines(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create([
+            'name' => 'Source',
+            'allowed_ips' => ['203.0.113.10', '198.51.100.5'],
+        ]);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->assertSet('allowedIps', "203.0.113.10\n198.51.100.5");
+    }
+
+    public function test_save_persists_allowed_ips_list(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('webhookUrl', '')
+            ->set('allowedIps', "203.0.113.10\n198.51.100.5\n203.0.113.10")
+            ->call('saveWebhookUrl')
+            ->assertSuccessful()
+            ->assertSet('saved', true);
+
+        // Deduplicated, two unique IPs persisted.
+        $this->assertSame(
+            ['203.0.113.10', '198.51.100.5'],
+            ExternalSource::find($source->id)->allowed_ips
+        );
+    }
+
+    public function test_save_rejects_invalid_ip(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Source']);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('allowedIps', "203.0.113.10\nnot-an-ip")
+            ->call('saveWebhookUrl');
+
+        $this->assertNotNull($component->get('allowedIpsError'));
+        $this->assertFalse($component->get('saved'));
+        $this->assertNull(ExternalSource::find($source->id)->allowed_ips);
+    }
+
+    public function test_empty_allowed_ips_saved_as_null(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create([
+            'name' => 'Source',
+            'allowed_ips' => ['203.0.113.10'],
+        ]);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('allowedIps', '')
+            ->call('saveWebhookUrl')
+            ->assertSet('saved', true);
+
+        $this->assertNull(ExternalSource::find($source->id)->allowed_ips);
     }
 }
