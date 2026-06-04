@@ -6,6 +6,7 @@ use App\Models\BotUser;
 use App\Models\Feedback;
 use App\Modules\Feedback\Actions\HandleFeedbackRating;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -100,6 +101,73 @@ class HandleFeedbackRatingTest extends TestCase
         (new HandleFeedbackRating())->execute($callbackData);
 
         Queue::assertNothingPushed();
+    }
+
+    public function test_records_rating_as_incoming_chat_message(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 2001, 'platform' => 'telegram']);
+        $feedback = Feedback::create([
+            'bot_user_id' => $botUser->id,
+            'status' => 'awaiting_rating',
+            'closed_at' => now(),
+        ]);
+
+        (new HandleFeedbackRating())->execute("feedback_rate_{$botUser->id}_{$feedback->id}_5");
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'incoming',
+            'text' => 'Оценка обращения: ' . str_repeat('⭐', 5) . ' (5/5)',
+        ]);
+    }
+
+    public function test_posts_rating_to_group_topic_when_topic_id_present(): void
+    {
+        app(SettingsService::class)->set('telegram.group_id', '-1001234567890');
+
+        $botUser = BotUser::create(['chat_id' => 2002, 'platform' => 'telegram', 'topic_id' => 555]);
+        $feedback = Feedback::create([
+            'bot_user_id' => $botUser->id,
+            'status' => 'awaiting_rating',
+            'closed_at' => now(),
+        ]);
+
+        (new HandleFeedbackRating())->execute("feedback_rate_{$botUser->id}_{$feedback->id}_4");
+
+        /** @phpstan-ignore-next-line */
+        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
+        $topicJobs = array_values(array_filter(
+            $pushed,
+            fn ($p) => $p['job']->queryParams->methodQuery === 'sendMessage'
+        ));
+
+        $this->assertNotEmpty($topicJobs);
+        $job = $topicJobs[0]['job'];
+        $this->assertEquals('-1001234567890', $job->queryParams->chat_id);
+        $this->assertEquals(555, $job->queryParams->message_thread_id);
+    }
+
+    public function test_does_not_post_to_group_topic_without_topic_id(): void
+    {
+        app(SettingsService::class)->set('telegram.group_id', '-1001234567890');
+
+        $botUser = BotUser::create(['chat_id' => 2003, 'platform' => 'telegram']);
+        $feedback = Feedback::create([
+            'bot_user_id' => $botUser->id,
+            'status' => 'awaiting_rating',
+            'closed_at' => now(),
+        ]);
+
+        (new HandleFeedbackRating())->execute("feedback_rate_{$botUser->id}_{$feedback->id}_4");
+
+        /** @phpstan-ignore-next-line */
+        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
+        $sendMessageJobs = array_filter(
+            $pushed,
+            fn ($p) => $p['job']->queryParams->methodQuery === 'sendMessage'
+        );
+
+        $this->assertEmpty($sendMessageJobs);
     }
 
     public function test_parse_callback_data_returns_correct_values(): void
