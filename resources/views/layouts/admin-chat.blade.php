@@ -10,6 +10,8 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
     @filamentStyles
+
+    <style>[x-cloak]{display:none !important;}</style>
 </head>
 <body class="h-full overflow-hidden bg-bg-primary font-sans text-text-primary antialiased">
 
