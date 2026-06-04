@@ -11,7 +11,7 @@
         <h2 class="mb-4 text-base font-semibold text-text-primary">Добавить источник</h2>
 
         {{-- Form row: name + button — desktop side-by-side, mobile stacked --}}
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
             {{-- Name field --}}
             <div class="flex-1 space-y-1.5">
                 <label for="newSourceName" class="block text-[13px] font-medium text-text-primary">Название источника</label>
