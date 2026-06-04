@@ -24,7 +24,7 @@ The Admin Panel domain provides an alternative manager interface for the support
 |---|---|
 | `ManagerInterfaceContract` | Interface that decouples manager UI from business logic. Implementations: `TelegramGroupInterface`, `AdminPanelInterface` |
 | `AdminPanelInterface` | Implementation of `ManagerInterfaceContract` for `admin_panel` mode. Both methods are no-ops — messages arrive via DB, UI updates via Livewire polling |
-| `App\Livewire\Chat\ConversationPage` | **Primary manager workspace** — standalone full-page Livewire component at `GET /admin/chats`. Full-screen, chrome-free (no Filament top-nav/sidebar). Uses `layouts.admin-chat` layout. 3-column layout: left sidebar 360px dark (header + search + pill-filter tabs + dialog list), center chat area (header + message thread + input bar with quick-reply chips), right user info panel 300px (profile + Блок/Закрыть buttons + ИНФОРМАЦИЯ rows + МЕДИАФАЙЛЫ grid). Self-contained — no `botUserId` route param. Dialog selection via `selectChat(int $botUserId)`. Protected by `Filament\Http\Middleware\Authenticate` |
+| `App\Livewire\Chat\ConversationPage` | **Primary manager workspace** — standalone full-page Livewire component at `GET /admin/chats`. Full-screen, chrome-free (no Filament top-nav/sidebar). Uses `layouts.admin-chat` layout. 3-column layout: left sidebar 360px dark (header + search + pill-filter tabs + dialog list), center chat area (header + message thread + input bar with quick-reply chips + optional file attachment for telegram/vk), right user info panel 300px (profile + Блок/Закрыть buttons + ИНФОРМАЦИЯ rows + МЕДИАФАЙЛЫ grid) — **hidden by default, toggled by the 3-dots button in the chat header** via the Alpine `infoPanelOpen` flag (client-side only, no Livewire round-trip). Self-contained — no `botUserId` route param. Dialog selection via `selectChat(int $botUserId)`. Protected by `Filament\Http\Middleware\Authenticate` |
 | Filament navigation | The Filament panel keeps no resources, pages, widgets or dashboard — it serves only login. Links to the custom screens are registered in `AdminPanelProvider::navigationItems()`: «Диалоги» → `route('admin.chats')` (sort 1) and «Настройки» → `route('admin.settings.general')` (sort 2). `->homeUrl()` and the first nav item both point at `/admin/chats`, so `/admin` and post-login both land on «Диалоги» |
 | Dialog list ordering | `ConversationPage::loadDialogList()` uses a raw correlated subquery to order by `MAX(messages.created_at) DESC` because `BotUser::messages()` has swapped FK args. Do not switch to `withMax()` without fixing the model relation |
 | Quick replies | Static list from `config('chat.quick_replies')` — clicking a chip calls `insertQuickReply($text)` which sets `$replyText`. No DB table |
@@ -34,9 +34,10 @@ The Admin Panel domain provides an alternative manager interface for the support
 | `SendReplyAction` | Static action that dispatches the correct queue job (Telegram, VK, or Webhook) based on `botUser->platform` |
 | Livewire Polling | `ConversationPage` refreshes every 5 seconds via `getPollingInterval(): '5s'` |
 | `MANAGER_INTERFACE` | Config key. Values: `telegram_group` (default) or `admin_panel`. Readable from `.env` OR from the `settings` DB table via `SettingsService` (DB row overrides env) |
-| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits bot name, description, the Telegram topic-name template (`telegram.template_topic_name`), and `MANAGER_INTERFACE`. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService`. Shows restart notice when `MANAGER_INTERFACE` changes |
+| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits only the Telegram topic-name template (`telegram.template_topic_name`). Bot name, description, and `MANAGER_INTERFACE` were removed from this screen. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService` |
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
 | `admin-settings` layout | Full-page layout at `resources/views/layouts/admin-settings.blade.php` — dark sidebar (280px) + main content area. Used by all custom Livewire settings screens |
+| Logout control | «Выйти» posts to `route('filament.admin.auth.logout')` (`POST /admin/logout`, Filament). Rendered in two spots: a row at the bottom of `<x-admin.sidebar>` (settings screens) and an icon button next to the settings gear in the `ConversationPage` left panel header (chat workspace). Both are `<form method="POST">` with `@csrf` |
 | `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX channel cards with connection status badges. Reads statuses via `ChannelStatusService`. «Виджет для сайта» shown as disabled «Скоро» placeholder |
 | `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max). Per-channel config form (read/write via `SettingsService`). Primary action button is **«Сохранить»** — runs a **verify-before-save** flow: (1) field validation, (2) token verification via `WebhookRegistrationService::verifyX($token)` (entered value or stored fallback), (3) persist settings only on verification success, (4) register webhook (telegram\|vk\|max) or show success notice (telegram_ai — no webhook registration via UI; uses `php artisan ai-bot:set-webhook`) |
 | `ChannelStatusService` | `app/Modules/Admin/Services/ChannelStatusService.php`. Computes `connected/label` per channel based on whether required `SettingsService` keys are non-empty. Shared by list and per-channel pages |
@@ -49,17 +50,32 @@ The Admin Panel domain provides an alternative manager interface for the support
 **BR-001** — The `/admin` panel is accessible only to authenticated users from the `users` table (Laravel Filament auth). Unauthenticated requests are redirected to `/admin/login`.
 _Enforced in:_ `app/Modules/Admin/AdminPanelProvider.php`
 
-**BR-002** — In `telegram_group` mode, the reply form in `ConversationPage` must be hidden. Read-only view of messages is available in both modes.
-_Enforced in:_ `App\Livewire\Chat\ConversationPage::shouldShowReplyForm()` — returns `config('app.manager_interface') === 'admin_panel'`
+**BR-002** — The reply form in `ConversationPage` is shown in **both** modes (`telegram_group` and `admin_panel`). `SendReplyAction` routes the reply by `BotUser.platform` and does not depend on `MANAGER_INTERFACE`, so a manager can reply directly from the `/admin/chats` workspace regardless of the active interface mode.
+_Enforced in:_ `App\Livewire\Chat\ConversationPage::shouldShowReplyForm()` — returns `true`
 
-**BR-003** — `SendReplyAction::execute()` must determine the user's platform from `botUser->platform` and dispatch the correct job via queue. Never send synchronously.
-- `telegram` → `SendTelegramSimpleQueryJob`
-- `vk` → `SendVkSimpleMessageJob`
-- other (external) → `SendWebhookMessage` (only if `webhook_url` is set)
+**BR-003** — `SendReplyAction::execute(BotUser, string $text, ?UploadedFile $file = null)` must determine the user's platform from `botUser->platform` and dispatch the correct job via queue. Never send synchronously.
+- `telegram` → `SendTelegramSimpleQueryJob` (text) / `SendAdminDocumentJob` (with file)
+- `vk` → `SendVkSimpleMessageJob` (file uploaded via `docs.getMessagesUploadServer` → `docs.save`, attached as `doc{owner}_{id}`)
+- other (external/max) → `SendWebhookMessage` (text only, only if `webhook_url` is set — **files are not delivered**)
 
 _Enforced in:_ `app/Modules/Admin/Actions/SendReplyAction.php`
 
-**BR-004** — Livewire polling interval is 5 seconds (`getPollingInterval(): '5s'`). Do not change without load analysis — each open browser tab generates a DB query every 5 seconds.
+**BR-003a** — The reply form supports an optional file attachment via `ConversationPage::$attachment` (Livewire `WithFileUploads`, `max:20480` KB). Text is required only when no file is attached (file-only messages are allowed). The attach control is shown — and the file passed to `SendReplyAction` — only when `supportsAttachments()` is true (platform ∈ `telegram|vk`); for external/max the attachment is ignored so files are never silently dropped into a text-only webhook.
+_Enforced in:_ `App\Livewire\Chat\ConversationPage::sendReply()` / `supportsAttachments()` / `removeAttachment()`
+
+**BR-003b** — The right-panel «Закрыть» button runs the canonical close flow `App\Modules\Telegram\Actions\CloseTopic::execute()` (notify user, close the Telegram forum topic when present, set `is_closed`/`closed_at`, trigger the feedback form). It is a no-op when there is no active dialog or it is already closed, and is disabled in the UI once the dialog is closed.
+_Enforced in:_ `App\Livewire\Chat\ConversationPage::closeDialog()`
+
+**BR-003c** — The right-panel ban control is a **toggle**: when the user is not banned it shows «Блок» and runs `App\Modules\Admin\Actions\BanBotUser::execute()` (marks `is_banned`/`banned_at` and terminal `is_closed`/`closed_at`, closes the Telegram forum topic when present; **no feedback form** unlike close). When the user is banned it shows «Разблокировать» and runs `App\Modules\Admin\Actions\UnbanBotUser::execute()` (clears `is_banned`/`banned_at`; **does not** change `is_closed` — the conversation stays closed until a reply re-opens it per BR-003d). Both are no-ops in the wrong state. Banned users' incoming messages are rejected by the platform webhook controllers via `BotUser::isBanned()`. In the dialog list a banned conversation shows a «Заблокирован» badge (takes priority over the «Закрыт» badge).
+_Enforced in:_ `App\Livewire\Chat\ConversationPage::banUser()` / `unbanUser()`, `App\Modules\Admin\Actions\BanBotUser` / `UnbanBotUser`, `resources/views/components/chat-item.blade.php`
+
+**BR-003d** — Sending a reply via `SendReplyAction::execute()` **re-opens** a closed conversation: if `is_closed` is true it is reset to false and `closed_at` to null before the message is persisted. This applies to replies sent from the chat workspace (any platform). The feedback-rating message (written directly by `HandleFeedbackRating`, not via `SendReplyAction`) does **not** re-open the conversation.
+_Enforced in:_ `App\Modules\Admin\Actions\SendReplyAction::execute()`
+
+**BR-003e** — The dialog-list "new message" indicator (`hasUnread`) is shown only when the **last** message is incoming (`lastMessage->message_type === 'incoming'`) AND the conversation is open (not `is_closed`, not `is_banned`) AND it is not the currently active dialog (`activeBotUserId`) AND the last message arrived **after** `bot_users.manager_last_read_at`. Opening a dialog (`selectChat()`) stamps `manager_last_read_at = now()`, so the cleared indicator **persists across page reloads** (it is not just in-memory session state). A later incoming message (newer than the read stamp) re-flags the dialog. This is conversation-level read tracking — there is still no per-message read state.
+_Enforced in:_ `App\Livewire\Chat\ConversationPage::hasUnread()` / `selectChat()`, column `bot_users.manager_last_read_at`
+
+**BR-004** — Livewire polling interval is 5 seconds. The poll target is `pollUpdates()` (`wire:poll.5s`), which refreshes the dialog list and — when a dialog is open — reloads the active message thread, so incoming messages appear in the centre pane without a manual refresh. It scrolls to the bottom (and bumps `manager_last_read_at`) only when the message count grew, so a manager scrolled up reading history is not yanked down each tick. `loadMessages()` is a pure loader; callers (`selectChat`, `sendReply`, `pollUpdates`) emit the `messages-updated` browser event when a scroll is wanted. Do not change the interval without load analysis — each open browser tab generates DB queries every 5 seconds.
 _Enforced in:_ `App\Livewire\Chat\ConversationPage::getPollingInterval()`
 
 **BR-005** — Every reply sent via `SendReplyAction` must be persisted to the `messages` table as `message_type = 'outgoing'` before dispatching the queue job.
@@ -74,11 +90,10 @@ _Enforced in:_ `AdminPanelInterface::createConversation()` — empty body
 **BR-008** — The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) requires an authenticated user. Unauthenticated visitors are redirected to `/admin/login` by Filament's `Authenticate` middleware applied in `AdminServiceProvider::boot()`. The route does not add a separate admin-role guard at the middleware layer — access is open to any authenticated user; role enforcement can be added to `mount()` if needed in future.
 _Enforced in:_ `AdminServiceProvider::boot()` — `Route::middleware(['web', Authenticate::class])->prefix('admin/settings')...`
 
-**BR-009** — Settings editable from the General Settings screen (`app.bot_name`, `app.bot_description`, `telegram.template_topic_name`, `app.manager_interface`) are persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults. (`telegram.template_topic_name` lives in General settings, not the Telegram integration screen.)
-_Enforced in:_ `GeneralSettingsPage::save()` — calls `SettingsService::set()` for each field; `GeneralSettingsPage::mount()` — loads via `SettingsService::get()`
+**BR-009** — The only setting editable from the General Settings screen is `telegram.template_topic_name`, persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults. (Bot name, description, and `app.manager_interface` were removed from this screen.)
+_Enforced in:_ `GeneralSettingsPage::save()` — calls `SettingsService::set('telegram.template_topic_name', …)`; `GeneralSettingsPage::mount()` — loads via `SettingsService::get()`
 
-**BR-010** — Changing `MANAGER_INTERFACE` from the General Settings screen saves the new value to the DB, but the `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` is resolved from `config('app.manager_interface')` at container boot time. The change takes full effect only after `docker compose restart app`. Upon save, the screen must display a persistent yellow notice: "Изменение применится после перезапуска контейнера: `docker compose restart app`".
-_Enforced in:_ `GeneralSettingsPage::save()` — detects interface change (old vs new) and sets `$showRestartNotice = true`
+**BR-010** — `MANAGER_INTERFACE` is **no longer editable from the admin panel**. It is switched only via the `.env` file (`MANAGER_INTERFACE=…`) followed by `docker compose restart app`, because the `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` is resolved from `config('app.manager_interface')` at container boot time. (The previous General-Settings radio + restart notice were removed.)
 
 **BR-011** — Admin Design System tokens are declared in `resources/css/app.css @theme` (Tailwind v4). All custom admin screens MUST use the token variables (`bg-sidebar`, `text-accent`, `bg-bg-input`, etc.) — never hardcode hex values in Blade. Blade components under `resources/views/components/admin/` are the single source for reusable UI primitives.
 _Enforced by:_ design review; tokens defined at `resources/css/app.css:@theme`
@@ -124,7 +139,7 @@ _Enforced in:_ `AdminPanelProvider::panel()` → `->navigationItems([...])`
 
 **BR-023** — The "API и вебхуки" section consists of two pages, both restricted to admin-role users only. Non-admin authenticated users are redirected to `admin.settings.general` in `mount()` via `Auth::user()->isAdmin()`.
 - **List page** (`/admin/settings/api-webhooks`, `ApiWebhooksPage`): shows External Source cards with token/webhook status; "Добавить источник" creates a source and redirects to the edit page.
-- **Edit page** (`/admin/settings/api-webhooks/{source}`, `ApiWebhookSourcePage`): per-source configuration — bearer token regeneration (one-time reveal, 64 chars, never logged), webhook URL editing, design-placeholder fields (secret key + events).
+- **Edit page** (`/admin/settings/api-webhooks/{source}`, `ApiWebhookSourcePage`): per-source configuration — bearer token regeneration (one-time reveal, 64 chars, never logged), webhook URL editing, and an **allowed-IPs allowlist** (`external_sources.allowed_ips`). The previous secret-key and events design placeholders were removed.
 Token values are never logged or displayed in full — only a one-time reveal banner shown immediately after regeneration, stored in `$newToken` and cleared on dismiss.
 _Enforced in:_ `ApiWebhooksPage::mount()` and `ApiWebhookSourcePage::mount()` — `isAdmin()` check; `ApiWebhookSourcePage::regenerateToken()` — stores raw token in `$newToken` only, never logged
 
@@ -194,8 +209,7 @@ The binding is resolved at container boot time from `config()`. The binding does
 - Switching mode does **not** modify any DB records
 - `BotUser.topic_id` is preserved after switching to `admin_panel` — it is simply ignored in this mode
 - History in `/admin` is available in both modes (all messages in `messages` table)
-- **Via `.env`**: change `MANAGER_INTERFACE` in `.env`, then `docker compose restart app`
-- **Via admin panel** (General Settings page): save the new mode via the form; the value is stored in the `settings` DB table (overrides `.env` on next read via `SettingsService`); a restart notification is shown — execute `docker compose restart app` to apply
+- **Via `.env` only**: change `MANAGER_INTERFACE` in `.env`, then `docker compose restart app`. (The admin-panel switch was removed — `MANAGER_INTERFACE` is no longer editable from the General Settings screen.)
 
 ---
 
@@ -207,20 +221,19 @@ The binding is resolved at container boot time from `config()`. The binding does
 
 **Sidebar navigation**: 7 items. «Основные», «Интеграции», «ИИ-ассистент», «API и вебхуки», and «Команда» are active/linked; «Уведомления» and «Автоответы» remain disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
 
-**Form fields** (all persisted via `SettingsService`):
+**Form fields** (persisted via `SettingsService`):
 | Field | Setting key | Validation |
 |---|---|---|
-| Название бота | `app.bot_name` | nullable, string, max:255 |
-| Описание | `app.bot_description` | nullable, string, max:1000 |
 | Шаблон названия топика | `telegram.template_topic_name` | nullable, string, max:255 |
-| Интерфейс менеджера | `app.manager_interface` | required, in:telegram_group,admin_panel |
+
+(Bot name `app.bot_name`, description `app.bot_description`, and the manager-interface radio `app.manager_interface` were removed from this screen.)
 
 **Component property naming**: uses `$formErrors` (not `$errors`) to avoid shadowing Blade's global `$errors` bag.
 
 **Route**: `GET /admin/settings/general` → name `admin.settings.general`; registered in `AdminServiceProvider::boot()` under `['web', Filament\Http\Middleware\Authenticate::class]`.
 
 **Tests**:
-- `tests/Feature/Settings/GeneralSettingsPageTest.php` — Livewire-level integration: access control, mount, save, cancel, restart notice, route registration
+- `tests/Feature/Settings/GeneralSettingsPageTest.php` — Livewire-level integration: access control, mount, save, cancel, route registration
 - `tests/Unit/Livewire/Settings/GeneralSettingsPageTest.php` — unit tests using mocked SettingsService
 
 ---
@@ -328,16 +341,16 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 **Access**: admin-role only. Missing source redirects to the list.
 
 **Layout**: `#[Layout('layouts.admin-settings')]`. Two-column body (`lg:grid-cols-[1fr_320px]`):
-- **Left form card**: source name header + Bearer token block (masked display, one-time reveal on regenerate, Скопировать + Сгенерировать новый) + URL вебхука field + Секретный ключ (disabled placeholder "скоро") + События (4 disabled toggle rows, "скоро") + Отмена / Сохранить actions.
+- **Left form card**: source name header + Bearer token block (masked display, one-time reveal on regenerate, Скопировать + Сгенерировать новый) + URL вебхука field + «Разрешённые IP-адреса» textarea (one IP per line) + Отмена / Сохранить actions.
 - **Right panel**: "REST API" header + base URL + endpoint list for this source ID + auth note + Swagger UI link.
 
 **Top breadcrumb bar**: back arrow + "API и вебхуки" link + chevron + source name.
 
 **Token**: `regenerateToken(ExternalSourceTokensService)` calls `setAccessToken()`, stores raw result in `$newToken` (one-time reveal only, never logged). `dismissNewToken()` clears it.
 
-**Webhook URL**: `saveWebhookUrl()` — empty clears, non-empty must pass `FILTER_VALIDATE_URL`. `cancel()` reloads from DB.
+**Webhook URL + allowed IPs**: `saveWebhookUrl()` saves both — empty URL clears, non-empty must pass `FILTER_VALIDATE_URL`; the «Разрешённые IP-адреса» textarea (one entry per line, comma also accepted) is parsed and deduplicated, every entry must pass `FILTER_VALIDATE_IP` or `$allowedIpsError` is set and nothing is saved. An empty allowlist persists as `NULL` (no restriction). `cancel()` reloads both from DB.
 
-**Design placeholders** (no DB backing): Секретный ключ disabled input, Events (4 disabled toggles).
+**IP allowlist enforcement**: `ExternalSource::isIpAllowed($ip)` returns true when the list is empty, else requires an exact match. `ApiQuery` middleware rejects (403) requests whose `$request->ip()` is not allowed.
 
 **Route**: `GET /admin/settings/api-webhooks/{source}` → name `admin.settings.api-webhooks.source`; constraint `source` ∈ `[0-9]+`; registered in `AdminServiceProvider::boot()`.
 
@@ -345,7 +358,7 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 - Token length: 64 characters (`Str::random(64)`).
 - `external_source_access_tokens.active` gates `ApiQuery` and can be flipped via `ExternalSourceTokensService::setTokenActive()`, but the toggle is not surfaced in the UI.
 
-**Tests**: `tests/Unit/Livewire/Settings/ApiWebhookSourcePageTest.php` — access (admin/non-admin/guest), missing source redirect, render (source name, breadcrumb, all field labels, REST API panel, Swagger), token regeneration (one-time reveal, length 64, replace), dismissNewToken, saveWebhookUrl (valid, empty, invalid, saved flag).
+**Tests**: `tests/Unit/Livewire/Settings/ApiWebhookSourcePageTest.php` — access (admin/non-admin/guest), missing source redirect, render (source name, breadcrumb, field labels incl. allowed IPs, removed secret-key/events, REST API panel, Swagger), token regeneration, dismissNewToken, saveWebhookUrl (valid/empty/invalid URL, saved flag, allowed-IPs persist/dedupe/invalid/clear); `tests/Unit/Models/ExternalSourceTest.php` (isIpAllowed); `tests/Feature/Middleware/ApiQueryAllowedIpsTest.php` (middleware enforcement).
 
 ---
 
@@ -388,7 +401,6 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 
 - ❌ Calling `SendReplyAction::execute()` synchronously from a Livewire component without `Queue::fake()` in tests
 - ❌ Sending messages directly from Livewire components — must go through `SendReplyAction`
-- ❌ Displaying the reply form when `config('app.manager_interface') !== 'admin_panel'`
 - ❌ Changing the Livewire polling interval without load analysis
 - ❌ Saving manager replies without recording them to the `messages` table first
 - ❌ Making `AdminPanelInterface` dispatch `TopicCreateJob` — this is `telegram_group` mode only
@@ -403,7 +415,7 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 ## Checklist
 
 - [ ] `BR-001` through `BR-028` read and understood
-- [ ] `shouldShowReplyForm()` returns `false` in `telegram_group` mode
+- [ ] `shouldShowReplyForm()` returns `true` in both modes (reply form always available)
 - [ ] `SendReplyAction` uses queue jobs, not synchronous API calls
 - [ ] New Filament resources have feature tests in `tests/Feature/Admin/`
 - [ ] Polling interval not changed without load analysis

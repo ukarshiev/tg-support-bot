@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * @property int    $id
- * @property string $name
- * @property string $webhook_url
- * @property int    $user_id
+ * @property int                     $id
+ * @property string                  $name
+ * @property string                  $webhook_url
+ * @property int                     $user_id
+ * @property array<int, string>|null $allowed_ips
  * @property-read User $user
  */
 class ExternalSource extends Model
@@ -22,6 +23,11 @@ class ExternalSource extends Model
         'name',
         'webhook_url',
         'user_id',
+        'allowed_ips',
+    ];
+
+    protected $casts = [
+        'allowed_ips' => 'array',
     ];
 
     /**
@@ -30,6 +36,26 @@ class ExternalSource extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Whether the given request IP is allowed for this source.
+     *
+     * An empty/NULL allowlist means no restriction — any IP is allowed.
+     *
+     * @param string|null $ip
+     *
+     * @return bool
+     */
+    public function isIpAllowed(?string $ip): bool
+    {
+        $allowed = array_values(array_filter(array_map('trim', $this->allowed_ips ?? [])));
+
+        if (empty($allowed)) {
+            return true;
+        }
+
+        return $ip !== null && in_array($ip, $allowed, true);
     }
 
     /**

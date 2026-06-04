@@ -12,16 +12,17 @@ use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
 
 /**
- * @property int               $id
- * @property int               $topic_id
- * @property int               $chat_id
- * @property string            $platform
- * @property mixed             $aiCondition
- * @property mixed             $lastMessageManager
- * @property ExternalUser|null $externalUser
- * @property bool              $is_banned
- * @property bool              $is_closed
- * @property string|null       $closed_at
+ * @property int                             $id
+ * @property int                             $topic_id
+ * @property int                             $chat_id
+ * @property string                          $platform
+ * @property mixed                           $aiCondition
+ * @property mixed                           $lastMessageManager
+ * @property ExternalUser|null               $externalUser
+ * @property bool                            $is_banned
+ * @property bool                            $is_closed
+ * @property string|null                     $closed_at
+ * @property \Illuminate\Support\Carbon|null $manager_last_read_at
  */
 class BotUser extends Model
 {
@@ -37,6 +38,11 @@ class BotUser extends Model
         'banned_at',
         'is_closed',
         'closed_at',
+        'manager_last_read_at',
+    ];
+
+    protected $casts = [
+        'manager_last_read_at' => 'datetime',
     ];
 
     /**

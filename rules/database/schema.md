@@ -170,6 +170,9 @@ Core table. Stores every user that has interacted with the bot across all platfo
 | `external_source_id` | `string` | Yes | NULL | External source identifier (for `external_source` platform) |
 | `is_banned` | `boolean` | No | `false` | Whether user is banned from sending messages |
 | `banned_at` | `timestamp` | Yes | NULL | When the user was banned |
+| `is_closed` | `boolean` | No | `false` | Whether the conversation is closed |
+| `closed_at` | `timestamp` | Yes | NULL | When the conversation was closed |
+| `manager_last_read_at` | `timestamp` | Yes | NULL | When a manager last opened the dialog in the chat workspace; drives the unread indicator (BR-003e) |
 | `created_at` | `timestamp` | Yes | NULL | First interaction time |
 | `updated_at` | `timestamp` | Yes | NULL | Last update time |
 
@@ -263,6 +266,7 @@ Registry of all external integrations. Each source has a unique name and optiona
 | `id` | `bigint` | No | auto | Primary key |
 | `name` | `string` | No | — | Unique source identifier |
 | `webhook_url` | `string` | Yes | NULL | URL to call when the support team sends a reply |
+| `allowed_ips` | `json` | Yes | NULL | Allowlist of IPs the API accepts requests from; NULL/empty = no restriction (enforced by `ApiQuery` middleware) |
 | `created_at` | `timestamp` | Yes | NULL | Creation time |
 | `updated_at` | `timestamp` | Yes | NULL | Last update time |
 

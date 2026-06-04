@@ -43,6 +43,12 @@ class ApiWebhookSourcePage extends Component
     /** @var string Webhook URL being edited */
     public string $webhookUrl = '';
 
+    /** @var string Allowed request IPs, one per line (textarea-bound) */
+    public string $allowedIps = '';
+
+    /** @var string|null Validation error for the allowed-IPs field */
+    public ?string $allowedIpsError = null;
+
     /** @var string|null One-time reveal: raw new token after regeneration */
     public ?string $newToken = null;
 
@@ -82,6 +88,7 @@ class ApiWebhookSourcePage extends Component
         $this->sourceId = $externalSource->id;
         $this->sourceName = $externalSource->name;
         $this->webhookUrl = (string) ($externalSource->webhook_url ?? '');
+        $this->allowedIps = implode("\n", $externalSource->allowed_ips ?? []);
 
         $this->loadToken();
     }
@@ -117,14 +124,17 @@ class ApiWebhookSourcePage extends Component
     }
 
     /**
-     * Save the webhook URL for this External Source.
+     * Save the webhook URL and allowed-IPs allowlist for this External Source.
      *
-     * Empty string is accepted (clears the stored URL).
-     * A non-empty value must pass FILTER_VALIDATE_URL.
+     * Empty webhook URL is accepted (clears the stored URL); a non-empty value
+     * must pass FILTER_VALIDATE_URL. The allowed-IPs textarea (one entry per
+     * line) is parsed into a deduplicated list; every entry must be a valid IP.
+     * An empty allowlist means requests are allowed from any IP.
      */
     public function saveWebhookUrl(): void
     {
         $this->webhookError = null;
+        $this->allowedIpsError = null;
         $this->saved = false;
 
         $url = trim($this->webhookUrl);
@@ -132,6 +142,12 @@ class ApiWebhookSourcePage extends Component
         if ($url !== '' && ! filter_var($url, FILTER_VALIDATE_URL)) {
             $this->webhookError = 'Введите корректный URL (например: https://example.com/webhook).';
 
+            return;
+        }
+
+        $ips = $this->parseAllowedIps();
+
+        if ($ips === null) {
             return;
         }
 
@@ -143,7 +159,10 @@ class ApiWebhookSourcePage extends Component
             return;
         }
 
-        $externalSource->update(['webhook_url' => $url !== '' ? $url : null]);
+        $externalSource->update([
+            'webhook_url' => $url !== '' ? $url : null,
+            'allowed_ips' => ! empty($ips) ? $ips : null,
+        ]);
 
         $this->saved = true;
     }
@@ -155,12 +174,47 @@ class ApiWebhookSourcePage extends Component
     {
         $this->saved = false;
         $this->webhookError = null;
+        $this->allowedIpsError = null;
 
         $externalSource = ExternalSource::find($this->sourceId);
 
         if ($externalSource) {
             $this->webhookUrl = (string) ($externalSource->webhook_url ?? '');
+            $this->allowedIps = implode("\n", $externalSource->allowed_ips ?? []);
         }
+    }
+
+    /**
+     * Parse and validate the allowed-IPs textarea.
+     *
+     * Returns a deduplicated list of valid IPs, or null when a line is not a
+     * valid IP (in which case $allowedIpsError is set).
+     *
+     * @return array<int, string>|null
+     */
+    private function parseAllowedIps(): ?array
+    {
+        $lines = preg_split('/[\r\n,]+/', $this->allowedIps) ?: [];
+
+        $ips = [];
+
+        foreach ($lines as $line) {
+            $ip = trim($line);
+
+            if ($ip === '') {
+                continue;
+            }
+
+            if (! filter_var($ip, FILTER_VALIDATE_IP)) {
+                $this->allowedIpsError = "Некорректный IP-адрес: {$ip}";
+
+                return null;
+            }
+
+            $ips[] = $ip;
+        }
+
+        return array_values(array_unique($ips));
     }
 
     /**

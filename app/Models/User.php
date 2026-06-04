@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -10,11 +12,28 @@ use Illuminate\Notifications\Notifiable;
 /**
  * @property UserRole $role
  */
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory;
     use Notifiable;
+
+    /**
+     * Whether this user may access the admin panel.
+     *
+     * Every record in the `users` table is an operator (admin or manager),
+     * so all of them may sign in to the panel. Without this method Filament
+     * grants access only in the `local` environment, which is why login
+     * succeeded but the panel 403'd on production/staging.
+     *
+     * @param Panel $panel
+     *
+     * @return bool
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return in_array($this->role, [UserRole::Admin, UserRole::Manager], true);
+    }
 
     /**
      * The attributes that are mass assignable.

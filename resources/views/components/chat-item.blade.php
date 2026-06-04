@@ -39,6 +39,9 @@
         : 'Нет сообщений';
 
     $timestamp = $botUser->lastMessage?->created_at?->format('H:i') ?? null;
+
+    $isClosed = (bool) $botUser->is_closed;
+    $isBanned = (bool) $botUser->is_banned;
 @endphp
 
 {{--
@@ -61,7 +64,7 @@
     {{-- Design: node STtU2 — cornerRadius 22, fill = avatar color; Lqpcy — initials text --}}
     <div
         class="relative flex shrink-0 items-center justify-center rounded-full text-white select-none"
-        style="width:44px; height:44px; background:{{ $avatarColor }}; font-size:15px; font-weight:600; border-radius:22px;"
+        style="width:44px; height:44px; background:{{ $avatarColor }}; font-size:15px; font-weight:600; border-radius:22px; {{ ($isClosed || $isBanned) ? 'opacity:0.5;' : '' }}"
         aria-hidden="true"
     >{{ $initials }}</div>
 
@@ -85,6 +88,31 @@
                     class="shrink-0 text-white"
                     style="background:{{ $platformBgHex }}; border-radius:3px; padding:2px 5px; font-size:10px; font-weight:600; white-space:nowrap;"
                 >{{ $platformShort }}</span>
+
+                {{-- Status badge — banned takes priority over closed --}}
+                @if($isBanned)
+                    <span
+                        class="shrink-0 inline-flex items-center"
+                        style="background:#3A2A33; color:#F87171; border-radius:3px; padding:2px 5px; font-size:10px; font-weight:600; white-space:nowrap; gap:3px;"
+                        title="Пользователь заблокирован"
+                    >
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>
+                        </svg>
+                        Заблокирован
+                    </span>
+                @elseif($isClosed)
+                    <span
+                        class="shrink-0 inline-flex items-center text-text-sidebar-secondary"
+                        style="background:#2D3348; border-radius:3px; padding:2px 5px; font-size:10px; font-weight:600; white-space:nowrap; gap:3px;"
+                        title="Обращение закрыто"
+                    >
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        Закрыт
+                    </span>
+                @endif
             </div>
 
             {{-- Timestamp --}}

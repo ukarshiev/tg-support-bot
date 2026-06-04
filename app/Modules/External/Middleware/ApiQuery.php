@@ -29,8 +29,14 @@ class ApiQuery
                 throw new Exception('Bearer Token is invalid!');
             }
 
+            $externalSource = $itemAccessToken->external_source;
+
+            if (!$externalSource->isIpAllowed($request->ip())) {
+                throw new Exception('Request IP is not allowed for this source!');
+            }
+
             $request->merge([
-                'source' => $itemAccessToken->external_source->name,
+                'source' => $externalSource->name,
                 'external_id' => $request->route('external_id') ?? null,
             ]);
 

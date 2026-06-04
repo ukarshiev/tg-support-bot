@@ -61,6 +61,9 @@ _Enforced in:_ `app/Modules/Telegram/Actions/CloseTopic.php`, `app/Modules/Feedb
 **BR-021** — When a user submits a feedback rating (`callback_data` prefix `feedback_rate_{botUserId}_{feedbackId}_{score}`), the `Feedback` record must be updated with `rating = score` (1..5) and `status = 'completed_no_comment'`. The original form message must be edited to a thank-you text. No comment capture is triggered — `comment` remains nullable.
 _Enforced in:_ `app/Modules/Feedback/Actions/HandleFeedbackRating.php`, `TelegramBotController::checkBotQuery()`, `VkBotController::bot_query()`, `MaxBotController::bot_query()`
 
+**BR-021a** — On rating submission, the rating must also be surfaced in the conversation: `HandleFeedbackRating` writes an incoming `messages` row (`text = "Оценка обращения: ⭐… (N/5)"`) so the rating appears in the admin chat workspace history, and — in telegram_group mode (`telegram` platform with a `topic_id` and configured `telegram.group_id`) — posts the same text into the user's forum topic so managers in the supergroup see it too.
+_Enforced in:_ `App\Modules\Feedback\Actions\HandleFeedbackRating::postRatingToChat()`
+
 ---
 
 ## 4. User State Machine

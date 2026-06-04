@@ -28,6 +28,11 @@ class SendReplyAction
      */
     public static function execute(BotUser $botUser, string $text, ?UploadedFile $file = null): void
     {
+        // A new reply re-opens a previously closed conversation.
+        if ($botUser->isClosed()) {
+            $botUser->update(['is_closed' => false, 'closed_at' => null]);
+        }
+
         $message = Message::create([
             'bot_user_id' => $botUser->id,
             'platform' => $botUser->platform,

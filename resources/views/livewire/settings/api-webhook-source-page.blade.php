@@ -153,38 +153,23 @@
                     />
                 </x-admin.form-field>
 
-                {{-- Секретный ключ — design placeholder, no backend yet --}}
+                {{-- Разрешённые IP — allowlist of sources permitted to call the API --}}
                 <x-admin.form-field
-                    label="Секретный ключ"
-                    for="secret_key_placeholder"
-                    hint="Для верификации входящих запросов · скоро"
+                    label="Разрешённые IP-адреса"
+                    for="allowed_ips"
+                    hint="Источники, с которых разрешены запросы. По одному IP в строке. Пусто — без ограничений."
+                    :error="$allowedIpsError"
                 >
-                    <input
-                        id="secret_key_placeholder"
-                        type="text"
-                        disabled
-                        placeholder="whsec_xxxxxxxxxxxxxxxx"
-                        class="block w-full cursor-not-allowed rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-secondary placeholder-text-secondary opacity-70 outline-none"
-                    />
+                    <textarea
+                        id="allowed_ips"
+                        wire:model="allowedIps"
+                        rows="4"
+                        placeholder="203.0.113.10&#10;198.51.100.0&#10;2001:db8::1"
+                        class="block w-full resize-y rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 font-mono text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                            @if ($allowedIpsError) border-red-400 @endif"
+                    ></textarea>
                 </x-admin.form-field>
 
-            </div>
-
-            {{-- ── События — design placeholder toggles, no backend yet ──────── --}}
-            <div class="mt-5 flex flex-col gap-3 opacity-70">
-                <span class="text-[13px] font-medium text-text-primary">
-                    События <span class="font-normal text-text-secondary">· скоро</span>
-                </span>
-
-                @foreach ([['Новое сообщение', true], ['Закрытие обращения', true], ['Новый клиент', false], ['Ошибка доставки', false]] as [$eventLabel, $eventOn])
-                    <div class="flex items-center justify-between">
-                        <span class="text-[13px] text-text-primary">{{ $eventLabel }}</span>
-                        <span aria-disabled="true"
-                              class="relative flex h-6 w-10 shrink-0 cursor-not-allowed items-center rounded-full border-2 border-transparent p-0.5 {{ $eventOn ? 'bg-accent' : 'bg-border-light' }}">
-                            <span class="h-5 w-5 rounded-full bg-white shadow {{ $eventOn ? 'translate-x-4' : 'translate-x-0' }}"></span>
-                        </span>
-                    </div>
-                @endforeach
             </div>
 
             {{-- Actions row — right-aligned: «Отмена» + «Сохранить» --}}
@@ -228,31 +213,6 @@
                 {{-- Base URL --}}
                 <p class="mb-3 text-xs text-text-secondary">Базовый URL:</p>
                 <code class="mb-4 block break-all rounded bg-bg-input px-2.5 py-1.5 font-mono text-xs text-text-primary">{{ rtrim(config('app.url'), '/') }}</code>
-
-                {{-- Endpoint list --}}
-                <div class="space-y-2">
-                    @foreach ([
-                        ['GET',    "/api/external/{$sourceId}/messages",  'Список сообщений'],
-                        ['POST',   "/api/external/{$sourceId}/messages",  'Отправить сообщение'],
-                        ['PUT',    "/api/external/{$sourceId}/messages",  'Обновить'],
-                        ['DELETE', "/api/external/{$sourceId}/messages",  'Удалить'],
-                        ['POST',   "/api/external/{$sourceId}/files",     'Загрузить файл'],
-                    ] as [$method, $path, $label])
-                        <div class="flex items-start gap-2">
-                            <span class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold
-                                @if ($method === 'GET') bg-blue-100 text-blue-700
-                                @elseif ($method === 'POST') bg-green-100 text-green-700
-                                @elseif ($method === 'PUT') bg-yellow-100 text-yellow-700
-                                @else bg-red-100 text-red-700 @endif">
-                                {{ $method }}
-                            </span>
-                            <div class="min-w-0">
-                                <code class="block break-all font-mono text-[11px] text-text-primary">{{ $path }}</code>
-                                <span class="text-[11px] text-text-secondary">{{ $label }}</span>
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
 
                 {{-- Auth note --}}
                 <div class="mt-4 rounded-lg bg-bg-input px-3 py-2.5">

@@ -8,7 +8,9 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Modules\Admin\Actions\SendReplyAction;
+use App\Modules\Admin\Jobs\SendAdminDocumentJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -23,9 +25,11 @@ use Tests\TestCase;
  *  - Status-filter tabs (all / open / closed)
  *  - Selecting a dialog loads its messages and user panel
  *  - Sending a reply calls SendReplyAction and refreshes
+ *  - Sending a reply with a file attachment (telegram) and file-only messages
+ *  - Attachments gated to telegram/vk via supportsAttachments()
  *  - Quick-reply insertion
  *  - Media gallery returns image attachments
- *  - Reply form hidden in telegram_group mode
+ *  - Reply form shown in both manager-interface modes
  */
 class ConversationWorkspaceTest extends TestCase
 {
@@ -99,6 +103,27 @@ class ConversationWorkspaceTest extends TestCase
         $component->assertSet('dialogList', function ($list) use ($newer) {
             return $list->first()?->id === $newer->id;
         });
+    }
+
+    public function test_dialog_list_marks_closed_conversations(): void
+    {
+        BotUser::create([
+            'chat_id' => '300',
+            'platform' => 'telegram',
+            'is_closed' => true,
+            'closed_at' => now(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->assertSee('Обращение закрыто');
+    }
+
+    public function test_dialog_list_does_not_mark_open_conversations(): void
+    {
+        BotUser::create(['chat_id' => '301', 'platform' => 'telegram', 'is_closed' => false]);
+
+        Livewire::test(ConversationPage::class)
+            ->assertDontSee('Обращение закрыто');
     }
 
     // ── Search ─────────────────────────────────────────────────────────────────
@@ -232,6 +257,66 @@ class ConversationWorkspaceTest extends TestCase
             });
     }
 
+    // ── Polling ────────────────────────────────────────────────────────────────
+
+    public function test_poll_updates_loads_new_messages_for_active_dialog(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => '1030', 'platform' => 'telegram']);
+
+        $component = Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id);
+
+        $component->assertSet('chatMessages', fn ($m) => $m->isEmpty());
+
+        // A new incoming message arrives after the dialog was opened.
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'New incoming',
+        ]);
+
+        $component->call('pollUpdates')
+            ->assertSet('chatMessages', fn ($m) => $m->count() === 1 && $m->first()->text === 'New incoming')
+            ->assertDispatched('messages-updated');
+    }
+
+    public function test_poll_updates_does_not_scroll_without_new_messages(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => '1031', 'platform' => 'telegram']);
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'Existing',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('pollUpdates')
+            ->assertNotDispatched('messages-updated');
+    }
+
+    public function test_poll_updates_refreshes_dialog_list(): void
+    {
+        BotUser::create(['chat_id' => '1032', 'platform' => 'telegram']);
+
+        $component = Livewire::test(ConversationPage::class);
+
+        BotUser::create(['chat_id' => '1033', 'platform' => 'telegram']);
+
+        $component->call('pollUpdates')
+            ->assertSet('dialogList', fn ($list) => $list->count() === 2);
+    }
+
     // ── Send reply ─────────────────────────────────────────────────────────────
 
     public function test_send_reply_calls_send_reply_action(): void
@@ -278,6 +363,83 @@ class ConversationWorkspaceTest extends TestCase
             ->assertHasErrors(['replyText' => 'required']);
     }
 
+    // ── Attachments ──────────────────────────────────────────────────────────────
+
+    public function test_send_reply_with_attachment_dispatches_document_job(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => '1004', 'platform' => 'telegram']);
+        $file = UploadedFile::fake()->create('report.pdf', 120, 'application/pdf');
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->set('attachment', $file)
+            ->set('replyText', 'See attached')
+            ->call('sendReply')
+            ->assertHasNoErrors()
+            ->assertSet('attachment', null);
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'text' => 'See attached',
+        ]);
+
+        Queue::assertPushed(SendAdminDocumentJob::class);
+    }
+
+    public function test_send_reply_allows_file_only_message(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => '1005', 'platform' => 'telegram']);
+        $file = UploadedFile::fake()->create('photo.png', 80, 'image/png');
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->set('attachment', $file)
+            ->set('replyText', '')
+            ->call('sendReply')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'text' => null,
+        ]);
+
+        Queue::assertPushed(SendAdminDocumentJob::class);
+    }
+
+    public function test_supports_attachments_only_for_telegram_and_vk(): void
+    {
+        $telegram = BotUser::create(['chat_id' => '1006', 'platform' => 'telegram']);
+        $component = Livewire::test(ConversationPage::class)->call('selectChat', $telegram->id);
+        $this->assertTrue($component->instance()->supportsAttachments());
+
+        $vk = BotUser::create(['chat_id' => '1007', 'platform' => 'vk']);
+        $component->call('selectChat', $vk->id);
+        $this->assertTrue($component->instance()->supportsAttachments());
+
+        $external = BotUser::create(['chat_id' => '1008', 'platform' => 'max']);
+        $component->call('selectChat', $external->id);
+        $this->assertFalse($component->instance()->supportsAttachments());
+    }
+
+    public function test_remove_attachment_clears_selected_file(): void
+    {
+        $botUser = BotUser::create(['chat_id' => '1009', 'platform' => 'telegram']);
+        $file = UploadedFile::fake()->create('doc.pdf', 50, 'application/pdf');
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->set('attachment', $file)
+            ->assertSet('attachment', fn ($a) => $a !== null)
+            ->call('removeAttachment')
+            ->assertSet('attachment', null);
+    }
+
     public function test_send_reply_skipped_when_no_active_dialog(): void
     {
         Queue::fake();
@@ -292,7 +454,175 @@ class ConversationWorkspaceTest extends TestCase
         ]);
     }
 
-    public function test_reply_form_hidden_in_telegram_group_mode(): void
+    // ── Close dialog ─────────────────────────────────────────────────────────────
+
+    public function test_close_dialog_marks_bot_user_closed(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => '1010', 'platform' => 'telegram', 'is_closed' => false]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('closeDialog')
+            ->assertNotified('Диалог закрыт');
+
+        $botUser->refresh();
+        $this->assertTrue($botUser->isClosed());
+        $this->assertNotNull($botUser->closed_at);
+    }
+
+    public function test_close_dialog_noop_when_already_closed(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => '1011',
+            'platform' => 'telegram',
+            'is_closed' => true,
+            'closed_at' => now()->subDay(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('closeDialog');
+
+        // Already-closed short-circuit: no close-flow jobs dispatched.
+        Queue::assertNothingPushed();
+    }
+
+    public function test_close_dialog_skipped_when_no_active_dialog(): void
+    {
+        Queue::fake();
+
+        Livewire::test(ConversationPage::class)
+            ->call('closeDialog');
+
+        Queue::assertNothingPushed();
+    }
+
+    // ── Ban user ─────────────────────────────────────────────────────────────────
+
+    public function test_ban_user_marks_bot_user_banned_and_closed(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => '1020', 'platform' => 'telegram', 'is_banned' => false]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('banUser')
+            ->assertNotified('Пользователь заблокирован');
+
+        $botUser->refresh();
+        $this->assertTrue($botUser->isBanned());
+        $this->assertNotNull($botUser->banned_at);
+        $this->assertTrue($botUser->isClosed());
+    }
+
+    public function test_ban_user_noop_when_already_banned(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => '1021',
+            'platform' => 'telegram',
+            'is_banned' => true,
+            'banned_at' => now()->subDay(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('banUser');
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_ban_user_skipped_when_no_active_dialog(): void
+    {
+        Queue::fake();
+
+        Livewire::test(ConversationPage::class)
+            ->call('banUser');
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_unban_user_clears_ban(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => '1022',
+            'platform' => 'telegram',
+            'is_banned' => true,
+            'banned_at' => now()->subDay(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('unbanUser')
+            ->assertNotified('Пользователь разблокирован');
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->isBanned());
+        $this->assertNull($botUser->banned_at);
+    }
+
+    public function test_unban_user_noop_when_not_banned(): void
+    {
+        $botUser = BotUser::create(['chat_id' => '1023', 'platform' => 'telegram', 'is_banned' => false]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('unbanUser');
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->isBanned());
+    }
+
+    public function test_dialog_list_marks_banned_conversations(): void
+    {
+        BotUser::create([
+            'chat_id' => '1024',
+            'platform' => 'telegram',
+            'is_banned' => true,
+            'banned_at' => now(),
+            'is_closed' => true,
+            'closed_at' => now(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->assertSee('Пользователь заблокирован')
+            // banned badge takes priority over the closed badge
+            ->assertDontSee('Обращение закрыто');
+    }
+
+    // ── Reopen on reply ────────────────────────────────────────────────────────
+
+    public function test_sending_reply_reopens_closed_conversation(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => '1025',
+            'platform' => 'telegram',
+            'is_closed' => true,
+            'closed_at' => now()->subDay(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->set('replyText', 'Are you still there?')
+            ->call('sendReply')
+            ->assertHasNoErrors();
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->isClosed());
+        $this->assertNull($botUser->closed_at);
+    }
+
+    public function test_reply_form_shown_in_telegram_group_mode(): void
     {
         config(['app.manager_interface' => 'telegram_group']);
 
@@ -303,7 +633,7 @@ class ConversationWorkspaceTest extends TestCase
 
         $component->assertSet('activeBotUserId', $botUser->id);
 
-        $this->assertFalse($component->instance()->shouldShowReplyForm());
+        $this->assertTrue($component->instance()->shouldShowReplyForm());
     }
 
     // ── Quick replies ──────────────────────────────────────────────────────────

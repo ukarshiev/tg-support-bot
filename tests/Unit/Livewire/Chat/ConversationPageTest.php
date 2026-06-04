@@ -127,7 +127,7 @@ class ConversationPageTest extends TestCase
         Queue::assertPushed(SendTelegramSimpleQueryJob::class);
     }
 
-    public function test_send_reply_does_nothing_outside_admin_panel_mode(): void
+    public function test_send_reply_works_in_telegram_group_mode(): void
     {
         Queue::fake();
         config(['app.manager_interface' => 'telegram_group']);
@@ -137,14 +137,16 @@ class ConversationPageTest extends TestCase
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
             ->set('replyText', 'Hello!')
-            ->call('sendReply');
+            ->call('sendReply')
+            ->assertHasNoErrors();
 
-        $this->assertDatabaseMissing('messages', [
+        $this->assertDatabaseHas('messages', [
             'bot_user_id' => $botUser->id,
             'message_type' => 'outgoing',
+            'text' => 'Hello!',
         ]);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendTelegramSimpleQueryJob::class);
     }
 
     // ── Polling interval ───────────────────────────────────────────────────────
@@ -167,13 +169,13 @@ class ConversationPageTest extends TestCase
         $this->assertTrue($instance->shouldShowReplyForm());
     }
 
-    public function test_should_show_reply_form_returns_false_in_telegram_group_mode(): void
+    public function test_should_show_reply_form_returns_true_in_telegram_group_mode(): void
     {
         config(['app.manager_interface' => 'telegram_group']);
 
         $instance = Livewire::test(ConversationPage::class)->instance();
 
-        $this->assertFalse($instance->shouldShowReplyForm());
+        $this->assertTrue($instance->shouldShowReplyForm());
     }
 
     // ── insertQuickReply ──────────────────────────────────────────────────────
@@ -183,6 +185,101 @@ class ConversationPageTest extends TestCase
         Livewire::test(ConversationPage::class)
             ->call('insertQuickReply', 'Ожидайте, пожалуйста')
             ->assertSet('replyText', 'Ожидайте, пожалуйста');
+    }
+
+    // ── hasUnread ──────────────────────────────────────────────────────────────
+
+    private function botUserWithLastMessage(string $type, array $attrs = []): BotUser
+    {
+        $botUser = BotUser::create(array_merge(['chat_id' => 5000, 'platform' => 'telegram'], $attrs));
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => $type,
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'msg',
+        ]);
+
+        return $botUser->fresh(['lastMessage']);
+    }
+
+    public function test_has_unread_true_for_open_dialog_with_incoming_last_message(): void
+    {
+        $user = $this->botUserWithLastMessage('incoming');
+
+        $instance = Livewire::test(ConversationPage::class)->instance();
+
+        $this->assertTrue($instance->hasUnread($user));
+    }
+
+    public function test_has_unread_false_when_last_message_outgoing(): void
+    {
+        $user = $this->botUserWithLastMessage('outgoing');
+
+        $instance = Livewire::test(ConversationPage::class)->instance();
+
+        $this->assertFalse($instance->hasUnread($user));
+    }
+
+    public function test_has_unread_false_for_closed_dialog(): void
+    {
+        $user = $this->botUserWithLastMessage('incoming', ['is_closed' => true, 'closed_at' => now()]);
+
+        $instance = Livewire::test(ConversationPage::class)->instance();
+
+        $this->assertFalse($instance->hasUnread($user));
+    }
+
+    public function test_has_unread_false_for_banned_dialog(): void
+    {
+        $user = $this->botUserWithLastMessage('incoming', ['is_banned' => true, 'banned_at' => now()]);
+
+        $instance = Livewire::test(ConversationPage::class)->instance();
+
+        $this->assertFalse($instance->hasUnread($user));
+    }
+
+    public function test_has_unread_false_for_active_dialog(): void
+    {
+        $user = $this->botUserWithLastMessage('incoming');
+
+        $component = Livewire::test(ConversationPage::class)->call('selectChat', $user->id);
+
+        $this->assertFalse($component->instance()->hasUnread($user));
+    }
+
+    public function test_has_unread_false_when_read_after_last_message(): void
+    {
+        $user = $this->botUserWithLastMessage('incoming', ['manager_last_read_at' => now()->addHour()]);
+
+        $instance = Livewire::test(ConversationPage::class)->instance();
+
+        $this->assertFalse($instance->hasUnread($user));
+    }
+
+    public function test_has_unread_true_when_message_arrived_after_read(): void
+    {
+        $user = $this->botUserWithLastMessage('incoming', ['manager_last_read_at' => now()->subHour()]);
+
+        $instance = Livewire::test(ConversationPage::class)->instance();
+
+        $this->assertTrue($instance->hasUnread($user));
+    }
+
+    public function test_selecting_dialog_persists_read_timestamp(): void
+    {
+        $user = $this->botUserWithLastMessage('incoming');
+
+        Livewire::test(ConversationPage::class)->call('selectChat', $user->id);
+
+        // Persisted: a fresh, non-active load is no longer flagged unread.
+        $reloaded = $user->fresh(['lastMessage']);
+        $this->assertNotNull($reloaded->manager_last_read_at);
+
+        $freshComponent = Livewire::test(ConversationPage::class)->instance();
+        $this->assertFalse($freshComponent->hasUnread($reloaded));
     }
 
     // ── getImageAttachments ──────────────────────────────────────────────────

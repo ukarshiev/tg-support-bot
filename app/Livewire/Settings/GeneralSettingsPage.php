@@ -18,20 +18,8 @@ use Livewire\Component;
 #[Layout('layouts.admin-settings')]
 class GeneralSettingsPage extends Component
 {
-    /** @var string|null */
-    public ?string $bot_name = null;
-
-    /** @var string|null */
-    public ?string $bot_description = null;
-
-    /** @var string */
-    public string $manager_interface = 'telegram_group';
-
     /** @var string|null Telegram forum topic name template */
     public ?string $template_topic_name = null;
-
-    /** @var bool Show the restart-required notice */
-    public bool $showRestartNotice = false;
 
     /** @var bool Show success banner */
     public bool $saved = false;
@@ -44,15 +32,11 @@ class GeneralSettingsPage extends Component
      */
     public function mount(SettingsService $settings): void
     {
-        $this->bot_name = (string) ($settings->get('app.bot_name') ?? '');
-        $this->bot_description = (string) ($settings->get('app.bot_description') ?? '');
-        $this->manager_interface = (string) ($settings->get('app.manager_interface') ?? 'telegram_group');
         $this->template_topic_name = (string) ($settings->get('telegram.template_topic_name') ?? '');
     }
 
     /**
      * Save the form values via SettingsService.
-     * Shows a restart notice when MANAGER_INTERFACE changes.
      */
     public function save(SettingsService $settings): void
     {
@@ -60,38 +44,18 @@ class GeneralSettingsPage extends Component
         $this->saved = false;
 
         // ── Validation ────────────────────────────────────────────────────────
-        if (strlen((string) $this->bot_name) > 255) {
-            $this->formErrors['bot_name'] = 'Максимальная длина — 255 символов.';
-        }
-
-        if (strlen((string) $this->bot_description) > 1000) {
-            $this->formErrors['bot_description'] = 'Максимальная длина — 1000 символов.';
-        }
-
         if (strlen((string) $this->template_topic_name) > 255) {
             $this->formErrors['template_topic_name'] = 'Максимальная длина — 255 символов.';
-        }
-
-        if (! in_array($this->manager_interface, ['telegram_group', 'admin_panel'], true)) {
-            $this->formErrors['manager_interface'] = 'Выберите допустимое значение.';
         }
 
         if (! empty($this->formErrors)) {
             return;
         }
 
-        // ── Detect interface change before saving ─────────────────────────────
-        $previous = (string) ($settings->get('app.manager_interface') ?? 'telegram_group');
-        $interfaceChanged = $previous !== $this->manager_interface;
-
         // ── Persist ───────────────────────────────────────────────────────────
-        $settings->set('app.bot_name', $this->bot_name ?? '');
-        $settings->set('app.bot_description', $this->bot_description ?? '');
-        $settings->set('app.manager_interface', $this->manager_interface);
         $settings->set('telegram.template_topic_name', $this->template_topic_name ?? '');
 
         $this->saved = true;
-        $this->showRestartNotice = $interfaceChanged;
     }
 
     /**
@@ -101,10 +65,6 @@ class GeneralSettingsPage extends Component
     {
         $this->formErrors = [];
         $this->saved = false;
-        $this->showRestartNotice = false;
-        $this->bot_name = (string) ($settings->get('app.bot_name') ?? '');
-        $this->bot_description = (string) ($settings->get('app.bot_description') ?? '');
-        $this->manager_interface = (string) ($settings->get('app.manager_interface') ?? 'telegram_group');
         $this->template_topic_name = (string) ($settings->get('telegram.template_topic_name') ?? '');
     }
 

@@ -34,6 +34,9 @@ This domain does not own: message routing to Telegram (see `domain/messaging.md`
 **BR-001** — Every request from an External Source must be authenticated with a valid, active bearer token from `external_source_access_tokens`.
 _Enforced in:_ `app/Http/Middleware/ApiQuery.php`
 
+**BR-001a** — An External Source may restrict which IP addresses are allowed to call the API via `external_sources.allowed_ips` (a JSON list of IPs, managed from `/admin/settings/api-webhooks/{source}`). When the list is non-empty, `ApiQuery` rejects (403) any request whose IP is not an exact match; an empty/NULL list means no restriction.
+_Enforced in:_ `App\Modules\External\Middleware\ApiQuery` (calls `ExternalSource::isIpAllowed($request->ip())`)
+
 **BR-002** — An External Source must be registered in `external_sources` before it can send or receive messages.
 _Enforced in:_ `app/Models/ExternalSource.php`, `app/Services/External/ExternalTrafficService.php`
 
