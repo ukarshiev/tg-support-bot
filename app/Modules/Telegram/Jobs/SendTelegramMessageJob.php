@@ -141,7 +141,11 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             'message_type' => $this->typeMessage,
             'from_id' => $this->updateDto->messageId,
             'to_id' => $resultQuery->message_id,
-            'text' => $this->typeMessage === 'incoming' ? ($this->updateDto->text ?? null) : ($this->queryParams->text ?? null),
+            // Photos/documents carry their text in `caption`, not `text` —
+            // fall back to it so the caption is persisted (and shown in the admin).
+            'text' => $this->typeMessage === 'incoming'
+                ? ($this->updateDto->text ?? $this->updateDto->caption ?? null)
+                : ($this->queryParams->text ?? $this->queryParams->caption ?? null),
         ]);
 
         if ($this->typeMessage === 'incoming' && !empty($this->updateDto->fileId)) {
