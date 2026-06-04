@@ -134,4 +134,34 @@ class SendReplyActionTest extends TestCase
                 && $job->payload['message']['text'] === 'Test message';
         });
     }
+
+    public function test_reopens_closed_conversation_on_reply(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 300,
+            'platform' => 'telegram',
+            'is_closed' => true,
+            'closed_at' => now()->subDay(),
+        ]);
+
+        SendReplyAction::execute($botUser, 'Reopening reply');
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->isClosed());
+        $this->assertNull($botUser->closed_at);
+    }
+
+    public function test_does_not_touch_open_conversation_on_reply(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 301, 'platform' => 'telegram', 'is_closed' => false]);
+
+        SendReplyAction::execute($botUser, 'Regular reply');
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->isClosed());
+    }
 }
