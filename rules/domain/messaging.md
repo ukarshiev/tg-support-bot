@@ -62,6 +62,9 @@ _Enforced in:_ `app/Models/BotUser.php @ getOrCreateByTelegramUpdate()`, `getOrC
 **BR-002** — Every sent message must be recorded in the `messages` table with `bot_user_id`, `platform`, `message_type`, `from_id`, `to_id`.
 _Enforced in:_ `app/Jobs/SendMessage/AbstractSendMessageJob.php @ saveMessage()`
 
+**BR-002a** — When persisting a Telegram message, `messages.text` must capture the **caption** for media messages (photo/document), since Telegram puts that text in `caption`, not `text`. `SendTelegramMessageJob::saveMessage()` resolves text as `text ?? caption` for both directions, so a photo-with-caption stores both the caption text and the attachment (otherwise the admin chat workspace would show only the image).
+_Enforced in:_ `app/Modules/Telegram/Jobs/SendTelegramMessageJob.php @ saveMessage()`
+
 **BR-003** — A user with `is_banned = true` must not receive replies and must receive a banned notification instead.
 _Enforced in:_ `app/Actions/Telegram/SendBannedMessage.php`, `app/Actions/Vk/SendBannedMessageVk.php`
 
