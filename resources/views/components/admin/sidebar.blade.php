@@ -38,6 +38,24 @@
         {{ $slot }}
     </nav>
 
+    {{-- Logout --}}
+    <div class="px-3 pb-2">
+        <form method="POST" action="{{ route('filament.admin.auth.logout') }}">
+            @csrf
+            <button
+                type="submit"
+                class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-sidebar-secondary transition hover:bg-sidebar-hover hover:text-text-sidebar"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" x2="9" y1="12" y2="12" />
+                </svg>
+                Выйти
+            </button>
+        </form>
+    </div>
+
     {{-- Footer --}}
     <div class="border-t border-border-sidebar px-4 py-4 text-xs text-text-sidebar-secondary">
         <span>{{ $version }}</span>
