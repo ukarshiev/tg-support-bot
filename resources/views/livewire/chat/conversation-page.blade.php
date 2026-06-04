@@ -8,13 +8,13 @@
     Tablet   [Left 360px | Center flex-1 ]   (right panel hidden < lg)
     Mobile   list-only ↔ chat screen  (toggled by activeBotUserId)
     ─────────────────────────────────────────────────────────────────────────────
-    Polling: 5 s (wire:poll.5s calls loadDialogList + loadMessages)
+    Polling: 5 s (wire:poll.5s → pollUpdates: refresh list + active thread)
 --}}
 
 <div
     class="flex h-screen overflow-hidden"
-    wire:poll.5s="loadDialogList"
-    x-data="{ lightboxSrc: '', lightboxOpen: false }"
+    wire:poll.5s="pollUpdates"
+    x-data="{ lightboxSrc: '', lightboxOpen: false, infoPanelOpen: false }"
     x-on:open-lightbox.window="lightboxSrc = $event.detail.src; lightboxOpen = true"
     x-on:messages-updated.window="$nextTick(() => {
         const thread = document.getElementById('chat-thread');
@@ -64,6 +64,7 @@
         {{-- Design: node AQ4LA — space-between, white 20/700 + settings icon #8B92A5 --}}
         <div class="flex items-center justify-between w-full shrink-0">
             <span class="text-text-sidebar font-bold" style="font-size:20px; line-height:1.2;">TG Support</span>
+            <div class="flex items-center shrink-0" style="gap:4px;">
             <a
                 href="{{ route('admin.settings.general') }}"
                 wire:navigate
@@ -86,6 +87,22 @@
                     <circle cx="12" cy="12" r="3"/>
                 </svg>
             </a>
+            <form method="POST" action="{{ route('filament.admin.auth.logout') }}">
+                @csrf
+                <button
+                    type="submit"
+                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-sidebar-secondary transition hover:bg-sidebar-active hover:text-text-sidebar"
+                    aria-label="Выйти"
+                    title="Выйти"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" x2="9" y1="12" y2="12" />
+                    </svg>
+                </button>
+            </form>
+            </div>
         </div>
 
         {{-- Search bar: bg-sidebar-active #2D3348, rounded-8, search icon + placeholder --}}
@@ -122,7 +139,7 @@
             @foreach(['all' => 'Все', 'open' => 'Открытые', 'closed' => 'Закрытые'] as $value => $label)
                 <button
                     wire:click="$set('statusFilter', '{{ $value }}')"
-                    class="rounded-md transition-colors"
+                    class="rounded-md transition-colors cursor-pointer"
                     style="padding: 6px 12px; font-size:13px; font-weight: {{ $statusFilter === $value ? '600' : '400' }}; {{ $statusFilter === $value ? 'background:#4F6EF7; color:#FFFFFF;' : 'background:transparent; color:#8B92A5;' }}"
                     type="button"
                 >{{ $label }}</button>
@@ -136,9 +153,6 @@
         {{-- Dialog list --}}
         <div class="flex-1 overflow-y-auto -mx-4 pb-4">
             @forelse($dialogList as $user)
-                @php
-                    $hasUnread = $user->lastMessage?->message_type === 'incoming';
-                @endphp
                 <div
                     wire:click="selectChat({{ $user->id }})"
                     wire:key="dialog-{{ $user->id }}"
@@ -147,7 +161,7 @@
                     <x-chat-item
                         :bot-user="$user"
                         :is-active="$activeBotUserId === $user->id"
-                        :has-unread="$hasUnread"
+                        :has-unread="$this->hasUnread($user)"
                     />
                 </div>
             @empty
@@ -224,24 +238,42 @@
                             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
                         </svg>
                     </div>
-                    <div class="flex items-center justify-center rounded-lg text-text-secondary" style="width:36px; height:36px;" aria-hidden="true">
+                    <button
+                        type="button"
+                        x-on:click="infoPanelOpen = !infoPanelOpen"
+                        :class="infoPanelOpen ? 'bg-bg-secondary text-accent' : 'text-text-secondary hover:bg-bg-secondary'"
+                        :aria-pressed="infoPanelOpen"
+                        class="flex items-center justify-center rounded-lg transition"
+                        style="width:36px; height:36px; border:none; cursor:pointer; background:transparent;"
+                        aria-label="Сведения о клиенте"
+                        title="Сведения о клиенте"
+                    >
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
                         </svg>
-                    </div>
+                    </button>
                 </div>
             </div>
 
             {{-- Message thread --}}
-            {{-- Design: node bCcH9 — bg-secondary, padding [24,32], gap 16, justify-end (stack bottom), fill_container --}}
+            {{-- Design: node bCcH9 — bg-secondary, padding [24,32], gap 16, bottom-stacked via inner mt-auto, fill_container --}}
             <div
                 id="chat-thread"
-                class="flex flex-col flex-1 overflow-y-auto bg-bg-secondary justify-end"
-                style="gap:16px; padding:24px 32px;"
+                class="flex flex-col flex-1 overflow-y-auto bg-bg-secondary"
+                style="padding:24px 32px;"
                 x-data
                 x-init="$el.scrollTop = $el.scrollHeight"
             >
-                @forelse($chatMessages as $message)
+                @if($chatMessages->isEmpty())
+                    <div class="flex flex-1 items-center justify-center">
+                        <p class="text-sm text-text-secondary">Нет сообщений</p>
+                    </div>
+                @else
+                {{-- mt-auto pins messages to the bottom when they don't fill the
+                     viewport, while keeping the container a plain top-anchored
+                     scroll area so overflow stays reachable (justify-end clips it). --}}
+                <div class="flex flex-col mt-auto w-full" style="gap:16px;">
+                @foreach($chatMessages as $message)
                     @php
                         $msgDate   = $message->created_at?->toDateString();
                         $prevDate  = $loop->first ? null : $chatMessages[$loop->index - 1]->created_at?->toDateString();
@@ -279,16 +311,16 @@
                         {{-- Design: node uduZU / Bubble Out --}}
                         <div class="flex w-full" style="justify-content:flex-end;">
                             <div class="flex flex-col" style="border-radius:16px 16px 4px 16px; background:#4F6EF7; padding:10px 14px; gap:4px; max-width:70%;">
-                                @if($messageText)
-                                    <p class="text-sm text-white" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
-                                @endif
                                 @if($message->attachments->isNotEmpty())
                                     <x-message-attachments
                                         :attachments="$message->attachments"
                                         :platform="$message->platform"
                                         :is-outgoing="true"
                                     />
-                                @elseif(!$messageText)
+                                @endif
+                                @if($messageText)
+                                    <p class="text-sm text-white" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
+                                @elseif($message->attachments->isEmpty())
                                     <p class="text-xs text-white opacity-70 italic">{{ $message->platform }} · {{ $message->message_type }}</p>
                                 @endif
                                 <p class="text-right text-white opacity-70" style="font-size:11px;">
@@ -308,16 +340,16 @@
                             >{{ $hdrInitials }}</div>
                             {{-- Bubble --}}
                             <div class="flex flex-col" style="border-radius:16px 16px 16px 4px; background:#FFFFFF; border:1px solid #E5E7EB; padding:10px 14px; gap:4px; max-width:70%;">
-                                @if($messageText)
-                                    <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
-                                @endif
                                 @if($message->attachments->isNotEmpty())
                                     <x-message-attachments
                                         :attachments="$message->attachments"
                                         :platform="$message->platform"
                                         :is-outgoing="false"
                                     />
-                                @elseif(!$messageText)
+                                @endif
+                                @if($messageText)
+                                    <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
+                                @elseif($message->attachments->isEmpty())
                                     <p class="text-xs text-text-secondary italic opacity-60">{{ $message->platform }} · {{ $message->message_type }}</p>
                                 @endif
                                 <p class="text-text-secondary opacity-70" style="font-size:11px;">
@@ -326,11 +358,9 @@
                             </div>
                         </div>
                     @endif
-                @empty
-                    <div class="flex flex-1 items-center justify-center">
-                        <p class="text-sm text-text-secondary">Нет сообщений</p>
-                    </div>
-                @endforelse
+                @endforeach
+                </div>
+                @endif
             </div>
 
             {{-- Input area --}}
@@ -354,16 +384,64 @@
                         </div>
                     @endif
 
+                    {{-- Selected attachment preview / upload progress (telegram + vk only) --}}
+                    @if($this->supportsAttachments())
+                        {{-- Uploading spinner --}}
+                        <div
+                            wire:loading.flex
+                            wire:target="attachment"
+                            class="items-center mb-2"
+                            style="gap:8px;"
+                        >
+                            <svg class="animate-spin text-accent" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                            </svg>
+                            <span class="text-text-secondary" style="font-size:12px;">Загрузка файла…</span>
+                        </div>
+
+                        {{-- Selected file chip --}}
+                        @if($attachment)
+                            <div wire:loading.remove wire:target="attachment" class="flex items-center mb-2" style="gap:8px;">
+                                <div class="flex items-center max-w-full" style="gap:8px; background:#EEF1FE; border:1px solid #D5DBF9; border-radius:8px; padding:6px 10px;">
+                                    <svg class="shrink-0 text-accent" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
+                                    </svg>
+                                    <span class="truncate text-text-primary" style="font-size:12px; max-width:220px;">{{ $attachment->getClientOriginalName() }}</span>
+                                    <button
+                                        type="button"
+                                        wire:click="removeAttachment"
+                                        class="flex shrink-0 items-center justify-center text-text-secondary transition hover:text-red-500"
+                                        style="width:16px; height:16px; border:none; background:transparent; cursor:pointer; line-height:1; font-size:16px;"
+                                        aria-label="Убрать файл"
+                                        title="Убрать файл"
+                                    >&times;</button>
+                                </div>
+                            </div>
+                        @endif
+
+                        @error('attachment')
+                            <p class="mb-2 text-xs text-red-500">{{ $message }}</p>
+                        @enderror
+                    @endif
+
                     {{-- Input row: attach + textarea + send --}}
                     {{-- Design: FEYxe (attach 40×40) + Euru3 (input, fill, bg-input, rounded-12) + K6yaRa (send 44×44 bg-accent rounded-12) --}}
                     <form wire:submit.prevent="sendReply" class="flex items-center" style="gap:12px;">
 
-                        {{-- Attach icon (visual only) --}}
-                        <div class="flex items-center justify-center shrink-0 text-text-secondary" style="width:40px; height:40px; border-radius:10px;" aria-hidden="true">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                            </svg>
-                        </div>
+                        {{-- Attach button (telegram + vk only) --}}
+                        @if($this->supportsAttachments())
+                            <label
+                                class="flex items-center justify-center shrink-0 text-text-secondary cursor-pointer transition hover:text-accent hover:bg-bg-secondary"
+                                style="width:40px; height:40px; border-radius:10px;"
+                                title="Прикрепить файл"
+                                aria-label="Прикрепить файл"
+                            >
+                                <input type="file" wire:model="attachment" class="hidden" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                                </svg>
+                            </label>
+                        @endif
 
                         {{-- Text input --}}
                         <div class="relative flex-1">
@@ -385,7 +463,7 @@
                         <button
                             type="submit"
                             wire:loading.attr="disabled"
-                            wire:target="sendReply"
+                            wire:target="sendReply,attachment"
                             class="flex shrink-0 items-center justify-center text-white transition hover:opacity-90 disabled:opacity-50"
                             style="width:44px; height:44px; border-radius:12px; background:#4F6EF7; border:none; cursor:pointer;"
                             aria-label="Отправить"
@@ -413,7 +491,12 @@
     {{-- Design: node VdLTH — width 300, padding [24,20], gap 20, bg-primary, border-left --}}
     @if($activeBotUser)
         <aside
-            class="hidden lg:flex shrink-0 flex-col bg-bg-primary overflow-y-auto border-l border-border-light"
+            x-show="infoPanelOpen"
+            x-cloak
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            class="flex shrink-0 flex-col bg-bg-primary overflow-y-auto border-l border-border-light"
             style="width:300px; gap:20px; padding:24px 20px;"
         >
 
@@ -457,32 +540,62 @@
                 {{-- Design: node uYnHt — gap 8 --}}
                 {{-- Block = bg #FEE2E2 text #DC2626; Close = bg bg-input text-primary --}}
                 <div class="flex" style="gap:8px;">
-                    {{-- Блок button (visual — ban logic is handled by existing CloseTopic/BanMessage flow, wiring to a Filament action is outside scope) --}}
-                    <button
-                        type="button"
-                        class="flex items-center transition hover:opacity-90"
-                        style="background:#FEE2E2; color:#DC2626; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
-                        aria-label="Заблокировать пользователя"
-                        title="Блокировка пользователя"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>
-                        </svg>
-                        Блок
-                    </button>
+                    {{-- Блок / Разблокировать — toggles via banUser()/unbanUser() --}}
+                    @php $isBanned = (bool) $activeBotUser->is_banned; @endphp
+                    @if($isBanned)
+                        <button
+                            type="button"
+                            wire:click="unbanUser"
+                            wire:confirm="Разблокировать пользователя? Он снова сможет писать в поддержку."
+                            wire:loading.attr="disabled"
+                            wire:target="unbanUser"
+                            class="flex items-center transition hover:opacity-90 disabled:opacity-50"
+                            style="background:#DCFCE7; color:#16A34A; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
+                            aria-label="Разблокировать пользователя"
+                            title="Разблокировать пользователя"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                            </svg>
+                            Разблокировать
+                        </button>
+                    @else
+                        <button
+                            type="button"
+                            wire:click="banUser"
+                            wire:confirm="Заблокировать пользователя? Его сообщения перестанут приниматься, а диалог будет закрыт."
+                            wire:loading.attr="disabled"
+                            wire:target="banUser"
+                            class="flex items-center transition hover:opacity-90 disabled:opacity-50"
+                            style="background:#FEE2E2; color:#DC2626; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
+                            aria-label="Заблокировать пользователя"
+                            title="Блокировка пользователя"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>
+                            </svg>
+                            Блок
+                        </button>
+                    @endif
 
-                    {{-- Закрыть button (visual — close logic unchanged) --}}
+                    {{-- Закрыть button — runs the canonical CloseTopic flow via closeDialog() --}}
+                    @php $isClosed = (bool) $activeBotUser->is_closed; @endphp
                     <button
                         type="button"
-                        class="flex items-center transition hover:opacity-90"
+                        wire:click="closeDialog"
+                        wire:confirm="Закрыть диалог? Пользователю придёт уведомление о закрытии и форма оценки."
+                        wire:loading.attr="disabled"
+                        wire:target="closeDialog"
+                        @disabled($isClosed)
+                        class="flex items-center transition hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
                         style="background:#F1F3F5; color:#1A1D26; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
                         aria-label="Закрыть диалог"
-                        title="Закрыть тикет"
+                        title="{{ $isClosed ? 'Диалог уже закрыт' : 'Закрыть тикет' }}"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>
                         </svg>
-                        Закрыть
+                        {{ $isClosed ? 'Закрыто' : 'Закрыть' }}
                     </button>
                 </div>
             </div>
@@ -540,35 +653,6 @@
                     </div>
                 </div>
 
-                {{-- Обращений — message-circle icon --}}
-                {{-- Design: node Kdzjz --}}
-                <div class="flex items-center w-full" style="gap:10px;">
-                    <svg class="shrink-0 text-text-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
-                    </svg>
-                    <div class="flex flex-col" style="gap:2px;">
-                        <span class="text-text-secondary" style="font-size:11px;">Обращений</span>
-                        <span class="text-text-primary" style="font-size:13px;">{{ $chatMessages->count() }}</span>
-                    </div>
-                </div>
-
-                {{-- Язык — globe icon --}}
-                {{-- Design: node jED9J --}}
-                <div class="flex items-center w-full" style="gap:10px;">
-                    <svg class="shrink-0 text-text-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
-                    </svg>
-                    <div class="flex flex-col" style="gap:2px;">
-                        <span class="text-text-secondary" style="font-size:11px;">Язык</span>
-                        <span class="text-text-primary" style="font-size:13px;">
-                            @if(isset($activeBotUser->language_code) && $activeBotUser->language_code)
-                                {{ strtoupper($activeBotUser->language_code) }}
-                            @else
-                                —
-                            @endif
-                        </span>
-                    </div>
-                </div>
             </div>
 
             {{-- Divider --}}
