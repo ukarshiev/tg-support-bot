@@ -30,7 +30,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(\App\Modules\Admin\Filament\Pages\Auth\Login::class)
             ->homeUrl(fn (): string => route('admin.chats'))
             ->colors([
                 'primary' => Color::Amber,
