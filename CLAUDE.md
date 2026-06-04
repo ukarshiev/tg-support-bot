@@ -301,7 +301,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
 - Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
 - In-scope keys with `config => null`: all `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`, all `ai.*` credentials and behaviour settings. Infrastructure keys (`app.manager_interface`) retain their `config()` fallback.
-- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing `app.bot_name`, `app.bot_description`, `telegram.template_topic_name` (Telegram topic-name template) and `app.manager_interface`. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
+- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing only `telegram.template_topic_name` (Telegram topic-name template). Bot name (`app.bot_name`), description (`app.bot_description`), and the manager-interface radio (`app.manager_interface`) were removed from this screen. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
 
 ### Channel Integrations (Settings)
 
@@ -334,6 +334,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Token length: 64 characters (`Str::random(64)` in `ExternalSourceTokensService::generateToken()`)
 - Token active flag: `external_source_access_tokens.active` — inactive tokens (`active=false`) are rejected by `ApiQuery` middleware with 401
 - Token values are never logged or displayed in full — only a one-time reveal after regeneration, followed by dismissal
+- IP allowlist: `external_sources.allowed_ips` (JSON, editable on the per-source page `/admin/settings/api-webhooks/{source}`) restricts which IPs may call the API. Non-empty → `ApiQuery` rejects (403) requests whose IP isn't listed; empty/NULL → no restriction (`ExternalSource::isIpAllowed()`). The per-source edit page no longer has the secret-key/events design placeholders.
 - See `rules/domain/admin-panel.md` (BR-023, BR-024, BR-025) and `rules/domain/external-sources.md`
 
 ### Feedback Form
@@ -350,8 +351,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 - `MANAGER_INTERFACE=telegram_group` (default) — managers work via Telegram supergroup with forum topics
 - `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin/chats` workspace (full-screen, chrome-free, `App\Livewire\Chat\ConversationPage`)
-- Switching via `.env`: change `MANAGER_INTERFACE` + `docker compose restart app`
-- Switching via admin panel: save via General Settings screen (`/admin/settings/general`, `GeneralSettingsPage`) → value written to `settings` DB table via `SettingsService` (overrides `.env` on next read); container restart still required for DI binding to take effect (`docker compose restart app`) — screen shows a persistent yellow warning notice
+- Switching via `.env` only: change `MANAGER_INTERFACE` + `docker compose restart app`. **This is no longer editable from the admin panel** — the General Settings screen's manager-interface radio was removed.
 - The `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` reads from `config('app.manager_interface')` at boot, NOT from `SettingsService` — this is intentional to avoid DB dependency at container startup
 - Does not require `php artisan migrate` or any DB changes (for mode switching itself)
 - See `rules/domain/admin-panel.md` for full rules (BR-001 through BR-025)
