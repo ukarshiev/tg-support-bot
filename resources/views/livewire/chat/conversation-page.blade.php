@@ -368,18 +368,19 @@
             @if($this->shouldShowReplyForm())
                 <div class="shrink-0 bg-bg-primary border-t border-border-light" style="padding: 12px 24px;">
 
-                    {{-- Quick-reply chips --}}
+                    {{-- Auto-reply chips — active rules from the auto_replies table --}}
                     {{-- Design: mobile lo3D5 node bQdAT — chips row above input --}}
-                    @php $quickReplies = config('chat.quick_replies', []) @endphp
-                    @if(!empty($quickReplies))
+                    @php $autoReplies = $this->getAutoReplies() @endphp
+                    @if($autoReplies->isNotEmpty())
                         <div class="flex flex-wrap mb-2" style="gap:8px;">
-                            @foreach($quickReplies as $reply)
+                            @foreach($autoReplies as $autoReply)
                                 <button
                                     type="button"
-                                    wire:click="insertQuickReply('{{ addslashes($reply) }}')"
+                                    wire:click="insertQuickReply(@js($autoReply->response))"
+                                    title="{{ $autoReply->response }}"
                                     class="text-text-secondary transition hover:text-accent"
                                     style="border-radius:16px; background:#F1F3F5; padding:6px 12px; font-size:12px; border:none; cursor:pointer;"
-                                >{{ $reply }}</button>
+                                >{{ $autoReply->trigger }}</button>
                             @endforeach
                         </div>
                     @endif
@@ -661,35 +662,51 @@
 
             {{-- МЕДИАФАЙЛЫ section --}}
             {{-- Design: node m1qYAD — vertical gap 12; Media Row: gap 8, thumbs 72×72 rounded-8 --}}
-            @php $imageAttachments = $this->getImageAttachments() @endphp
+            @php $mediaAttachments = $this->getMediaAttachments() @endphp
             <div class="flex flex-col w-full" style="gap:12px;">
 
                 {{-- Section heading --}}
                 {{-- Design: node IUhIo — 12/600 #6B7280 letter-spacing 1 --}}
                 <span class="font-semibold" style="font-size:12px; color:#6B7280; letter-spacing:0.07em;">МЕДИАФАЙЛЫ</span>
 
-                {{-- Thumbnail grid --}}
+                {{-- Thumbnail grid: images render as 72×72 thumbs, other files as a file card --}}
                 {{-- Design: node D0i1e — gap 8, row; thumbs 72×72 rounded-8 --}}
-                @if($imageAttachments->isNotEmpty())
+                @if($mediaAttachments->isNotEmpty())
                     <div class="flex flex-wrap" style="gap:8px;">
-                        @foreach($imageAttachments as $attachment)
+                        @foreach($mediaAttachments as $attachment)
                             @php
                                 $fileUrl = $activeBotUser->platform === 'telegram'
                                     ? url('/api/files/' . $attachment->file_id)
                                     : $attachment->file_id;
+                                $isImage = in_array($attachment->file_type, ['photo', 'sticker']);
                             @endphp
-                            <img
-                                src="{{ $fileUrl }}"
-                                alt="{{ $attachment->file_type }}"
-                                class="object-cover cursor-zoom-in hover:opacity-90 transition"
-                                style="width:72px; height:72px; border-radius:8px; flex-shrink:0;"
-                                loading="lazy"
-                                x-on:click="$dispatch('open-lightbox', { src: '{{ $fileUrl }}' })"
-                            >
+                            @if($isImage)
+                                <img
+                                    src="{{ $fileUrl }}"
+                                    alt="{{ $attachment->file_type }}"
+                                    class="object-cover cursor-zoom-in hover:opacity-90 transition"
+                                    style="width:72px; height:72px; border-radius:8px; flex-shrink:0;"
+                                    loading="lazy"
+                                    x-on:click="$dispatch('open-lightbox', { src: '{{ $fileUrl }}' })"
+                                >
+                            @else
+                                <a
+                                    href="{{ $fileUrl }}"
+                                    target="_blank"
+                                    title="{{ $attachment->file_name ?? $attachment->file_type }}"
+                                    class="flex flex-col items-center justify-center hover:opacity-90 transition"
+                                    style="width:72px; height:72px; border-radius:8px; flex-shrink:0; background:#F3F4F6; padding:8px; text-decoration:none;"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="shrink-0" style="width:24px; height:24px; color:#6B7280;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                    </svg>
+                                    <span class="truncate" style="font-size:10px; color:#6B7280; max-width:100%; margin-top:4px;">{{ $attachment->file_name ?? $attachment->file_type }}</span>
+                                </a>
+                            @endif
                         @endforeach
                     </div>
                 @else
-                    <p class="text-text-secondary" style="font-size:13px;">Нет изображений</p>
+                    <p class="text-text-secondary" style="font-size:13px;">Нет файлов</p>
                 @endif
             </div>
 

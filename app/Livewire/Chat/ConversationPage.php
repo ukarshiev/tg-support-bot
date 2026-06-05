@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Chat;
 
+use App\Models\AutoReply;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Models\MessageAttachment;
@@ -26,7 +27,7 @@ use Livewire\WithFileUploads;
  *
  * Data / logic is identical to the old Filament ConversationPage — the same
  * $dialogList, $activeBotUser, $chatMessages, search, statusFilter, 5 s polling,
- * sendReply, insertQuickReply, shouldShowReplyForm, getImageAttachments are kept.
+ * sendReply, insertQuickReply, shouldShowReplyForm, getMediaAttachments are kept.
  */
 #[Layout('layouts.admin-chat')]
 class ConversationPage extends Component
@@ -421,11 +422,11 @@ class ConversationPage extends Component
     // ── Media gallery ──────────────────────────────────────────────────────────
 
     /**
-     * Return all image attachments (photo/sticker) for the active dialog.
+     * Return all media attachments (photos, documents, video, audio, …) for the active dialog.
      *
      * @return \Illuminate\Support\Collection<int, MessageAttachment>
      */
-    public function getImageAttachments(): Collection
+    public function getMediaAttachments(): Collection
     {
         if (! $this->activeBotUser) {
             return collect();
@@ -434,7 +435,17 @@ class ConversationPage extends Component
         return MessageAttachment::whereIn(
             'message_id',
             Message::where('bot_user_id', $this->activeBotUserId)->pluck('id')
-        )->whereIn('file_type', ['photo', 'sticker'])->get();
+        )->get();
+    }
+
+    /**
+     * Active auto-reply rules, offered as quick-insert chips above the reply input.
+     *
+     * @return \Illuminate\Support\Collection<int, AutoReply>
+     */
+    public function getAutoReplies(): Collection
+    {
+        return AutoReply::where('enabled', true)->orderBy('id')->get();
     }
 
     /**
