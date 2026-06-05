@@ -7,6 +7,8 @@ use App\Livewire\Settings\AiAssistantPage;
 use App\Livewire\Settings\AiProviderAccessPage;
 use App\Livewire\Settings\ApiWebhookSourcePage;
 use App\Livewire\Settings\ApiWebhooksPage;
+use App\Livewire\Settings\AutoRepliesPage;
+use App\Livewire\Settings\AutoReplyFormPage;
 use App\Livewire\Settings\GeneralSettingsPage;
 use App\Livewire\Settings\IntegrationChannelPage;
 use App\Livewire\Settings\IntegrationsListPage;
@@ -79,6 +81,17 @@ class AdminServiceProvider extends ServiceProvider
                 // Team — manage operators, invite new members, delete existing ones.
                 Route::get('/team', TeamPage::class)
                     ->name('team');
+
+                // Auto-replies — automatic responses to frequent questions (UI stage).
+                Route::get('/auto-replies', AutoRepliesPage::class)
+                    ->name('auto-replies');
+
+                Route::get('/auto-replies/create', AutoReplyFormPage::class)
+                    ->name('auto-replies.create');
+
+                Route::get('/auto-replies/{rule}/edit', AutoReplyFormPage::class)
+                    ->name('auto-replies.edit')
+                    ->where('rule', '[0-9]+');
             });
     }
 }
