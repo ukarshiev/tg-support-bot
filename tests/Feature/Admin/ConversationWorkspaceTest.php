@@ -3,6 +3,7 @@
 namespace Tests\Feature\Admin;
 
 use App\Livewire\Chat\ConversationPage;
+use App\Models\AutoReply;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Models\MessageAttachment;
@@ -647,7 +648,7 @@ class ConversationWorkspaceTest extends TestCase
 
     // ── Media gallery ──────────────────────────────────────────────────────────
 
-    public function test_get_image_attachments_returns_images_for_active_dialog(): void
+    public function test_get_media_attachments_returns_all_files_for_active_dialog(): void
     {
         $botUser = BotUser::create(['chat_id' => '2000', 'platform' => 'telegram']);
 
@@ -674,16 +675,46 @@ class ConversationWorkspaceTest extends TestCase
         $component = Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id);
 
-        $attachments = $component->instance()->getImageAttachments();
+        $attachments = $component->instance()->getMediaAttachments();
 
-        $this->assertCount(1, $attachments);
-        $this->assertEquals('photo', $attachments->first()->file_type);
+        // Regression: documents must appear alongside photos in the МЕДИАФАЙЛЫ block.
+        $this->assertCount(2, $attachments);
+        $this->assertEqualsCanonicalizing(
+            ['photo', 'document'],
+            $attachments->pluck('file_type')->all()
+        );
     }
 
-    public function test_get_image_attachments_returns_empty_without_active_dialog(): void
+    public function test_get_media_attachments_returns_empty_without_active_dialog(): void
     {
         $component = Livewire::test(ConversationPage::class);
 
-        $this->assertTrue($component->instance()->getImageAttachments()->isEmpty());
+        $this->assertTrue($component->instance()->getMediaAttachments()->isEmpty());
+    }
+
+    // ── Auto-reply chips ─────────────────────────────────────────────────────────
+
+    public function test_get_auto_replies_returns_only_enabled_rules(): void
+    {
+        AutoReply::create(['trigger' => 'Привет', 'response' => 'Здравствуйте!', 'enabled' => true]);
+        AutoReply::create(['trigger' => 'Цена', 'response' => 'Тарифы', 'enabled' => true]);
+        AutoReply::create(['trigger' => 'Архив', 'response' => 'Отключено', 'enabled' => false]);
+
+        $autoReplies = Livewire::test(ConversationPage::class)
+            ->instance()
+            ->getAutoReplies();
+
+        $this->assertCount(2, $autoReplies);
+        $this->assertEqualsCanonicalizing(['Привет', 'Цена'], $autoReplies->pluck('trigger')->all());
+    }
+
+    public function test_auto_reply_trigger_chip_is_rendered_above_the_input(): void
+    {
+        $botUser = BotUser::create(['chat_id' => '5000', 'platform' => 'telegram']);
+        AutoReply::create(['trigger' => 'Привет', 'response' => 'Здравствуйте!', 'enabled' => true]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Привет');
     }
 }

@@ -282,12 +282,12 @@ class ConversationPageTest extends TestCase
         $this->assertFalse($freshComponent->hasUnread($reloaded));
     }
 
-    // ── getImageAttachments ──────────────────────────────────────────────────
+    // ── getMediaAttachments ──────────────────────────────────────────────────
 
-    public function test_get_image_attachments_returns_empty_without_active_dialog(): void
+    public function test_get_media_attachments_returns_empty_without_active_dialog(): void
     {
         $component = Livewire::test(ConversationPage::class);
 
-        $this->assertTrue($component->instance()->getImageAttachments()->isEmpty());
+        $this->assertTrue($component->instance()->getMediaAttachments()->isEmpty());
     }
 }
