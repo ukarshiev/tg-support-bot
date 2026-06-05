@@ -393,6 +393,32 @@ Persistent key-value store for runtime-editable application configuration. Creat
 
 ---
 
+### `auto_replies`
+
+Auto-reply rules: a trigger phrase and the response sent when it matches. Managed from the admin panel at `/admin/settings/auto-replies` (`App\Livewire\Settings\AutoRepliesPage` + `AutoReplyFormPage`).
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `bigint` | No | auto | Primary key |
+| `trigger` | `string` | No | — | Trigger word/phrase that activates the auto-reply |
+| `response` | `text` | No | — | Response text sent when the trigger matches |
+| `enabled` | `boolean` | No | `true` | Whether the rule is active |
+| `created_at` | `timestamp` | Yes | NULL | Creation time |
+| `updated_at` | `timestamp` | Yes | NULL | Last update time |
+
+**Indexes:**
+- PRIMARY on `id`
+
+**Model:** `App\Models\AutoReply` (`enabled` cast to `boolean`).
+
+**Seeder:** `Database\Seeders\AutoReplySeeder` (called from `DatabaseSeeder`) inserts four demo rules only when the table is empty.
+
+**Note:** Matching the trigger against incoming messages and sending the response is NOT yet wired into the message pipeline — the table and admin CRUD exist, runtime triggering is a separate future task.
+
+**Migration:** `database/migrations/2026_06_05_000001_create_auto_replies_table.php`
+
+---
+
 ### `jobs`, `job_batches`, `failed_jobs` (Laravel)
 
 Laravel queue tables. Do not modify manually.
