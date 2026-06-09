@@ -12,6 +12,8 @@ use App\Livewire\Settings\AutoReplyFormPage;
 use App\Livewire\Settings\GeneralSettingsPage;
 use App\Livewire\Settings\IntegrationChannelPage;
 use App\Livewire\Settings\IntegrationsListPage;
+use App\Livewire\Settings\TeamMemberCreatePage;
+use App\Livewire\Settings\TeamMemberEditPage;
 use App\Livewire\Settings\TeamPage;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
@@ -78,9 +80,16 @@ class AdminServiceProvider extends ServiceProvider
                     ->name('api-webhooks.source')
                     ->where('source', '[0-9]+');
 
-                // Team — manage operators, invite new members, delete existing ones.
+                // Team — manage operators, add new members, delete existing ones.
                 Route::get('/team', TeamPage::class)
                     ->name('team');
+
+                Route::get('/team/create', TeamMemberCreatePage::class)
+                    ->name('team.create');
+
+                Route::get('/team/{user}/edit', TeamMemberEditPage::class)
+                    ->name('team.edit')
+                    ->where('user', '[0-9]+');
 
                 // Auto-replies — automatic responses to frequent questions (UI stage).
                 Route::get('/auto-replies', AutoRepliesPage::class)
