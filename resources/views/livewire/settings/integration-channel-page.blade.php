@@ -1,40 +1,13 @@
 <div>
 
-    {{-- ── Top bar — breadcrumb + bottom border ─────────────────────────────── --}}
-    <div class="flex items-center border-b border-border-light bg-bg-primary px-10 py-0" style="height:64px">
-        <div class="flex items-center gap-3">
-            <a href="{{ route('admin.settings.integrations') }}"
-               class="flex items-center gap-1 text-text-secondary transition hover:text-text-primary"
-               aria-label="Назад к интеграциям">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
-                     stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m7-7-7 7 7 7" />
-                </svg>
-            </a>
-            <a href="{{ route('admin.settings.integrations') }}"
-               class="text-sm text-text-secondary transition hover:text-text-primary">
-                Интеграции
-            </a>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-text-secondary" fill="none"
-                 viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-            <span class="text-sm font-semibold text-text-primary">
-                Подключение
-                @if ($channel === 'telegram') Telegram
-                @elseif ($channel === 'telegram_ai') Бот AI помощника
-                @elseif ($channel === 'vk') ВКонтакте
-                @else MAX
-                @endif
-            </span>
-        </div>
-    </div>
+    {{-- ── Body ─────────────────────────────────────────────────────────────── --}}
+    <div class="p-4 lg:p-8">
 
-    {{-- ── Two-column body ──────────────────────────────────────────────────── --}}
-    <div class="grid grid-cols-1 gap-7 p-8 lg:grid-cols-[1fr_320px]">
+        {{-- ── Two-column grid ──────────────────────────────────────────────── --}}
+        <div class="grid grid-cols-1 gap-4 lg:gap-7 lg:grid-cols-[1fr_320px]">
 
         {{-- ── Form Card ────────────────────────────────────────────────────── --}}
-        <div class="rounded-2xl border border-border-light bg-bg-primary" style="padding:28px 32px">
+        <div class="rounded-2xl border border-border-light bg-bg-primary p-4 lg:px-8 lg:py-7">
 
             {{-- Card header: icon + titles --}}
             <div class="flex items-center gap-3.5">
@@ -322,11 +295,8 @@
 
                 @endif
 
-                {{-- Actions row — right-aligned: «Отмена» + primary action --}}
+                {{-- Actions row — right-aligned primary action --}}
                 <div class="mt-6 flex items-center justify-end gap-3">
-                    <x-admin.button-secondary wire:click="cancel" type="button">
-                        Отмена
-                    </x-admin.button-secondary>
                     <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="connect">
                         <span wire:loading.remove wire:target="connect">Сохранить</span>
                         <span wire:loading wire:target="connect">Проверка...</span>
@@ -358,7 +328,7 @@
 
         {{-- ── Instruction panel ────────────────────────────────────────────── --}}
         <div>
-            <div class="rounded-xl border border-border-light bg-bg-primary p-5 lg:p-6">
+            <div class="rounded-xl border border-border-light bg-bg-primary p-4 lg:p-6">
 
                 {{-- Panel header --}}
                 <div class="mb-5 flex items-center gap-2">
@@ -437,6 +407,8 @@
             </div>
         </div>
 
-    </div>
+        </div>{{-- /two-column grid --}}
+
+    </div>{{-- /body wrapper --}}
 
 </div>

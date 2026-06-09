@@ -250,17 +250,6 @@ class IntegrationChannelPage extends Component
     }
 
     /**
-     * Reset the form to the currently stored values.
-     */
-    public function cancel(SettingsService $settings): void
-    {
-        $this->formErrors = [];
-        $this->saved = false;
-        $this->webhookMessage = null;
-        $this->loadFields($settings);
-    }
-
-    /**
      * Render the component view.
      *
      * @return \Illuminate\View\View
