@@ -8,7 +8,6 @@ use App\Enums\UserRole;
 use App\Livewire\Settings\TeamPage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -60,13 +59,25 @@ class TeamPageTest extends TestCase
             ->assertSee('Управление операторами');
     }
 
-    public function test_renders_invite_card_heading(): void
+    public function test_renders_add_button_linking_to_create_page(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         Livewire::test(TeamPage::class)
-            ->assertSee('Пригласить оператора');
+            ->assertSee('Добавить')
+            ->assertSeeHtml(route('admin.settings.team.create'));
+    }
+
+    public function test_member_row_links_to_edit_page(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $member = User::factory()->manager()->create();
+
+        Livewire::test(TeamPage::class)
+            ->assertSeeHtml(route('admin.settings.team.edit', $member->id));
     }
 
     public function test_renders_members_table_heading(): void
@@ -126,182 +137,7 @@ class TeamPageTest extends TestCase
             ->assertSee('Участников пока нет');
     }
 
-    // ── Invite — happy path ────────────────────────────────────────────────────
-
-    public function test_invite_creates_user_with_chosen_role(): void
-    {
-        Mail::fake();
-
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'newop@example.com')
-            ->set('inviteRole', 'manager')
-            ->call('invite');
-
-        $this->assertDatabaseHas('users', [
-            'email' => 'newop@example.com',
-            'role' => 'manager',
-        ]);
-    }
-
-    public function test_invite_reveals_generated_password(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        $component = Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'reveal@example.com')
-            ->set('inviteRole', 'manager')
-            ->call('invite');
-
-        $password = $component->get('invitedPassword');
-        $this->assertNotNull($password);
-        $this->assertSame(16, strlen($password));
-
-        // The revealed password must match the stored hash.
-        $user = User::where('email', 'reveal@example.com')->firstOrFail();
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check($password, $user->password));
-    }
-
-    public function test_dismiss_invited_password_clears_reveal(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'dismiss@example.com')
-            ->set('inviteRole', 'manager')
-            ->call('invite')
-            ->assertNotSet('invitedPassword', null)
-            ->call('dismissInvitedPassword')
-            ->assertSet('invitedPassword', null);
-    }
-
-    public function test_invite_shows_success_notice_and_resets_form(): void
-    {
-        Mail::fake();
-
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        $component = Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'success@example.com')
-            ->set('inviteRole', 'manager')
-            ->call('invite');
-
-        $component
-            ->assertSet('inviteEmail', '')
-            ->assertSet('inviteRole', '');
-
-        $this->assertStringContainsString('success@example.com', $component->get('inviteSuccess'));
-    }
-
-    // ── Invite — validation ────────────────────────────────────────────────────
-
-    public function test_invite_rejects_empty_email(): void
-    {
-        Mail::fake();
-
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        Livewire::test(TeamPage::class)
-            ->set('inviteEmail', '')
-            ->set('inviteRole', 'manager')
-            ->call('invite')
-            ->assertHasErrors(['inviteEmail']);
-
-        $this->assertSame(1, User::count()); // only the admin
-    }
-
-    public function test_invite_rejects_invalid_email_format(): void
-    {
-        Mail::fake();
-
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'not-an-email')
-            ->set('inviteRole', 'manager')
-            ->call('invite')
-            ->assertHasErrors(['inviteEmail']);
-    }
-
-    public function test_invite_rejects_duplicate_email(): void
-    {
-        Mail::fake();
-
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        $existing = User::factory()->manager()->create(['email' => 'dup@example.com']);
-
-        Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'dup@example.com')
-            ->set('inviteRole', 'manager')
-            ->call('invite')
-            ->assertHasErrors(['inviteEmail']);
-
-        $this->assertSame(1, User::where('email', 'dup@example.com')->count());
-    }
-
-    public function test_invite_rejects_missing_role(): void
-    {
-        Mail::fake();
-
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'norole@example.com')
-            ->set('inviteRole', '')
-            ->call('invite')
-            ->assertHasErrors(['inviteRole']);
-    }
-
-    public function test_invite_rejects_invalid_role(): void
-    {
-        Mail::fake();
-
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        Livewire::test(TeamPage::class)
-            ->set('inviteEmail', 'badrole@example.com')
-            ->set('inviteRole', 'superuser')
-            ->call('invite')
-            ->assertHasErrors(['inviteRole']);
-    }
-
     // ── Delete — happy path ────────────────────────────────────────────────────
-
-    public function test_confirm_delete_sets_confirm_id(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        $member = User::factory()->manager()->create();
-
-        Livewire::test(TeamPage::class)
-            ->call('confirmDelete', $member->id)
-            ->assertSet('confirmDeleteId', $member->id);
-    }
-
-    public function test_cancel_delete_clears_confirm_id(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        $member = User::factory()->manager()->create();
-
-        Livewire::test(TeamPage::class)
-            ->call('confirmDelete', $member->id)
-            ->call('cancelDelete')
-            ->assertSet('confirmDeleteId', null);
-    }
 
     public function test_delete_member_removes_user_from_database(): void
     {
@@ -311,23 +147,9 @@ class TeamPageTest extends TestCase
         $member = User::factory()->manager()->create();
 
         Livewire::test(TeamPage::class)
-            ->call('confirmDelete', $member->id)
-            ->call('deleteMember');
+            ->call('deleteMember', $member->id);
 
         $this->assertDatabaseMissing('users', ['id' => $member->id]);
-    }
-
-    public function test_delete_member_resets_confirm_id_after_delete(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        $member = User::factory()->manager()->create();
-
-        Livewire::test(TeamPage::class)
-            ->call('confirmDelete', $member->id)
-            ->call('deleteMember')
-            ->assertSet('confirmDeleteId', null);
     }
 
     // ── Delete — self-lockout protection ──────────────────────────────────────
@@ -338,8 +160,7 @@ class TeamPageTest extends TestCase
         $this->actingAs($admin);
 
         $component = Livewire::test(TeamPage::class)
-            ->call('confirmDelete', $admin->id)
-            ->call('deleteMember');
+            ->call('deleteMember', $admin->id);
 
         // User must still exist in DB
         $this->assertDatabaseHas('users', ['id' => $admin->id]);
@@ -354,8 +175,7 @@ class TeamPageTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test(TeamPage::class)
-            ->call('confirmDelete', $admin->id)
-            ->call('deleteMember')
+            ->call('deleteMember', $admin->id)
             ->assertSee('Вы не можете удалить');
     }
 

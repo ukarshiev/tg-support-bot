@@ -16,9 +16,9 @@ use Livewire\Component;
  * "API и вебхуки" settings page — list of External Source cards.
  *
  * Shows a card per External Source (name, token status, webhook status) with
- * a link to the per-source edit page. Provides an inline "add source" form
- * that creates the source and auto-issues the initial bearer token, then
- * redirects to the edit page for the new source.
+ * a link to the per-source edit page. The "Добавить источник" button creates a
+ * source with a unique placeholder name and an auto-issued bearer token, then
+ * redirects to the edit page where the name is set.
  *
  * Token regeneration, webhook URL editing, and per-source config are handled
  * by ApiWebhookSourcePage (GET /admin/settings/api-webhooks/{source}).
@@ -39,17 +39,7 @@ class ApiWebhooksPage extends Component
     public array $sources = [];
 
     /**
-     * Whether the "add source" inline form is visible.
-     */
-    public bool $showAddForm = false;
-
-    /**
-     * Name being entered for a new External Source.
-     */
-    public string $newSourceName = '';
-
-    /**
-     * Validation/creation error for the "add source" form.
+     * Error shown when source creation fails.
      */
     public ?string $addError = null;
 
@@ -123,31 +113,10 @@ class ApiWebhooksPage extends Component
     }
 
     /**
-     * Show the "add source" inline form.
-     */
-    public function showAddSourceForm(): void
-    {
-        $this->showAddForm = true;
-        $this->newSourceName = '';
-        $this->addError = null;
-    }
-
-    /**
-     * Hide the "add source" inline form and reset its state.
-     */
-    public function cancelAddSource(): void
-    {
-        $this->showAddForm = false;
-        $this->newSourceName = '';
-        $this->addError = null;
-    }
-
-    /**
      * Create a new External Source and redirect to its edit page.
      *
-     * The service issues an initial bearer token. After creation the user is
-     * redirected to the per-source edit page where they can see the one-time
-     * reveal and configure the webhook URL.
+     * The source is created with a unique placeholder name (set properly on the
+     * edit page) and an auto-issued bearer token.
      *
      * @param ExternalSourceService $service
      */
@@ -155,30 +124,10 @@ class ApiWebhooksPage extends Component
     {
         $this->addError = null;
 
-        $name = trim($this->newSourceName);
-
-        if ($name === '') {
-            $this->addError = 'Введите название источника.';
-
-            return;
-        }
-
-        if (mb_strlen($name) > 255) {
-            $this->addError = 'Название не должно превышать 255 символов.';
-
-            return;
-        }
-
-        if (ExternalSource::where('name', $name)->exists()) {
-            $this->addError = 'Источник с таким названием уже существует.';
-
-            return;
-        }
-
         try {
             $source = $service->create(new ExternalSourceDto(
                 id: null,
-                name: $name,
+                name: $this->placeholderName(),
                 webhook_url: null,
                 created_at: null,
                 updated_at: null,
@@ -189,10 +138,38 @@ class ApiWebhooksPage extends Component
             return;
         }
 
-        $this->showAddForm = false;
-        $this->newSourceName = '';
-
         $this->redirectRoute('admin.settings.api-webhooks.source', ['source' => $source->id]);
+    }
+
+    /**
+     * Delete an External Source (its access tokens are removed via FK cascade).
+     *
+     * @param int $id
+     */
+    public function deleteSource(int $id): void
+    {
+        ExternalSource::whereKey($id)->delete();
+
+        $this->loadSources();
+    }
+
+    /**
+     * Build a unique placeholder name for a newly created source.
+     *
+     * @return string
+     */
+    private function placeholderName(): string
+    {
+        $base = 'Новый источник';
+        $name = $base;
+        $i = 1;
+
+        while (ExternalSource::where('name', $name)->exists()) {
+            $i++;
+            $name = "{$base} {$i}";
+        }
+
+        return $name;
     }
 
     /**

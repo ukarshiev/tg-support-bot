@@ -33,10 +33,7 @@
             </div>
 
             {{-- Action row --}}
-            <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <x-admin.button-secondary wire:click="cancel" type="button">
-                    Отмена
-                </x-admin.button-secondary>
+            <div class="mt-6 flex justify-end">
                 <x-admin.button-primary type="submit">
                     Сохранить
                 </x-admin.button-primary>
@@ -53,6 +50,113 @@
             @endif
 
         </form>
+    </x-admin.card>
+
+    {{-- Card: Notifications & sound — browser-level preferences (no DB) --}}
+    <x-admin.card title="Оповещения о новых сообщениях" class="mt-6">
+        <div x-data="{
+            notifyPermission: (typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'),
+            soundEnabled: (localStorage.getItem('tg-support-sound') !== '0'),
+            audioCtx: null,
+            enableNotifications() {
+                this.unlockAudio();
+                if (typeof Notification === 'undefined') { return; }
+                Notification.requestPermission().then(p => { this.notifyPermission = p; });
+            },
+            setSound(val) {
+                this.soundEnabled = val;
+                localStorage.setItem('tg-support-sound', val ? '1' : '0');
+                if (val) { this.unlockAudio(); this.playSound(); }
+            },
+            unlockAudio() {
+                try {
+                    if (!this.audioCtx) {
+                        const Ctx = window.AudioContext || window.webkitAudioContext;
+                        if (!Ctx) { return; }
+                        this.audioCtx = new Ctx();
+                    }
+                    if (this.audioCtx.state === 'suspended') { this.audioCtx.resume(); }
+                } catch (e) {}
+            },
+            playSound() {
+                try {
+                    this.unlockAudio();
+                    const ctx = this.audioCtx;
+                    if (!ctx) { return; }
+                    const now = ctx.currentTime;
+                    [880, 1175].forEach((freq, i) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.value = freq;
+                        const start = now + i * 0.12;
+                        gain.gain.setValueAtTime(0.0001, start);
+                        gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+                        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+                        osc.connect(gain).connect(ctx.destination);
+                        osc.start(start);
+                        osc.stop(start + 0.2);
+                    });
+                } catch (e) {}
+            }
+        }">
+            <p class="mb-5 text-sm text-text-secondary">
+                Работают в открытой вкладке раздела «Чаты». Настройки сохраняются в этом браузере.
+            </p>
+
+            <div class="space-y-5">
+
+                {{-- Browser notifications --}}
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <p class="text-sm font-medium text-text-primary">Уведомления в браузере</p>
+                        <p class="mt-0.5 text-xs text-text-secondary">Всплывающее уведомление, когда вкладка не в фокусе</p>
+                    </div>
+                    <div class="shrink-0">
+                        <template x-if="notifyPermission === 'granted'">
+                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                Включены
+                            </span>
+                        </template>
+                        <template x-if="notifyPermission === 'denied'">
+                            <span class="inline-flex items-center rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-600">Заблокированы в браузере</span>
+                        </template>
+                        <template x-if="notifyPermission === 'default'">
+                            <button type="button" x-on:click="enableNotifications()"
+                                class="inline-flex items-center justify-center rounded-lg border border-border-light bg-bg-primary px-5 py-2.5 text-sm font-semibold text-text-primary transition hover:bg-bg-secondary">
+                                Включить
+                            </button>
+                        </template>
+                        <template x-if="notifyPermission === 'unsupported'">
+                            <span class="text-sm text-text-secondary">Не поддерживается браузером</span>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="h-px bg-border-light"></div>
+
+                {{-- Sound --}}
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <p class="text-sm font-medium text-text-primary">Звуковой сигнал</p>
+                        <p class="mt-0.5 text-xs text-text-secondary">Короткий сигнал при новом сообщении в другом чате</p>
+                    </div>
+                    <div class="flex items-center gap-4 shrink-0">
+                        <button type="button" x-show="soundEnabled" x-on:click="playSound()"
+                            class="text-xs font-medium text-accent transition hover:underline">Проверить</button>
+                        <label class="inline-flex cursor-pointer items-center">
+                            <span class="relative">
+                                <input type="checkbox" class="peer sr-only" :checked="soundEnabled" x-on:change="setSound($event.target.checked)">
+                                <span class="block h-6 w-11 rounded-full bg-border-light transition peer-checked:bg-accent"></span>
+                                <span class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5"></span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+            </div>
+        </div>
     </x-admin.card>
 
 </div>

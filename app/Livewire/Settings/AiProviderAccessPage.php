@@ -187,17 +187,6 @@ class AiProviderAccessPage extends Component
     }
 
     /**
-     * Reset form to currently stored values.
-     */
-    public function cancel(SettingsService $settings): void
-    {
-        $this->formErrors = [];
-        $this->saved = false;
-        $this->verifyError = null;
-        $this->loadFields($settings);
-    }
-
-    /**
      * Render the component view.
      *
      * @return \Illuminate\View\View

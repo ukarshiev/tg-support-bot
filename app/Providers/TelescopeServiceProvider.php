@@ -2,8 +2,6 @@
 
 namespace App\Providers;
 
-use App\Models\User;
-use Illuminate\Support\Facades\Gate;
 use Laravel\Telescope\IncomingEntry;
 use Laravel\Telescope\Telescope;
 use Laravel\Telescope\TelescopeApplicationServiceProvider;
@@ -52,30 +50,17 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
     /**
      * Configure who can access Telescope.
      *
-     * Overrides the package default, which leaves Telescope open in the `local`
-     * environment. Access requires BOTH:
-     *  - APP_DEBUG to be true (Telescope is unreachable on production builds
-     *    where debug is off), and
-     *  - the `viewTelescope` gate to pass (authenticated admin).
-     * The gate is enforced in every environment — there is no `local` bypass.
+     * Overrides the package default (which leaves Telescope open in `local`).
+     * Dashboard access is gated by App\Http\Middleware\TelescopeBasicAuth:
+     *  - APP_DEBUG must be true (Telescope 404s on non-debug builds), and
+     *  - HTTP Basic auth must match the env credentials
+     *    (TELESCOPE_AUTH_USER / TELESCOPE_AUTH_PASSWORD).
+     *
+     * This callback (used by the package's own Authorize middleware) only
+     * mirrors the debug gate; the credential check lives in the middleware.
      */
     protected function authorization(): void
     {
-        $this->gate();
-
-        Telescope::auth(fn ($request) => config('app.debug') === true
-            && Gate::check('viewTelescope', [$request->user()]));
-    }
-
-    /**
-     * Register the Telescope gate.
-     *
-     * Restricts the Telescope dashboard (/telescope) to admin operators
-     * (User::isAdmin()), matching the admin-only access used across the
-     * settings panel. A guest ($request->user() === null) is always denied.
-     */
-    protected function gate(): void
-    {
-        Gate::define('viewTelescope', fn (?User $user): bool => $user?->isAdmin() ?? false);
+        Telescope::auth(fn ($request) => config('app.debug') === true);
     }
 }

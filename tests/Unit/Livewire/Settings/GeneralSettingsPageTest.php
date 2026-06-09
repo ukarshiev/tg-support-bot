@@ -80,22 +80,4 @@ class GeneralSettingsPageTest extends TestCase
         $this->assertFalse($component->saved);
         $this->assertArrayHasKey('template_topic_name', $component->formErrors);
     }
-
-    public function test_cancel_resets_template_to_stored_value(): void
-    {
-        /** @var \Mockery\MockInterface&SettingsService $mock */
-        $mock = Mockery::mock(SettingsService::class);
-        $mock->shouldReceive('get')->with('telegram.template_topic_name')->andReturn('Stored');
-
-        $component = new GeneralSettingsPage();
-        $component->mount($mock);
-        $component->template_topic_name = 'Changed';
-        $component->saved = true;
-
-        $component->cancel($mock);
-
-        $this->assertSame('Stored', $component->template_topic_name);
-        $this->assertFalse($component->saved);
-        $this->assertEmpty($component->formErrors);
-    }
 }

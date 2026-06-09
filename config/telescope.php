@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\TelescopeBasicAuth;
 use Laravel\Telescope\Http\Middleware\Authorize;
 use Laravel\Telescope\Watchers;
 
@@ -94,7 +95,24 @@ return [
 
     'middleware' => [
         'web',
+        TelescopeBasicAuth::class,
         Authorize::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Telescope Basic Auth Credentials
+    |--------------------------------------------------------------------------
+    |
+    | Simple HTTP Basic auth credentials for the Telescope dashboard, enforced
+    | by App\Http\Middleware\TelescopeBasicAuth (together with APP_DEBUG=true).
+    | Leave empty to deny access (fail closed).
+    |
+    */
+
+    'basic_auth' => [
+        'username' => env('TELESCOPE_AUTH_USER'),
+        'password' => env('TELESCOPE_AUTH_PASSWORD'),
     ],
 
     /*

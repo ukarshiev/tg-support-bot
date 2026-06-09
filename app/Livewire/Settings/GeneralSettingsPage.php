@@ -59,16 +59,6 @@ class GeneralSettingsPage extends Component
     }
 
     /**
-     * Reset form fields to the values currently stored in SettingsService.
-     */
-    public function cancel(SettingsService $settings): void
-    {
-        $this->formErrors = [];
-        $this->saved = false;
-        $this->template_topic_name = (string) ($settings->get('telegram.template_topic_name') ?? '');
-    }
-
-    /**
      * Render the component view.
      *
      * @return \Illuminate\View\View

@@ -178,18 +178,6 @@ class AiAssistantPage extends Component
     }
 
     /**
-     * Reset form to the currently stored values.
-     */
-    public function cancel(SettingsService $settings): void
-    {
-        $this->formErrors = [];
-        $this->saved = false;
-        $this->showAutoReplyWarning = false;
-        $this->pendingAutoReply = false;
-        $this->loadFields($settings);
-    }
-
-    /**
      * Render the component view.
      *
      * @return \Illuminate\View\View

@@ -70,7 +70,6 @@ class ApiWebhookSourcePageTest extends TestCase
 
         Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
             ->assertSee('My Integration')
-            ->assertSee('API и вебхуки')   // breadcrumb
             ->assertSee('Ключ API')
             ->assertSee('URL вебхука')
             ->assertSee('Разрешённые IP-адреса')
@@ -232,6 +231,53 @@ class ApiWebhookSourcePageTest extends TestCase
             'id' => $source->id,
             'webhook_url' => 'not-a-valid-url',
         ]);
+    }
+
+    public function test_save_updates_source_name(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'Новый источник']);
+
+        Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('sourceName', 'CRM')
+            ->call('saveWebhookUrl')
+            ->assertSet('saved', true)
+            ->assertSet('sourceName', 'CRM');
+
+        $this->assertDatabaseHas('external_sources', ['id' => $source->id, 'name' => 'CRM']);
+    }
+
+    public function test_save_rejects_empty_name(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $source = ExternalSource::factory()->create(['name' => 'CRM']);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('sourceName', '   ')
+            ->call('saveWebhookUrl');
+
+        $this->assertNotNull($component->get('nameError'));
+        $this->assertDatabaseHas('external_sources', ['id' => $source->id, 'name' => 'CRM']);
+    }
+
+    public function test_save_rejects_duplicate_name(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        ExternalSource::factory()->create(['name' => 'Taken']);
+        $source = ExternalSource::factory()->create(['name' => 'Mine']);
+
+        $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
+            ->set('sourceName', 'Taken')
+            ->call('saveWebhookUrl');
+
+        $this->assertNotNull($component->get('nameError'));
+        $this->assertDatabaseHas('external_sources', ['id' => $source->id, 'name' => 'Mine']);
     }
 
     public function test_save_webhook_url_sets_saved_flag(): void

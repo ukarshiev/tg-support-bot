@@ -69,7 +69,7 @@ class ApiWebhooksPageTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test(ApiWebhooksPage::class)
-            ->assertSee('Внешние источники не созданы');
+            ->assertSee('Источников пока нет');
     }
 
     public function test_renders_sources_on_mount(): void
@@ -98,53 +98,53 @@ class ApiWebhooksPageTest extends TestCase
             ->assertSee('Добавить источник');
     }
 
-    public function test_add_source_creates_source_and_token(): void
+    public function test_add_source_creates_source_with_placeholder_name_and_token(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         Livewire::test(ApiWebhooksPage::class)
-            ->call('showAddSourceForm')
-            ->set('newSourceName', 'CRM')
             ->call('addSource')
             ->assertRedirect();
 
-        $this->assertDatabaseHas('external_sources', ['name' => 'CRM']);
-
-        $source = ExternalSource::where('name', 'CRM')->first();
+        $source = ExternalSource::first();
         $this->assertNotNull($source);
+        $this->assertSame('Новый источник', $source->name);
         $this->assertDatabaseHas('external_source_access_tokens', [
             'external_source_id' => $source->id,
             'active' => true,
         ]);
     }
 
-    public function test_add_source_rejects_empty_name(): void
+    public function test_add_source_generates_unique_placeholder_name(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
-        $component = Livewire::test(ApiWebhooksPage::class)
-            ->set('newSourceName', '   ')
-            ->call('addSource');
+        ExternalSource::factory()->create(['name' => 'Новый источник']);
 
-        $this->assertNotNull($component->get('addError'));
-        $this->assertSame(0, ExternalSource::count());
+        Livewire::test(ApiWebhooksPage::class)
+            ->call('addSource')
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('external_sources', ['name' => 'Новый источник 2']);
     }
 
-    public function test_add_source_rejects_duplicate_name(): void
+    public function test_delete_source_removes_only_the_targeted_source(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
-        ExternalSource::factory()->create(['name' => 'Existing']);
+        $alpha = ExternalSource::factory()->create(['name' => 'Alpha']);
+        $beta = ExternalSource::factory()->create(['name' => 'Beta']);
 
-        $component = Livewire::test(ApiWebhooksPage::class)
-            ->set('newSourceName', 'Existing')
-            ->call('addSource');
+        Livewire::test(ApiWebhooksPage::class)
+            ->call('deleteSource', $alpha->id)
+            ->assertDontSee('Alpha')
+            ->assertSee('Beta');
 
-        $this->assertNotNull($component->get('addError'));
-        $this->assertSame(1, ExternalSource::where('name', 'Existing')->count());
+        $this->assertDatabaseMissing('external_sources', ['id' => $alpha->id]);
+        $this->assertDatabaseHas('external_sources', ['id' => $beta->id]);
     }
 
     // ── ExternalSource model helper ───────────────────────────────────────────

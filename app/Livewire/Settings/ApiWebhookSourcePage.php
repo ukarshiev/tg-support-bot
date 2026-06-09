@@ -58,6 +58,9 @@ class ApiWebhookSourcePage extends Component
     /** @var string|null Validation error for webhook URL */
     public ?string $webhookError = null;
 
+    /** @var string|null Validation error for the source name */
+    public ?string $nameError = null;
+
     /** @var bool Webhook URL was saved successfully in this request */
     public bool $saved = false;
 
@@ -124,18 +127,40 @@ class ApiWebhookSourcePage extends Component
     }
 
     /**
-     * Save the webhook URL and allowed-IPs allowlist for this External Source.
+     * Save the source name, webhook URL, and allowed-IPs allowlist.
      *
-     * Empty webhook URL is accepted (clears the stored URL); a non-empty value
-     * must pass FILTER_VALIDATE_URL. The allowed-IPs textarea (one entry per
-     * line) is parsed into a deduplicated list; every entry must be a valid IP.
-     * An empty allowlist means requests are allowed from any IP.
+     * The name is required, max 255 chars, and unique across sources (excluding
+     * this one). Empty webhook URL is accepted (clears the stored URL); a
+     * non-empty value must pass FILTER_VALIDATE_URL. The allowed-IPs textarea
+     * (one entry per line) is parsed into a deduplicated list; every entry must
+     * be a valid IP. An empty allowlist means requests are allowed from any IP.
      */
     public function saveWebhookUrl(): void
     {
+        $this->nameError = null;
         $this->webhookError = null;
         $this->allowedIpsError = null;
         $this->saved = false;
+
+        $name = trim($this->sourceName);
+
+        if ($name === '') {
+            $this->nameError = 'Введите название источника.';
+
+            return;
+        }
+
+        if (mb_strlen($name) > 255) {
+            $this->nameError = 'Название не должно превышать 255 символов.';
+
+            return;
+        }
+
+        if (ExternalSource::where('name', $name)->where('id', '!=', $this->sourceId)->exists()) {
+            $this->nameError = 'Источник с таким названием уже существует.';
+
+            return;
+        }
 
         $url = trim($this->webhookUrl);
 
@@ -160,28 +185,13 @@ class ApiWebhookSourcePage extends Component
         }
 
         $externalSource->update([
+            'name' => $name,
             'webhook_url' => $url !== '' ? $url : null,
             'allowed_ips' => ! empty($ips) ? $ips : null,
         ]);
 
+        $this->sourceName = $name;
         $this->saved = true;
-    }
-
-    /**
-     * Reset the form to the currently stored values.
-     */
-    public function cancel(): void
-    {
-        $this->saved = false;
-        $this->webhookError = null;
-        $this->allowedIpsError = null;
-
-        $externalSource = ExternalSource::find($this->sourceId);
-
-        if ($externalSource) {
-            $this->webhookUrl = (string) ($externalSource->webhook_url ?? '');
-            $this->allowedIps = implode("\n", $externalSource->allowed_ips ?? []);
-        }
     }
 
     /**

@@ -271,27 +271,4 @@ class AiAssistantPageTest extends TestCase
             ->assertSet('auto_reply', false)
             ->assertSet('showAutoReplyWarning', false);
     }
-
-    // ── Cancel ───────────────────────────────────────────────────────────────
-
-    public function test_cancel_resets_to_stored_values(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        /** @var SettingsService $settings */
-        $settings = app(SettingsService::class);
-        $settings->set('ai.default_provider', 'openai');
-        // openai must have access configured to remain the active provider.
-        $settings->set('ai.openai_api_key', 'sk-test');
-        $settings->set('ai.system_prompt', 'Original prompt');
-
-        Livewire::test(AiAssistantPage::class)
-            ->set('default_provider', 'gigachat')
-            ->set('system_prompt', 'Changed')
-            ->call('cancel')
-            ->assertSet('default_provider', 'openai')
-            ->assertSet('system_prompt', 'Original prompt')
-            ->assertSet('saved', false);
-    }
 }

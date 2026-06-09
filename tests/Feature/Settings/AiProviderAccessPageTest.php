@@ -252,23 +252,4 @@ class AiProviderAccessPageTest extends TestCase
 
         $this->assertSame('gc-original', (string) $settings->get('ai.gigachat_client_secret'));
     }
-
-    // ── Cancel ───────────────────────────────────────────────────────────────
-
-    public function test_cancel_resets_openai_fields_to_stored_values(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        /** @var SettingsService $settings */
-        $settings = app(SettingsService::class);
-        $settings->set('ai.openai_model', 'gpt-4o');
-
-        Livewire::test(AiProviderAccessPage::class, ['provider' => 'openai'])
-            ->set('openai_model', 'changed-model')
-            ->call('cancel')
-            ->assertSet('openai_model', 'gpt-4o')
-            ->assertSet('saved', false)
-            ->assertSet('openai_api_key', null);
-    }
 }

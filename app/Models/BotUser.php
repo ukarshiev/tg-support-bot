@@ -70,11 +70,18 @@ class BotUser extends Model
     }
 
     /**
+     * Newest message of the conversation, by message date.
+     *
+     * Resolved by greatest `created_at` (tie-broken by `id`) rather than the
+     * default `id`-only, so the dialog-list preview/timestamp and the
+     * "last activity" sort agree even when messages are persisted out of id
+     * order by queued jobs.
+     *
      * @return HasOne
      */
     public function lastMessage(): HasOne
     {
-        return $this->hasOne(Message::class)->latestOfMany();
+        return $this->hasOne(Message::class)->latestOfMany(['created_at', 'id']);
     }
 
     /**
