@@ -13,7 +13,7 @@ use Tests\TestCase;
 /**
  * Unit-level tests for the IntegrationChannelPage Livewire component.
  *
- * Exercises mount(), save(), connect(), and cancel() in isolation using a
+ * Exercises mount(), save(), and connect() in isolation using a
  * mocked SettingsService / ChannelStatusService / WebhookRegistrationService
  * — no DB or Livewire rendering required for the core logic assertions.
  */
@@ -405,34 +405,5 @@ class IntegrationChannelPageTest extends TestCase
 
         $this->assertFalse($component->saved);
         $this->assertArrayHasKey('telegram_group_id', $component->formErrors);
-    }
-
-    // ── cancel() test ─────────────────────────────────────────────────────────
-
-    public function test_cancel_resets_fields_from_settings(): void
-    {
-        /** @var \Mockery\MockInterface&SettingsService $settings */
-        $settings = Mockery::mock(SettingsService::class);
-        $settings->shouldReceive('get')->with('telegram.group_id')->andReturn('-100stored');
-        $settings->shouldReceive('get')->with('telegram.token')->andReturn('');
-        $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('');
-        $settings->shouldReceive('get')->with('telegram_ai.username')->andReturn('');
-        $settings->shouldReceive('get')->with('telegram_ai.token')->andReturn('');
-        $settings->shouldReceive('get')->with('telegram_ai.secret')->andReturn('');
-        $settings->shouldReceive('get')->with('vk.token')->andReturn('');
-        $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
-        $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
-        $settings->shouldReceive('get')->with('max.token')->andReturn('');
-        $settings->shouldReceive('get')->with('max.secret_key')->andReturn('');
-
-        $component = new IntegrationChannelPage();
-        $component->mount('telegram', $settings, $this->statusMock());
-        $component->telegram_group_id = 'changed';
-        $component->saved = true;
-        $component->cancel($settings);
-
-        $this->assertSame('-100stored', $component->telegram_group_id);
-        $this->assertFalse($component->saved);
-        $this->assertEmpty($component->formErrors);
     }
 }

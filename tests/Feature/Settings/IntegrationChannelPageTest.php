@@ -193,14 +193,13 @@ class IntegrationChannelPageTest extends TestCase
             ->assertSee('Подробнее в документации');
     }
 
-    public function test_renders_breadcrumb_with_channel_name(): void
+    public function test_renders_channel_name(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->assertSee('Интеграции')
-            ->assertSee('Подключение')
+            ->assertOk()
             ->assertSee('Telegram');
     }
 
@@ -345,25 +344,6 @@ class IntegrationChannelPageTest extends TestCase
             ->call('save');
 
         $this->assertNotEmpty($component->get('formErrors'));
-    }
-
-    // ── Cancel ────────────────────────────────────────────────────────────────
-
-    public function test_cancel_resets_form_to_stored_values(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        /** @var SettingsService $settings */
-        $settings = app(SettingsService::class);
-        $settings->set('telegram.group_id', '-100original');
-
-        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', '-100changed')
-            ->call('cancel')
-            ->assertSet('telegram_group_id', '-100original')
-            ->assertSet('saved', false)
-            ->assertSet('webhookMessage', null);
     }
 
     // ── Connect (save + webhook) ──────────────────────────────────────────────
