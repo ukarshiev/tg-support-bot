@@ -2,6 +2,7 @@
     'botUser',
     'isActive' => false,
     'hasUnread' => false,
+    'unreadCount' => 0,
 ])
 
 @php
@@ -38,7 +39,23 @@
         ? mb_substr($botUser->lastMessage->text, 0, 40) . (mb_strlen($botUser->lastMessage->text) > 40 ? '…' : '')
         : 'Нет сообщений';
 
-    $timestamp = $botUser->lastMessage?->created_at?->format('H:i') ?? null;
+    /*
+     * Last-message timestamp — Telegram-style, so the date is visible and the
+     * date-descending dialog order reads correctly (a time-only "H:i" makes a
+     * yesterday-22:46 row look out of place above a today-00:16 row).
+     *   today      → "15:55"
+     *   yesterday  → "Вчера"
+     *   this year  → "06.06"
+     *   older      → "06.06.25"
+     */
+    $lastAt = $botUser->lastMessage?->created_at;
+    $timestamp = match (true) {
+        $lastAt === null         => null,
+        $lastAt->isToday()       => $lastAt->format('H:i'),
+        $lastAt->isYesterday()   => 'Вчера',
+        $lastAt->isCurrentYear() => $lastAt->format('d.m'),
+        default                  => $lastAt->format('d.m.y'),
+    };
 
     $isClosed = (bool) $botUser->is_closed;
     $isBanned = (bool) $botUser->is_banned;
@@ -132,13 +149,17 @@
                 {{ $preview }}
             </span>
 
-            {{-- Unread badge — shown only when hasUnread --}}
+            {{-- Unread badge — shows the count of new incoming messages --}}
             {{-- Design: node IFQZ6 — cornerRadius 10, bg-badge #4F6EF7, padding [2,7] --}}
             @if($hasUnread)
+                @php
+                    $unreadLabel = $unreadCount > 99 ? '99+' : (string) max($unreadCount, 1);
+                @endphp
                 <span
                     class="shrink-0 flex items-center justify-center text-white font-semibold"
-                    style="background:#4F6EF7; border-radius:10px; padding:2px 7px; font-size:11px; min-width:20px;"
-                >•</span>
+                    style="background:#4F6EF7; border-radius:10px; padding:2px 7px; font-size:11px; min-width:20px; line-height:16px;"
+                    title="{{ $unreadLabel }} новых сообщений"
+                >{{ $unreadLabel }}</span>
             @endif
         </div>
     </div>
