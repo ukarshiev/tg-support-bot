@@ -1,45 +1,25 @@
 <div>
 
-    {{-- ── Top bar — breadcrumb + bottom border ─────────────────────────────── --}}
-    <div class="flex items-center border-b border-border-light bg-bg-primary px-10 py-0" style="height:64px">
-        <div class="flex items-center gap-3">
-            <a href="{{ route('admin.settings.api-webhooks') }}"
-               class="flex items-center gap-1 text-text-secondary transition hover:text-text-primary"
-               aria-label="Назад к API и вебхукам">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
-                     stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m7-7-7 7 7 7" />
+    {{-- ── Body ─────────────────────────────────────────────────────────────── --}}
+    <div class="p-4 lg:p-8">
+
+        {{-- ── Notices ───────────────────────────────────────────────────────── --}}
+        @if ($tokenError)
+            <div class="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500"
+                     fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M12 9v2m0 4h.01M6.938 19h10.124A2 2 0 0019 16.27L13.938 7A2 2 0 0010.062 7L5 16.27A2 2 0 006.938 19z" />
                 </svg>
-            </a>
-            <a href="{{ route('admin.settings.api-webhooks') }}"
-               class="text-sm text-text-secondary transition hover:text-text-primary">
-                API и вебхуки
-            </a>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-text-secondary" fill="none"
-                 viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-            <span class="text-sm font-semibold text-text-primary">{{ $sourceName }}</span>
-        </div>
-    </div>
+                {{ $tokenError }}
+            </div>
+        @endif
 
-    {{-- ── Notices ───────────────────────────────────────────────────────────── --}}
-    @if ($tokenError)
-        <div class="mx-8 mt-6 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500"
-                 fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M12 9v2m0 4h.01M6.938 19h10.124A2 2 0 0019 16.27L13.938 7A2 2 0 0010.062 7L5 16.27A2 2 0 006.938 19z" />
-            </svg>
-            {{ $tokenError }}
-        </div>
-    @endif
+        {{-- ── Two-column grid ──────────────────────────────────────────────── --}}
+        <div class="grid grid-cols-1 gap-4 lg:gap-7 lg:grid-cols-[1fr_320px]">
 
-    {{-- ── Two-column body ──────────────────────────────────────────────────── --}}
-    <div class="grid grid-cols-1 gap-7 p-8 lg:grid-cols-[1fr_320px]">
-
-        {{-- ── Form Card ────────────────────────────────────────────────────── --}}
-        <div class="rounded-2xl border border-border-light bg-bg-primary" style="padding:28px 32px">
+            {{-- ── Form Card ────────────────────────────────────────────────────── --}}
+            <div class="rounded-2xl border border-border-light bg-bg-primary p-4 lg:px-8 lg:py-7">
 
             {{-- Card header: icon + titles --}}
             <div class="flex items-center gap-3.5">
@@ -55,6 +35,24 @@
                     <p class="mt-0.5 text-xs text-text-secondary">Bearer-токен и вебхук внешнего источника</p>
                 </div>
             </div>
+
+            {{-- ── Source name ─────────────────────────────────────────────────── --}}
+            <x-admin.form-field
+                label="Название источника"
+                for="sourceName"
+                hint="Отображается в списке источников"
+                :error="$nameError"
+                class="mt-6"
+            >
+                <input
+                    id="sourceName"
+                    type="text"
+                    wire:model="sourceName"
+                    placeholder="Например: CRM, Интернет-магазин"
+                    autocomplete="off"
+                    class="block w-full rounded-lg border bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 {{ $nameError ? 'border-red-400' : 'border-border-light' }}"
+                />
+            </x-admin.form-field>
 
             <div class="my-6 h-px bg-border-light"></div>
 
@@ -172,11 +170,8 @@
 
             </div>
 
-            {{-- Actions row — right-aligned: «Отмена» + «Сохранить» --}}
+            {{-- Actions row — right-aligned «Сохранить» --}}
             <div class="mt-6 flex items-center justify-end gap-3">
-                <x-admin.button-secondary wire:click="cancel" type="button">
-                    Отмена
-                </x-admin.button-secondary>
                 <x-admin.button-primary type="button" wire:click="saveWebhookUrl" wire:loading.attr="disabled" wire:target="saveWebhookUrl">
                     <span wire:loading.remove wire:target="saveWebhookUrl">Сохранить</span>
                     <span wire:loading wire:target="saveWebhookUrl">Сохранение...</span>
@@ -198,7 +193,7 @@
 
         {{-- ── Instruction panel (REST API reference) ──────────────────────── --}}
         <div>
-            <div class="rounded-xl border border-border-light bg-bg-primary p-5 lg:p-6">
+            <div class="rounded-xl border border-border-light bg-bg-primary p-4 lg:p-6">
 
                 {{-- Panel header --}}
                 <div class="mb-5 flex items-center gap-2">
@@ -237,6 +232,8 @@
             </div>
         </div>
 
-    </div>
+        </div>{{-- /two-column grid --}}
+
+    </div>{{-- /body wrapper --}}
 
 </div>
