@@ -13,9 +13,129 @@
 
 <div
     class="flex h-screen overflow-hidden"
-    wire:poll.5s="pollUpdates"
-    x-data="{ lightboxSrc: '', lightboxOpen: false, infoPanelOpen: false }"
+    {{-- .keep-alive keeps polling while the tab is in the background, so desktop
+         notifications / sound / favicon badge fire even when the operator is on
+         another tab (Livewire pauses a plain wire:poll when the tab is hidden). --}}
+    wire:poll.5s.keep-alive="pollUpdates"
+    x-data="{
+        lightboxSrc: '',
+        lightboxOpen: false,
+        infoPanelOpen: false,
+        audioCtx: null,
+        originalFavicon: null,
+        originalFaviconType: null,
+        pendingCount: 0,
+        unlockAudio() {
+            // AudioContext must be created/resumed from a user gesture (autoplay policy).
+            try {
+                if (!this.audioCtx) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    if (!Ctx) { return; }
+                    this.audioCtx = new Ctx();
+                }
+                if (this.audioCtx.state === 'suspended') { this.audioCtx.resume(); }
+            } catch (e) {}
+        },
+        showNotification(detail) {
+            // Preferences are managed in Settings → Основные (browser-level).
+            if (typeof Notification === 'undefined' || Notification.permission !== 'granted') { return; }
+            // Don't interrupt while the operator is actively looking at the workspace —
+            // the dialog-list badge already covers that case.
+            if (document.hasFocus()) { return; }
+            const n = new Notification(detail.title, {
+                body: detail.body,
+                tag: 'tg-support-chat',
+                renotify: true,
+            });
+            n.onclick = () => { window.focus(); n.close(); };
+        },
+        playSound() {
+            // Sound on/off lives in localStorage (toggled in Settings → Основные).
+            if (localStorage.getItem('tg-support-sound') === '0') { return; }
+            try {
+                this.unlockAudio();
+                const ctx = this.audioCtx;
+                if (!ctx) { return; }
+                const now = ctx.currentTime;
+                // Short pleasant two-tone 'ding' (A5 → D6) via oscillators — no asset needed.
+                [880, 1175].forEach((freq, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    const start = now + i * 0.12;
+                    gain.gain.setValueAtTime(0.0001, start);
+                    gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+                    osc.connect(gain).connect(ctx.destination);
+                    osc.start(start);
+                    osc.stop(start + 0.2);
+                });
+            } catch (e) {}
+        },
+        faviconEl() {
+            let el = document.querySelector('link[rel~=icon]');
+            if (!el) {
+                el = document.createElement('link');
+                el.setAttribute('rel', 'icon');
+                document.head.appendChild(el);
+            }
+            return el;
+        },
+        setFaviconAlert(count) {
+            // Redraw the favicon with a red badge (count) over the current icon.
+            try {
+                const size = 64;
+                const canvas = document.createElement('canvas');
+                canvas.width = size; canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                const render = (baseImg) => {
+                    ctx.clearRect(0, 0, size, size);
+                    if (baseImg) {
+                        ctx.drawImage(baseImg, 0, 0, size, size);
+                    } else {
+                        ctx.fillStyle = '#4F6EF7';
+                        ctx.beginPath(); ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); ctx.fill();
+                    }
+                    const r = 24, cx = size - r, cy = r;
+                    ctx.fillStyle = '#EF4444';
+                    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 34px sans-serif';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(count > 9 ? '9+' : String(count), cx, cy + 2);
+                    const el = this.faviconEl();
+                    el.setAttribute('type', 'image/png');
+                    el.setAttribute('href', canvas.toDataURL('image/png'));
+                };
+                const img = new Image();
+                img.onload = () => render(img);
+                img.onerror = () => render(null);
+                img.src = this.originalFavicon || '/favicon.ico';
+            } catch (e) {}
+        },
+        restoreFavicon() {
+            this.pendingCount = 0;
+            const el = this.faviconEl();
+            el.setAttribute('type', this.originalFaviconType || 'image/x-icon');
+            el.setAttribute('href', this.originalFavicon || '/favicon.ico');
+        },
+        notifyFavicon(detail) {
+            // Only badge the tab while it's in the background (operator is elsewhere).
+            if (!document.hidden) { return; }
+            this.pendingCount += (detail && detail.count ? detail.count : 1);
+            this.setFaviconAlert(this.pendingCount);
+        }
+    }"
+    x-init="
+        originalFavicon = faviconEl().getAttribute('href');
+        originalFaviconType = faviconEl().getAttribute('type');
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) restoreFavicon(); });
+        window.addEventListener('focus', () => restoreFavicon());
+        ['click','keydown'].forEach(ev => document.addEventListener(ev, () => unlockAudio(), { once: true }));
+    "
     x-on:open-lightbox.window="lightboxSrc = $event.detail.src; lightboxOpen = true"
+    x-on:new-incoming-messages.window="showNotification($event.detail); playSound(); notifyFavicon($event.detail)"
     x-on:messages-updated.window="$nextTick(() => {
         const thread = document.getElementById('chat-thread');
         if (thread) thread.scrollTop = thread.scrollHeight;
@@ -105,34 +225,6 @@
             </div>
         </div>
 
-        {{-- Search bar: bg-sidebar-active #2D3348, rounded-8, search icon + placeholder --}}
-        {{-- Design: node czMC8 — fill bg-sidebar-active, cornerRadius 8, padding [10,12], gap 8 --}}
-        <div class="relative shrink-0">
-            <div class="flex items-center gap-2 rounded-lg bg-sidebar-active w-full" style="padding: 10px 12px; border-radius:8px;">
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="shrink-0 text-text-sidebar-secondary"
-                    width="16" height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-                </svg>
-                <input
-                    type="text"
-                    wire:model.live.debounce.300ms="search"
-                    placeholder="Поиск чатов..."
-                    class="flex-1 bg-transparent text-sm text-text-sidebar placeholder-text-sidebar-secondary outline-none border-none"
-                    aria-label="Поиск чатов"
-                >
-            </div>
-        </div>
-
         {{-- Filter tabs: pill-style. Active = bg-accent text-white rounded-md 13/600 --}}
         {{-- Design: node YYO8P — gap 4; BitoF active pill bg-accent; others transparent text-sidebar-secondary --}}
         <div class="flex shrink-0" style="gap:4px;">
@@ -151,7 +243,20 @@
         <div class="w-full shrink-0 h-px bg-border-sidebar"></div>
 
         {{-- Dialog list --}}
-        <div class="flex-1 overflow-y-auto -mx-4 pb-4">
+        <div
+            class="chat-list-scroll flex-1 overflow-y-auto -mx-4 pb-4"
+            x-data="{
+                loadingMore: false,
+                onScroll() {
+                    const el = this.$el;
+                    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120 && this.$wire.hasMoreDialogs && !this.loadingMore) {
+                        this.loadingMore = true;
+                        this.$wire.loadMoreDialogs().then(() => { this.loadingMore = false; });
+                    }
+                }
+            }"
+            x-on:scroll.passive="onScroll()"
+        >
             @forelse($dialogList as $user)
                 <div
                     wire:click="selectChat({{ $user->id }})"
@@ -162,29 +267,54 @@
                         :bot-user="$user"
                         :is-active="$activeBotUserId === $user->id"
                         :has-unread="$this->hasUnread($user)"
+                        :unread-count="$this->unreadCount($user)"
                     />
                 </div>
             @empty
                 <p class="px-4 py-6 text-center text-sm text-text-sidebar-secondary">Нет диалогов</p>
             @endforelse
+
+            {{-- Load-more spinner (infinite scroll) --}}
+            @if($hasMoreDialogs)
+                <div class="flex justify-center py-3" wire:loading.flex wire:target="loadMoreDialogs">
+                    <svg class="h-5 w-5 animate-spin text-text-sidebar-secondary" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                    </svg>
+                </div>
+            @endif
         </div>
     </aside>
 
     {{-- ══ CENTER — Chat area ═════════════════════════════════════════════════ --}}
     {{-- Design: node YMMFj — bg-primary, layout vertical, fill_container --}}
     <main
-        class="flex flex-1 flex-col bg-bg-primary overflow-hidden
+        class="relative flex flex-1 flex-col bg-bg-primary overflow-hidden
                {{ $activeBotUserId ? 'flex' : 'hidden md:flex' }}"
     >
+        {{-- Preloader — shown while a chat is being opened (selectChat round-trip) --}}
+        <div
+            wire:loading.flex
+            wire:target="selectChat"
+            wire:key="chat-preloader"
+            class="absolute inset-0 z-20 flex items-center justify-center bg-bg-secondary"
+            aria-hidden="true"
+        >
+            <svg class="h-9 w-9 animate-spin text-accent" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+        </div>
+
         @if($activeBotUser)
 
             {{-- Chat header --}}
             {{-- Design: node xQRXL — height 72, padding [0,24], space-between, bg-primary --}}
-            <div class="flex items-center justify-between shrink-0 bg-bg-primary border-b border-border-light" style="height:72px; padding: 0 24px;">
+            <div class="flex items-center justify-between shrink-0 bg-bg-primary border-b border-border-light" style="height:72px; padding: 0 10px;">
 
-                {{-- Header Left: mobile back + avatar + name + platform --}}
+                {{-- Header Left: mobile back + clickable (avatar + name → opens info panel) --}}
                 {{-- Design: node nQRoU — gap 14, alignItems center --}}
-                <div class="flex items-center" style="gap:14px;">
+                <div class="flex items-center min-w-0" style="gap:14px;">
 
                     {{-- Mobile back button --}}
                     <button
@@ -197,61 +327,135 @@
                         </svg>
                     </button>
 
-                    {{-- User avatar (42×42 ellipse) with initials --}}
                     @php
                         $hdrColors = ['#6366F1','#E85D75','#34C759','#F5A623','#06B6D4','#10B981','#8B5CF6','#EF4444'];
                         $hdrIdx = abs(crc32((string) $activeBotUser->chat_id)) % 8;
                         $hdrColor = $hdrColors[$hdrIdx];
                         $hdrInitials = strtoupper(substr((string) $activeBotUser->chat_id, 0, 2));
+                        $platformLabel = match ($activeBotUser->platform) {
+                            'telegram' => 'Telegram',
+                            'vk'       => 'VK',
+                            'max'      => 'Max',
+                            default    => ucfirst($activeBotUser->platform),
+                        };
                     @endphp
-                    <div
-                        class="relative shrink-0 flex items-center justify-center rounded-full text-white font-semibold select-none"
-                        style="width:42px; height:42px; background:{{ $hdrColor }}; font-size:16px;"
-                        aria-hidden="true"
-                    >{{ $hdrInitials }}</div>
 
-                    {{-- Name + platform sub-line --}}
-                    {{-- Design: node O6aEj — vertical layout gap 2 --}}
-                    <div class="flex flex-col" style="gap:2px;">
-                        <span class="text-sm font-semibold text-text-primary leading-tight truncate max-w-[280px]">
-                            {{ $activeBotUser->chat_id }}
-                        </span>
-                        @php
-                            $platformLabel = match ($activeBotUser->platform) {
-                                'telegram' => 'Telegram',
-                                'vk'       => 'VK',
-                                'max'      => 'Max',
-                                default    => ucfirst($activeBotUser->platform),
-                            };
-                        @endphp
-                        <span class="text-xs text-text-secondary leading-tight">
-                            {{ '@' . $activeBotUser->chat_id }} · {{ $platformLabel }}
-                        </span>
+                    {{-- Avatar + name — click opens the info panel (Telegram-style overlay) --}}
+                    <div
+                        x-on:click="infoPanelOpen = true"
+                        x-on:keydown.enter="infoPanelOpen = true"
+                        role="button"
+                        tabindex="0"
+                        class="flex items-center min-w-0 cursor-pointer rounded-lg px-2 -mx-2 py-1 transition hover:bg-bg-secondary"
+                        style="gap:14px;"
+                        aria-label="Открыть сведения о клиенте"
+                        title="Сведения о клиенте"
+                    >
+                        {{-- User avatar (42×42 ellipse) with initials --}}
+                        <div
+                            class="relative shrink-0 flex items-center justify-center rounded-full text-white font-semibold select-none"
+                            style="width:42px; height:42px; background:{{ $hdrColor }}; font-size:16px;"
+                            aria-hidden="true"
+                        >{{ $hdrInitials }}</div>
+
+                        {{-- Name + platform sub-line --}}
+                        {{-- Design: node O6aEj — vertical layout gap 2 --}}
+                        <div class="flex flex-col min-w-0" style="gap:2px;">
+                            <span class="text-sm font-semibold text-text-primary leading-tight truncate max-w-[280px]">
+                                {{ $activeBotUser->chat_id }}
+                            </span>
+                            <span class="text-xs text-text-secondary leading-tight truncate">
+                                {{ '@' . $activeBotUser->chat_id }} · {{ $platformLabel }}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
-                {{-- Header Actions: search + more --}}
+                {{-- Header Actions: more-actions dropdown --}}
                 {{-- Design: node r6DYj — gap 4, align center --}}
                 <div class="flex items-center" style="gap:4px;">
-                    <div class="flex items-center justify-center rounded-lg text-text-secondary" style="width:36px; height:36px;" aria-hidden="true">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-                        </svg>
+
+                    {{-- More actions (⋮) dropdown --}}
+                    <div class="relative" x-data="{ menuOpen: false }">
+                        <button
+                            type="button"
+                            x-on:click="menuOpen = !menuOpen"
+                            :class="menuOpen ? 'bg-bg-secondary text-accent' : 'text-text-secondary hover:bg-bg-secondary'"
+                            class="flex items-center justify-center rounded-lg transition"
+                            style="width:36px; height:36px; border:none; cursor:pointer; background:transparent;"
+                            aria-label="Действия с чатом"
+                            aria-haspopup="true"
+                            :aria-expanded="menuOpen"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
+                            </svg>
+                        </button>
+
+                        <div
+                            x-show="menuOpen"
+                            x-cloak
+                            x-transition:enter="transition ease-out duration-150"
+                            x-transition:enter-start="opacity-0 scale-95"
+                            x-transition:enter-end="opacity-100 scale-100"
+                            x-transition:leave="transition ease-in duration-100"
+                            x-transition:leave-start="opacity-100 scale-100"
+                            x-transition:leave-end="opacity-0 scale-95"
+                            x-on:click.outside="menuOpen = false"
+                            x-on:keydown.escape.window="menuOpen = false"
+                            class="absolute right-0 top-full z-50 mt-2 w-max whitespace-nowrap origin-top-right rounded-xl border border-border-light bg-bg-primary py-1.5 shadow-xl"
+                            role="menu"
+                        >
+                            {{-- Показать профиль --}}
+                            <button
+                                type="button"
+                                role="menuitem"
+                                x-on:click="menuOpen = false; infoPanelOpen = true"
+                                class="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-text-primary transition hover:bg-bg-secondary"
+                                style="cursor:pointer;"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                                </svg>
+                                Показать профиль
+                            </button>
+
+                            {{-- Очистить историю --}}
+                            <button
+                                type="button"
+                                role="menuitem"
+                                wire:click="clearHistory"
+                                wire:confirm="Очистить историю переписки? Все сообщения этого чата будут удалены, сам чат останется."
+                                x-on:click="menuOpen = false"
+                                class="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-text-primary transition hover:bg-bg-secondary"
+                                style="cursor:pointer;"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>
+                                </svg>
+                                Очистить историю
+                            </button>
+
+                            {{-- Divider --}}
+                            <div class="my-1 h-px bg-border-light"></div>
+
+                            {{-- Удалить чат (last, red) --}}
+                            <button
+                                type="button"
+                                role="menuitem"
+                                wire:click="deleteChat"
+                                wire:confirm="Удалить чат и все его сообщения? Действие необратимо."
+                                x-on:click="menuOpen = false"
+                                class="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50"
+                                style="cursor:pointer;"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                                </svg>
+                                Удалить чат
+                            </button>
+                        </div>
                     </div>
-                    <button
-                        type="button"
-                        x-on:click="infoPanelOpen = !infoPanelOpen"
-                        :class="infoPanelOpen ? 'bg-bg-secondary text-accent' : 'text-text-secondary hover:bg-bg-secondary'"
-                        :aria-pressed="infoPanelOpen"
-                        class="flex items-center justify-center rounded-lg transition"
-                        style="width:36px; height:36px; border:none; cursor:pointer; background:transparent;"
-                        aria-label="Сведения о клиенте"
-                        title="Сведения о клиенте"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
-                        </svg>
-                    </button>
                 </div>
             </div>
 
@@ -261,9 +465,33 @@
                 id="chat-thread"
                 class="flex flex-col flex-1 overflow-y-auto bg-bg-secondary"
                 style="padding:24px 32px;"
-                x-data
+                x-data="{
+                    loadingOlder: false,
+                    onScroll() {
+                        const el = this.$el;
+                        if (el.scrollTop <= 80 && this.$wire.hasMoreMessages && !this.loadingOlder) {
+                            this.loadingOlder = true;
+                            const prev = el.scrollHeight;
+                            this.$wire.loadOlderMessages().then(() => this.$nextTick(() => {
+                                el.scrollTop = el.scrollHeight - prev;
+                                this.loadingOlder = false;
+                            }));
+                        }
+                    }
+                }"
                 x-init="$el.scrollTop = $el.scrollHeight"
+                x-on:scroll.passive="onScroll()"
             >
+                {{-- Older-messages loader (reverse infinite scroll) --}}
+                @if($hasMoreMessages)
+                    <div class="flex shrink-0 items-center justify-center py-3" wire:loading.flex wire:target="loadOlderMessages">
+                        <svg class="h-5 w-5 animate-spin text-text-secondary" viewBox="0 0 24 24" fill="none">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                        </svg>
+                    </div>
+                @endif
+
                 @if($chatMessages->isEmpty())
                     <div class="flex flex-1 items-center justify-center">
                         <p class="text-sm text-text-secondary">Нет сообщений</p>
@@ -427,7 +655,7 @@
 
                     {{-- Input row: attach + textarea + send --}}
                     {{-- Design: FEYxe (attach 40×40) + Euru3 (input, fill, bg-input, rounded-12) + K6yaRa (send 44×44 bg-accent rounded-12) --}}
-                    <form wire:submit.prevent="sendReply" class="flex items-center" style="gap:12px;">
+                    <form wire:submit.prevent="sendReply" class="flex items-center" style="gap:5px; align-items:center;">
 
                         {{-- Attach button (telegram + vk only) --}}
                         @if($this->supportsAttachments())
@@ -445,7 +673,7 @@
                         @endif
 
                         {{-- Text input --}}
-                        <div class="relative flex-1">
+                        <div class="relative flex-1 flex">
                             <textarea
                                 wire:model.live="replyText"
                                 rows="1"
@@ -491,15 +719,50 @@
     {{-- ══ RIGHT PANEL — User info & media gallery ════════════════════════════ --}}
     {{-- Design: node VdLTH — width 300, padding [24,20], gap 20, bg-primary, border-left --}}
     @if($activeBotUser)
-        <aside
+        {{-- Centered modal: darkened backdrop centers the panel; click outside closes (Telegram-style) --}}
+        <div
             x-show="infoPanelOpen"
             x-cloak
             x-transition:enter="transition ease-out duration-200"
             x-transition:enter-start="opacity-0"
             x-transition:enter-end="opacity-100"
-            class="flex shrink-0 flex-col bg-bg-primary overflow-y-auto border-l border-border-light"
-            style="width:300px; gap:20px; padding:24px 20px;"
+            x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"
+            x-on:click="infoPanelOpen = false"
+            x-on:keydown.escape.window="infoPanelOpen = false"
+            class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
         >
+            {{-- Info panel — narrow centered modal; clicks inside do not close --}}
+            <aside
+                x-show="infoPanelOpen"
+                x-cloak
+                x-on:click.stop
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0 scale-95"
+                x-transition:enter-end="opacity-100 scale-100"
+                x-transition:leave="transition ease-in duration-150"
+                x-transition:leave-start="opacity-100 scale-100"
+                x-transition:leave-end="opacity-0 scale-95"
+                class="flex flex-col bg-bg-primary overflow-y-auto rounded-2xl border border-border-light shadow-2xl"
+                style="gap:20px; padding:24px 20px; width:440px; max-width:92vw; max-height:85vh;"
+            >
+
+            {{-- Header with close button (panel is always an overlay now) --}}
+            <div class="flex items-center justify-between">
+                <span class="text-text-secondary font-semibold tracking-wider" style="font-size:12px; letter-spacing:0.05em;">СВЕДЕНИЯ</span>
+                <button
+                    type="button"
+                    x-on:click="infoPanelOpen = false"
+                    class="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-secondary"
+                    style="cursor:pointer;"
+                    aria-label="Закрыть сведения"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M18 6 6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
 
             {{-- Profile section --}}
             {{-- Design: node KAbQg — vertical, gap 14, align center --}}
@@ -638,6 +901,27 @@
                     </div>
                 </div>
 
+                {{-- Ссылка на профиль — link icon (only when a profile URL can be built) --}}
+                @php $profileUrl = $this->profileUrl(); @endphp
+                @if($profileUrl)
+                    <div class="flex items-center w-full" style="gap:10px;">
+                        <svg class="shrink-0 text-text-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <div class="flex flex-col min-w-0 flex-1" style="gap:2px;">
+                            <span class="text-text-secondary" style="font-size:11px;">Ссылка на профиль</span>
+                            <a
+                                href="{{ $profileUrl }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="block truncate text-accent hover:underline"
+                                style="font-size:13px; cursor:pointer;"
+                                title="{{ $profileUrl }}"
+                            >{{ $profileUrl }}</a>
+                        </div>
+                    </div>
+                @endif
+
                 {{-- Первое обращение — calendar icon --}}
                 {{-- Design: node u4lnP --}}
                 <div class="flex items-center w-full" style="gap:10px;">
@@ -710,7 +994,29 @@
                 @endif
             </div>
 
-        </aside>
+            {{-- Divider --}}
+            <div class="w-full h-px shrink-0" style="background:#E5E7EB;"></div>
+
+            {{-- Удалить чат — destructive: removes the dialog and ALL its messages --}}
+            <button
+                type="button"
+                wire:click="deleteChat"
+                wire:confirm="Удалить чат и все его сообщения? Действие необратимо."
+                wire:loading.attr="disabled"
+                wire:target="deleteChat"
+                class="flex items-center justify-center w-full transition hover:opacity-90 disabled:opacity-50"
+                style="background:#FEE2E2; color:#DC2626; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:600; gap:6px; border:none; cursor:pointer;"
+                aria-label="Удалить чат"
+                title="Удалить чат и все его сообщения"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                </svg>
+                Удалить чат
+            </button>
+
+            </aside>
+        </div>
     @endif
 
 </div>
