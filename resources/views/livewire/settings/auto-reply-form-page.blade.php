@@ -1,33 +1,24 @@
 <div>
 
-    {{-- ── Breadcrumb top bar (consistent with other sub-pages) ───────────────────── --}}
-    <div class="flex items-center border-b border-border-light bg-bg-primary px-6 lg:px-8" style="height:64px">
-        <div class="flex items-center gap-3">
+    {{-- ── Body ───────────────────────────────────────────────────────────────────── --}}
+    <div class="p-4 lg:p-8">
+
+        {{-- Header: back-to-list button + title --}}
+        <div class="mb-5 flex items-center gap-3">
             <a href="{{ route('admin.settings.auto-replies') }}"
-               class="flex items-center gap-1 text-text-secondary transition hover:text-text-primary"
-               aria-label="Назад к автоответам">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m7-7-7 7 7 7" />
+               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-light text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
+               aria-label="К списку автоответов">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5m7-7-7 7 7 7" />
                 </svg>
             </a>
-            <a href="{{ route('admin.settings.auto-replies') }}"
-               class="text-sm text-text-secondary transition hover:text-text-primary">
-                Автоответы
-            </a>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-            <span class="text-sm font-semibold text-text-primary">
+            <h1 class="text-lg font-bold text-text-primary lg:text-2xl">
                 {{ $isEdit ? 'Редактирование автоответа' : 'Новый автоответ' }}
-            </span>
+            </h1>
         </div>
-    </div>
-
-    {{-- ── Body ───────────────────────────────────────────────────────────────────── --}}
-    <div class="p-6 lg:p-8">
 
         {{-- Card with rule parameters (design node B2aQ0u) --}}
-        <div class="space-y-5 rounded-xl border border-border-light bg-bg-primary px-6 py-6 lg:px-7">
+        <div class="space-y-5 rounded-xl border border-border-light bg-bg-primary p-4 lg:p-6">
 
             <h2 class="text-base font-semibold text-text-primary">Параметры правила</h2>
 
@@ -73,9 +64,6 @@
 
         {{-- Actions (design node lVE1M) --}}
         <div class="mt-6 flex items-center justify-end gap-3">
-            <a href="{{ route('admin.settings.auto-replies') }}">
-                <x-admin.button-secondary type="button">Отмена</x-admin.button-secondary>
-            </a>
             <x-admin.button-primary type="button" wire:click="save" wire:loading.attr="disabled" wire:target="save">
                 <span wire:loading.remove wire:target="save">Сохранить</span>
                 <span wire:loading wire:target="save">Сохраняем...</span>
