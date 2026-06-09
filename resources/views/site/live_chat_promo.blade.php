@@ -33,7 +33,7 @@ $schemaData = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title itemprop="name">Live Chat - Виджет живого чата для сайта | Интеграция с Telegram</title>
 
-    <link rel="icon" type="image/svg" sizes="32x32" href="{{ asset('storage/favicon.svg') }}">
+    <link rel="icon" type="image/x-icon" sizes="any" href="{{ asset('favicon.ico') }}">
 
     @include('site.hide.metrika')
 
