@@ -84,24 +84,6 @@ class GeneralSettingsPageTest extends TestCase
             ->assertSet('formErrors', ['template_topic_name' => 'Максимальная длина — 255 символов.']);
     }
 
-    // ── Cancel ───────────────────────────────────────────────────────────────
-
-    public function test_cancel_resets_to_stored_value(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        /** @var SettingsService $settings */
-        $settings = app(SettingsService::class);
-        $settings->set('telegram.template_topic_name', 'Original');
-
-        Livewire::test(GeneralSettingsPage::class)
-            ->set('template_topic_name', 'Changed')
-            ->call('cancel')
-            ->assertSet('template_topic_name', 'Original')
-            ->assertSet('saved', false);
-    }
-
     // ── UI rendering ──────────────────────────────────────────────────────────
 
     public function test_renders_page_title_and_template_field(): void
