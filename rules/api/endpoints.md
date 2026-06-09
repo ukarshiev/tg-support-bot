@@ -111,9 +111,9 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/telescope` | `APP_DEBUG=true` + `viewTelescope` gate (all envs) | Telescope dashboard — requests, exceptions, logs, queries, jobs, cache, redis, events, etc. Path configurable via `TELESCOPE_PATH` |
+| `GET` | `/telescope` | `APP_DEBUG=true` + HTTP Basic auth (env creds) | Telescope dashboard — requests, exceptions, logs, queries, jobs, cache, redis, events, etc. Path configurable via `TELESCOPE_PATH` |
 
-> Authorization: `TelescopeServiceProvider::authorization()` requires **both** `APP_DEBUG=true` **and** the `viewTelescope` gate (`User::isAdmin()`). The gate is enforced in **every** environment — unlike the package default, Telescope is NOT open in `local`. With `APP_DEBUG=false` (e.g. production) the dashboard is unreachable for everyone; guests are always denied.
+> Authorization: gated by `App\Http\Middleware\TelescopeBasicAuth` (in `config/telescope.php` `middleware`). Requires **both** `APP_DEBUG=true` (else **404** — hidden, in every environment; the package's `local` bypass is removed) **and** HTTP Basic auth matching `TELESCOPE_AUTH_USER` / `TELESCOPE_AUTH_PASSWORD` (`config('telescope.basic_auth.*')`): wrong/missing → **401**, not configured → **403** (fail closed). Access is **not** tied to an admin login (the former `viewTelescope` gate was removed). See `process/security.md` §7 and `process/observability.md`.
 
 ### Telegram callback_data prefixes (main bot webhook)
 
