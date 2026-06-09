@@ -20,7 +20,7 @@
         : '/admin');
 @endphp
 
-<aside class="flex h-full w-70 shrink-0 flex-col bg-sidebar text-text-sidebar lg:w-70">
+<aside class="flex h-full w-full shrink-0 flex-col bg-sidebar text-text-sidebar lg:w-70">
     {{-- Header --}}
     <div class="flex items-center gap-3 px-4 py-5">
         <a href="{{ $resolvedBackUrl }}"

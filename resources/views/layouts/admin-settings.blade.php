@@ -5,29 +5,76 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
 
+    <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}" sizes="any" />
+
     <title>{{ $title ?? 'Настройки' }} — Admin</title>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
+    <style>[x-cloak]{display:none !important;}</style>
 </head>
 <body class="h-full bg-bg-secondary font-sans text-text-primary antialiased">
 
+{{-- Alpine scope wrapper (display:contents — layout-neutral). x-data on a real
+     element initialises reliably under Livewire, unlike x-data on <body>. --}}
+<div x-data="{ navOpen: false }" x-on:keydown.escape.window="navOpen = false" class="contents">
+
     {{-- Mobile: top bar with back + section title (hidden on lg+) --}}
+    @php
+        // The mobile back button steps one level up and shows the destination name:
+        //  • a section sub-page → its list page;
+        //  • a top-level settings page → the chat workspace («Чаты»).
+        $chatsUrl = Route::has('admin.chats') ? route('admin.chats') : '/admin/chats';
+        [$mobileBackUrl, $mobileBackLabel] = match (true) {
+            request()->routeIs('admin.settings.integrations.channel') => [route('admin.settings.integrations'), 'Интеграции'],
+            request()->routeIs('admin.settings.ai.provider') => [route('admin.settings.ai'), 'ИИ-ассистент'],
+            request()->routeIs('admin.settings.api-webhooks.source') => [route('admin.settings.api-webhooks'), 'API и вебхуки'],
+            request()->routeIs('admin.settings.auto-replies.create', 'admin.settings.auto-replies.edit') => [route('admin.settings.auto-replies'), 'Автоответы'],
+            request()->routeIs('admin.settings.team.create', 'admin.settings.team.edit') => [route('admin.settings.team'), 'Команда'],
+            default => [$chatsUrl, 'Чаты'],
+        };
+    @endphp
     <header class="flex items-center gap-3 border-b border-border-light bg-sidebar px-4 py-4 lg:hidden">
-        <a href="{{ Route::has('filament.admin.pages.dashboard') ? route('filament.admin.pages.dashboard') : '/admin' }}"
-           class="flex h-8 w-8 items-center justify-center rounded-lg text-text-sidebar-secondary transition hover:bg-sidebar-hover hover:text-text-sidebar"
-           aria-label="Назад">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        <a href="{{ $mobileBackUrl }}"
+           class="-ml-1 flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm font-medium text-text-sidebar-secondary transition hover:text-text-sidebar"
+           aria-label="Назад: {{ $mobileBackLabel }}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5m7-7-7 7 7 7" />
             </svg>
+            <span>{{ $mobileBackLabel }}</span>
         </a>
-        <span class="text-sm font-semibold text-text-sidebar">{{ $title ?? 'Настройки' }}</span>
+
+        {{-- Hamburger — opens the settings nav drawer --}}
+        <button
+            type="button"
+            x-on:click="navOpen = true"
+            class="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-text-sidebar-secondary transition hover:bg-sidebar-hover hover:text-text-sidebar"
+            aria-label="Меню настроек"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>
+            </svg>
+        </button>
     </header>
 
     <div class="flex h-full min-h-screen lg:h-screen lg:overflow-hidden">
 
-        {{-- Sidebar — hidden on mobile, always visible on lg+ --}}
-        <div class="hidden lg:flex lg:shrink-0">
+        {{-- Backdrop — mobile only, dismisses the drawer --}}
+        <div
+            x-show="navOpen"
+            x-cloak
+            x-transition.opacity
+            x-on:click="navOpen = false"
+            class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            aria-hidden="true"
+        ></div>
+
+        {{-- Settings nav — full-screen slide-in drawer on mobile, static 280px column on lg+ --}}
+        <div
+            class="fixed inset-y-0 left-0 z-50 flex w-full -translate-x-full transition-transform duration-200 ease-out
+                   lg:static lg:z-auto lg:w-auto lg:translate-x-0 lg:shrink-0"
+            :style="navOpen ? 'translate: 0' : ''"
+        >
             <x-admin.sidebar>
                 <x-admin.nav-item
                     href="{{ route('admin.settings.general') }}"
@@ -66,15 +113,6 @@
                     ИИ-ассистент
                 </x-admin.nav-item>
 
-                <x-admin.nav-item disabled>
-                    <x-slot name="icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                        </svg>
-                    </x-slot>
-                    Уведомления
-                </x-admin.nav-item>
-
                 <x-admin.nav-item
                     href="{{ route('admin.settings.api-webhooks') }}"
                     :active="request()->routeIs('admin.settings.api-webhooks')"
@@ -111,6 +149,18 @@
                     Автоответы
                 </x-admin.nav-item>
             </x-admin.sidebar>
+
+            {{-- Mobile close — placed after the sidebar so it paints above the full-width panel --}}
+            <button
+                type="button"
+                x-on:click="navOpen = false"
+                class="absolute right-4 top-5 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-text-sidebar-secondary transition hover:bg-sidebar-hover hover:text-text-sidebar lg:hidden"
+                aria-label="Закрыть меню"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+            </button>
         </div>
 
         {{-- Main content --}}
@@ -119,6 +169,8 @@
         </main>
 
     </div>
+
+</div>{{-- /Alpine scope wrapper --}}
 
     @livewireScripts
 </body>
