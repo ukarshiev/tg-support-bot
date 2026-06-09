@@ -4,20 +4,17 @@ declare(strict_types=1);
 
 namespace App\Livewire\Settings;
 
-use App\Enums\UserRole;
 use App\Models\User;
-use App\Modules\Admin\Actions\InviteOperator;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 /**
- * «Команда» settings page — manage operators and their roles.
+ * «Команда» settings page — list of team members.
  *
- * Two sections:
- *  1. "Пригласить оператора" card — email + role form → InviteOperator action.
- *  2. "Участники команды" table — list with delete action (self-delete protection).
+ * The "Добавить" button navigates to {@see TeamMemberCreatePage} (a dedicated
+ * add-user screen). The members table lists users with a delete action
+ * (single trash button + native confirm; self-delete protection).
  *
  * Route:  GET /admin/settings/team
  * Name:   admin.settings.team
@@ -31,47 +28,10 @@ use Livewire\Component;
 #[Layout('layouts.admin-settings')]
 class TeamPage extends Component
 {
-    // ── Invite form ────────────────────────────────────────────────────────────
-
-    /**
-     * Email address for the invited operator.
-     */
-    public string $inviteEmail = '';
-
-    /**
-     * Role for the invited operator ('admin' or 'manager').
-     */
-    public string $inviteRole = '';
-
-    /**
-     * Success notice shown after a successful invite.
-     */
-    public ?string $inviteSuccess = null;
-
-    /**
-     * Error notice shown when the invite action fails.
-     */
-    public ?string $inviteError = null;
-
-    /**
-     * Generated password revealed once when the invitation email could not be sent,
-     * so the admin can hand it to the operator manually (null when mail was sent).
-     */
-    public ?string $invitedPassword = null;
-
-    // ── Delete confirmation ────────────────────────────────────────────────────
-
-    /**
-     * ID of the member whose delete confirmation is pending (null = none).
-     */
-    public ?int $confirmDeleteId = null;
-
     /**
      * Error shown when a delete action is rejected.
      */
     public ?string $deleteError = null;
-
-    // ── Mount ──────────────────────────────────────────────────────────────────
 
     /**
      * Boot: redirect non-admins to general settings.
@@ -146,119 +106,31 @@ class TeamPage extends Component
         return strtoupper(mb_substr($local, 0, 2));
     }
 
-    // ── Invite ─────────────────────────────────────────────────────────────────
-
-    /**
-     * Validate the invite form and call InviteOperator.
-     */
-    public function invite(): void
-    {
-        $this->inviteSuccess = null;
-        $this->inviteError = null;
-        $this->invitedPassword = null;
-
-        $this->validate([
-            'inviteEmail' => ['required', 'email', Rule::unique('users', 'email')],
-            'inviteRole' => ['required', Rule::in(array_keys(UserRole::options()))],
-        ], [
-            'inviteEmail.required' => 'Введите email.',
-            'inviteEmail.email' => 'Некорректный формат email.',
-            'inviteEmail.unique' => 'Пользователь с таким email уже существует.',
-            'inviteRole.required' => 'Выберите роль.',
-            'inviteRole.in' => 'Недопустимая роль.',
-        ]);
-
-        try {
-            $result = InviteOperator::execute(
-                $this->inviteEmail,
-                UserRole::from($this->inviteRole),
-            );
-        } catch (\Throwable) {
-            $this->inviteError = 'Не удалось создать оператора. Попробуйте ещё раз.';
-
-            return;
-        }
-
-        $email = $this->inviteEmail;
-        $this->inviteEmail = '';
-        $this->inviteRole = '';
-        $this->resetValidation();
-
-        // Operator is created immediately. No email is sent — reveal the generated
-        // password once so the admin can hand it to the operator.
-        $this->inviteSuccess = "Оператор {$email} добавлен. Передайте ему пароль:";
-        $this->invitedPassword = $result['password'];
-    }
-
-    /**
-     * Hide the one-time revealed password.
-     */
-    public function dismissInvitedPassword(): void
-    {
-        $this->invitedPassword = null;
-    }
-
     // ── Delete ─────────────────────────────────────────────────────────────────
 
     /**
-     * Begin a delete confirmation for the given member.
+     * Delete a team member.
+     *
+     * Guard: an admin cannot delete their own account (self-lockout protection);
+     * the trash button is also hidden for the current user in the view.
      *
      * @param int $userId
      */
-    public function confirmDelete(int $userId): void
-    {
-        $this->deleteError = null;
-        $this->confirmDeleteId = $userId;
-    }
-
-    /**
-     * Cancel the pending delete confirmation.
-     */
-    public function cancelDelete(): void
-    {
-        $this->confirmDeleteId = null;
-        $this->deleteError = null;
-    }
-
-    /**
-     * Execute the confirmed delete.
-     *
-     * Guards:
-     *  - Admin cannot delete themselves (self-lockout protection).
-     *  - User must exist.
-     */
-    public function deleteMember(): void
+    public function deleteMember(int $userId): void
     {
         $this->deleteError = null;
 
         /** @var User|null $current */
         $current = Auth::user();
 
-        if ($this->confirmDeleteId === null) {
-            return;
-        }
-
-        if ($current && $current->id === $this->confirmDeleteId) {
+        if ($current && $current->id === $userId) {
             $this->deleteError = 'Вы не можете удалить собственный аккаунт.';
-            $this->confirmDeleteId = null;
 
             return;
         }
 
-        $member = User::find($this->confirmDeleteId);
-
-        if (! $member) {
-            $this->deleteError = 'Участник не найден.';
-            $this->confirmDeleteId = null;
-
-            return;
-        }
-
-        $member->delete();
-        $this->confirmDeleteId = null;
+        User::whereKey($userId)->delete();
     }
-
-    // ── Render ─────────────────────────────────────────────────────────────────
 
     /**
      * Render the component view.
