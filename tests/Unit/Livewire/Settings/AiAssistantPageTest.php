@@ -11,7 +11,7 @@ use Tests\TestCase;
 /**
  * Unit-level tests for AiAssistantPage Livewire component.
  *
- * Focuses on business logic: mount(), save(), cancel(),
+ * Focuses on business logic: mount(), save(),
  * updatedAutoReply(), confirmAutoReply(), cancelAutoReply()
  * using a mocked SettingsService.
  */
@@ -199,47 +199,6 @@ class AiAssistantPageTest extends TestCase
             $this->assertTrue($component->saved, "Provider {$provider} should be valid.");
             Mockery::close();
         }
-    }
-
-    // ── cancel ───────────────────────────────────────────────────────────────────
-
-    public function test_cancel_resets_to_stored_values(): void
-    {
-        /** @var \Mockery\MockInterface&SettingsService $mock */
-        $mock = Mockery::mock(SettingsService::class);
-        $mock->shouldReceive('get')->with('ai.enabled')->andReturn(true);
-        $mock->shouldReceive('get')->with('ai.default_provider')->andReturn('openai');
-        $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(false);
-        $mock->shouldReceive('get')->with('ai.max_context_tokens')->andReturn(3000);
-        $mock->shouldReceive('get')->with('ai.confidence_threshold')->andReturn('0.8');
-        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(60);
-        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(1000);
-        $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn('');
-        $mock->shouldReceive('get')->with('ai.auto_escalation')->andReturn(true);
-        $mock->shouldReceive('get')->with('ai.enable_logging')->andReturn(true);
-        $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn('Original');
-        // openai has access configured → it stays the active stored provider.
-        $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn('sk-test');
-        $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.gigachat_client_secret')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.openai_model')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.deepseek_model')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.gigachat_model')->andReturn(null);
-
-        $component = new AiAssistantPage();
-        $component->mount($mock);
-        // Simulate in-flight changes
-        $component->default_provider = 'gigachat';
-        $component->saved = true;
-        $component->formErrors = ['default_provider' => 'Error'];
-        $component->showAutoReplyWarning = true;
-
-        $component->cancel($mock);
-
-        $this->assertSame('openai', $component->default_provider);
-        $this->assertFalse($component->saved);
-        $this->assertEmpty($component->formErrors);
-        $this->assertFalse($component->showAutoReplyWarning);
     }
 
     // ── master AI toggle (instant persist) ────────────────────────────────────────
