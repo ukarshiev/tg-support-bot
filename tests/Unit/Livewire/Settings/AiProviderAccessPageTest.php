@@ -11,7 +11,7 @@ use Tests\TestCase;
 /**
  * Unit-level tests for AiProviderAccessPage Livewire component.
  *
- * Covers mount(), save(), and cancel() for all three providers
+ * Covers mount(), save(), and connect() for all three providers
  * (openai, deepseek, gigachat). Secret fields are never pre-filled
  * and blank values do not overwrite existing secrets.
  */
@@ -335,34 +335,6 @@ class AiProviderAccessPageTest extends TestCase
 
         $this->assertFalse($component->saved);
         $this->assertArrayHasKey('provider', $component->formErrors);
-    }
-
-    // ── cancel ───────────────────────────────────────────────────────────────────
-
-    public function test_cancel_resets_to_stored_non_secret_values(): void
-    {
-        /** @var \Mockery\MockInterface&SettingsService $mock */
-        $mock = Mockery::mock(SettingsService::class);
-        $mock->shouldReceive('get')->with('ai.openai_base_url')->andReturn('https://stored.url');
-        $mock->shouldReceive('get')->with('ai.openai_model')->andReturn('gpt-4-turbo');
-        $mock->shouldReceive('get')->with('ai.openai_max_tokens')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.openai_temperature')->andReturn('0.5');
-        $mock->shouldReceive('get')->andReturn(null);
-
-        $component = new AiProviderAccessPage();
-        $component->mount('openai', $mock);
-        // Simulate unsaved changes
-        $component->openai_base_url = 'https://changed.url';
-        $component->saved = true;
-        $component->formErrors = ['openai_model' => 'Error'];
-
-        $component->cancel($mock);
-
-        $this->assertSame('https://stored.url', $component->openai_base_url);
-        $this->assertFalse($component->saved);
-        $this->assertEmpty($component->formErrors);
-        // Secret must remain null after cancel
-        $this->assertNull($component->openai_api_key);
     }
 
     // ── connect() — verify-before-save ─────────────────────────────────────────────
