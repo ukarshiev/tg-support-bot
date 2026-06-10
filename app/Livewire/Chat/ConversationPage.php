@@ -551,8 +551,15 @@ class ConversationPage extends Component
 
         $file = $this->supportsAttachments() ? $this->attachment : null;
 
+        // Nothing to send (no text and no attachment) — silently ignore instead
+        // of surfacing a "required" validation error.
+        if (trim($this->replyText) === '' && $file === null) {
+            return;
+        }
+
+        // Emptiness is handled above; only validate size/length here.
         $this->validate([
-            'replyText' => [$file ? 'nullable' : 'required', 'string', 'max:4096'],
+            'replyText' => ['nullable', 'string', 'max:4096'],
             'attachment' => ['nullable', 'file', 'max:20480'],
         ]);
 
