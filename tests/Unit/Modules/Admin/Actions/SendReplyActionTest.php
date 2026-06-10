@@ -7,15 +7,26 @@ use App\Models\ExternalSource;
 use App\Models\ExternalUser;
 use App\Modules\Admin\Actions\SendReplyAction;
 use App\Modules\External\Jobs\SendWebhookMessage;
+use App\Modules\Max\Actions\UploadFileMax;
+use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Mockery;
 use Tests\TestCase;
 
 class SendReplyActionTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        Mockery::close();
+    }
 
     public function test_saves_outgoing_message_for_telegram_user(): void
     {
@@ -73,6 +84,87 @@ class SendReplyActionTest extends TestCase
         Queue::assertPushed(SendVkSimpleMessageJob::class);
         Queue::assertNotPushed(SendTelegramSimpleQueryJob::class);
         Queue::assertNotPushed(SendWebhookMessage::class);
+    }
+
+    public function test_saves_outgoing_message_for_max_user(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 400, 'platform' => 'max']);
+
+        SendReplyAction::execute($botUser, 'Hello MAX');
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'platform' => 'max',
+            'message_type' => 'outgoing',
+            'text' => 'Hello MAX',
+        ]);
+    }
+
+    public function test_dispatches_max_text_job_for_max_user(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 401, 'platform' => 'max']);
+
+        SendReplyAction::execute($botUser, 'Hello MAX');
+
+        Queue::assertPushed(SendMaxSimpleMessageJob::class, function (SendMaxSimpleMessageJob $job): bool {
+            return $job->queryParams->methodQuery === 'sendMessage'
+                && $job->queryParams->text === 'Hello MAX'
+                && $job->queryParams->user_id === 401;
+        });
+        // MAX must no longer fall through to the external-webhook path.
+        Queue::assertNotPushed(SendWebhookMessage::class);
+    }
+
+    public function test_dispatches_max_file_job_with_token_for_max_user(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        // Mock the uploader so the test never hits MAX's CDN.
+        $upload = Mockery::mock(UploadFileMax::class);
+        $upload->shouldReceive('uploadContents')->once()->andReturn('tok_abc');
+        $this->app->instance(UploadFileMax::class, $upload);
+
+        $botUser = BotUser::create(['chat_id' => 402, 'platform' => 'max']);
+        $file = UploadedFile::fake()->create('photo.jpg', 10);
+
+        SendReplyAction::execute($botUser, 'caption', $file);
+
+        Queue::assertPushed(SendMaxSimpleMessageJob::class, function (SendMaxSimpleMessageJob $job): bool {
+            return in_array($job->queryParams->methodQuery, ['sendImage', 'sendAudio', 'sendFile'], true)
+                && $job->queryParams->file_token === 'tok_abc'
+                && $job->queryParams->text === 'caption';
+        });
+
+        // The outgoing file is stored on the private disk and recorded by its path
+        // so the admin thread serves it through the chat-attachment route.
+        $attachment = \App\Models\MessageAttachment::where('file_name', 'photo.jpg')->first();
+        $this->assertNotNull($attachment);
+        $this->assertStringStartsWith('chat-attachments/', (string) $attachment->file_id);
+        Storage::disk('local')->assertExists($attachment->file_id);
+    }
+
+    public function test_max_file_upload_failure_falls_back_to_text(): void
+    {
+        Queue::fake();
+
+        $upload = Mockery::mock(UploadFileMax::class);
+        $upload->shouldReceive('uploadContents')->andReturn(null);
+        $this->app->instance(UploadFileMax::class, $upload);
+
+        $botUser = BotUser::create(['chat_id' => 403, 'platform' => 'max']);
+        $file = UploadedFile::fake()->create('doc.pdf', 10);
+
+        SendReplyAction::execute($botUser, 'fallback text', $file);
+
+        Queue::assertPushed(SendMaxSimpleMessageJob::class, function (SendMaxSimpleMessageJob $job): bool {
+            return $job->queryParams->methodQuery === 'sendMessage'
+                && $job->queryParams->text === 'fallback text';
+        });
     }
 
     public function test_dispatches_webhook_for_external_user_with_webhook_url(): void
