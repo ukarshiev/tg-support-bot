@@ -549,7 +549,7 @@
                                 @if($messageText)
                                     <p class="text-sm text-white" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
                                 @elseif($message->attachments->isEmpty())
-                                    <p class="text-xs text-white opacity-70 italic">{{ $message->platform }} · {{ $message->message_type }}</p>
+                                    <p class="text-xs text-white opacity-70 italic">Вложение</p>
                                 @endif
                                 <p class="text-right text-white opacity-70" style="font-size:11px;">
                                     {{ $message->created_at?->format('H:i') }}
@@ -578,7 +578,7 @@
                                 @if($messageText)
                                     <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
                                 @elseif($message->attachments->isEmpty())
-                                    <p class="text-xs text-text-secondary italic opacity-60">{{ $message->platform }} · {{ $message->message_type }}</p>
+                                    <p class="text-xs text-text-secondary italic opacity-60">Вложение</p>
                                 @endif
                                 <p class="text-text-secondary opacity-70" style="font-size:11px;">
                                     {{ $message->created_at?->format('H:i') }}
