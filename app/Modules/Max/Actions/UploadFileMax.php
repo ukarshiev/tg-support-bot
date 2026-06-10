@@ -33,6 +33,35 @@ class UploadFileMax
                 throw new \Exception("Failed to download from Telegram: status={$fileResponse->status()} url={$telegramFileUrl}");
             }
 
+            return $this->uploadContents($fileResponse->body(), $filename, $type);
+        } catch (\Throwable $e) {
+            Log::channel('app')->error('UploadFileMax: download failed | ' . get_class($e) . ': ' . $e->getMessage(), [
+                'type' => $type,
+                'filename' => $filename,
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Upload raw file bytes to Max's CDN and return the attachment token.
+     *
+     * For files already available locally (e.g. a manager reply attachment)
+     * rather than fetched from a Telegram URL. Token sources differ by upload
+     * type — see the execute() docblock.
+     *
+     * @param string $contents Raw file bytes.
+     * @param string $filename Original filename.
+     * @param string $type     Max upload type: 'image', 'file', 'video', 'audio'.
+     *
+     * @return string|null
+     */
+    public function uploadContents(string $contents, string $filename, string $type): ?string
+    {
+        try {
             $client = new MaxClient(new Config(
                 token: (string) app(SettingsService::class)->get('max.token'),
             ));
@@ -42,10 +71,10 @@ class UploadFileMax
             Log::channel('app')->info('UploadFileMax: uploading to CDN', [
                 'type' => $type,
                 'filename' => $filename,
-                'size' => strlen($fileResponse->body()),
+                'size' => strlen($contents),
             ]);
 
-            $cdnResponse = Http::attach('data', $fileResponse->body(), $filename)
+            $cdnResponse = Http::attach('data', $contents, $filename)
                 ->post($uploadResult->url);
 
             if ($cdnResponse->failed()) {
