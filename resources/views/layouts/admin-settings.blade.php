@@ -7,6 +7,15 @@
 
     <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}" sizes="any" />
 
+    {{-- PWA: installable admin app --}}
+    <link rel="manifest" href="{{ route('admin.pwa.manifest') }}" />
+    <meta name="theme-color" content="#1B1F2E" />
+    <link rel="apple-touch-icon" href="{{ asset('icons/apple-touch-icon.png') }}" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TG Support" />
+
     <title>{{ $title ?? 'Настройки' }} — Admin</title>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
