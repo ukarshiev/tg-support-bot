@@ -244,14 +244,23 @@ class WebhookRegistrationService
             return ['success' => false, 'message' => 'Токен MAX не задан.'];
         }
 
+        // The secret is echoed back by MAX in the `X-Max-Bot-Api-Secret` header on
+        // every webhook; MaxQuery middleware checks it against `max.secret_key`.
+        // Without sending it here, incoming webhooks are rejected with 403.
+        $secret = (string) $this->settings->get('max.secret_key');
+
         $appUrl = config('app.url');
         $webhookUrl = $appUrl . '/api/max/bot';
         $baseUrl = 'https://platform-api.max.ru';
 
+        $payload = ['url' => $webhookUrl];
+
+        if ($secret !== '') {
+            $payload['secret'] = $secret;
+        }
+
         $response = Http::withHeaders(['Authorization' => $token])
-            ->post("{$baseUrl}/subscriptions", [
-                'url' => $webhookUrl,
-            ]);
+            ->post("{$baseUrl}/subscriptions", $payload);
 
         if ($response->successful()) {
             Log::channel('app')->info('WebhookRegistrationService: MAX webhook registered', [

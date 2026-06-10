@@ -168,6 +168,31 @@ class WebhookRegistrationServiceTest extends TestCase
         $this->assertStringContainsString('401', $result['message']);
     }
 
+    public function test_register_max_sends_secret_in_subscription_payload(): void
+    {
+        Http::fake([
+            'https://platform-api.max.ru/*' => Http::response(['result' => 'ok'], 200),
+        ]);
+
+        $settings = $this->makeSettings([
+            'max.token' => 'max_token',
+            'max.secret_key' => 'max_secret',
+        ]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->registerMax();
+
+        $this->assertTrue($result['success']);
+
+        // MAX must receive the secret so it echoes it back in X-Max-Bot-Api-Secret
+        // (otherwise MaxQuery rejects every incoming webhook with 403).
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://platform-api.max.ru/subscriptions'
+                && ($request['secret'] ?? null) === 'max_secret'
+                && str_contains((string) ($request['url'] ?? ''), '/api/max/bot');
+        });
+    }
+
     // ── verifyTelegram() ─────────────────────────────────────────────────────
 
     public function test_verify_telegram_returns_error_when_token_empty(): void

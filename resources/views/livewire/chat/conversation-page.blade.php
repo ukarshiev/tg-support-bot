@@ -547,9 +547,9 @@
                                     />
                                 @endif
                                 @if($messageText)
-                                    <p class="text-sm text-white" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
+                                    <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $messageText }}</p>
                                 @elseif($message->attachments->isEmpty())
-                                    <p class="text-xs text-white opacity-70 italic">{{ $message->platform }} · {{ $message->message_type }}</p>
+                                    <p class="text-xs text-white opacity-70 italic">Вложение</p>
                                 @endif
                                 <p class="text-right text-white opacity-70" style="font-size:11px;">
                                     {{ $message->created_at?->format('H:i') }}
@@ -576,9 +576,9 @@
                                     />
                                 @endif
                                 @if($messageText)
-                                    <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4;">{{ $messageText }}</p>
+                                    <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $messageText }}</p>
                                 @elseif($message->attachments->isEmpty())
-                                    <p class="text-xs text-text-secondary italic opacity-60">{{ $message->platform }} · {{ $message->message_type }}</p>
+                                    <p class="text-xs text-text-secondary italic opacity-60">Вложение</p>
                                 @endif
                                 <p class="text-text-secondary opacity-70" style="font-size:11px;">
                                     {{ $message->created_at?->format('H:i') }}
@@ -680,7 +680,7 @@
                                 placeholder="Напишите сообщение..."
                                 class="w-full resize-none text-sm text-text-primary placeholder-text-secondary outline-none border-none bg-transparent"
                                 style="background:#F1F3F5; border-radius:12px; padding:12px 16px; height:44px; line-height:1.25; overflow:hidden;"
-                                x-on:keydown.ctrl.enter="$wire.sendReply()"
+                                x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); $wire.sendReply(); }"
                                 aria-label="Текст сообщения"
                             ></textarea>
                             @error('replyText')

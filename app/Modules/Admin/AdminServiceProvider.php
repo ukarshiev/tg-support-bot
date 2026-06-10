@@ -15,6 +15,7 @@ use App\Livewire\Settings\IntegrationsListPage;
 use App\Livewire\Settings\TeamMemberCreatePage;
 use App\Livewire\Settings\TeamMemberEditPage;
 use App\Livewire\Settings\TeamPage;
+use App\Modules\Admin\Controllers\ChatAttachmentController;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -37,6 +38,13 @@ class AdminServiceProvider extends ServiceProvider
         Route::middleware(['web', Authenticate::class])
             ->get('/admin/chats', ConversationPage::class)
             ->name('admin.chats');
+
+        // Streams locally-stored manager-reply attachments (e.g. MAX files) to the
+        // chat thread — auth-gated, no public-disk/symlink dependency.
+        Route::middleware(['web', Authenticate::class])
+            ->get('/admin/chat-attachments/{attachment}', [ChatAttachmentController::class, 'show'])
+            ->name('admin.chat-attachment')
+            ->where('attachment', '[0-9]+');
 
         // Custom Livewire Settings routes.
         // Prefix: /admin/settings — verified not claimed by Filament's panel.

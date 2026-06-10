@@ -353,15 +353,20 @@ class ConversationWorkspaceTest extends TestCase
             ->assertSet('replyText', '');
     }
 
-    public function test_send_reply_requires_non_empty_text(): void
+    public function test_send_reply_silently_ignores_empty_message(): void
     {
+        Queue::fake();
+
         $botUser = BotUser::create(['chat_id' => '1002', 'platform' => 'telegram']);
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
-            ->set('replyText', '')
+            ->set('replyText', '   ')
             ->call('sendReply')
-            ->assertHasErrors(['replyText' => 'required']);
+            ->assertHasNoErrors();
+
+        // Nothing is sent or saved for an empty (whitespace-only) submission.
+        $this->assertSame(0, Message::where('bot_user_id', $botUser->id)->where('message_type', 'outgoing')->count());
     }
 
     // ── Attachments ──────────────────────────────────────────────────────────────
@@ -413,7 +418,7 @@ class ConversationWorkspaceTest extends TestCase
         Queue::assertPushed(SendAdminDocumentJob::class);
     }
 
-    public function test_supports_attachments_only_for_telegram_and_vk(): void
+    public function test_supports_attachments_for_telegram_vk_and_max(): void
     {
         $telegram = BotUser::create(['chat_id' => '1006', 'platform' => 'telegram']);
         $component = Livewire::test(ConversationPage::class)->call('selectChat', $telegram->id);
@@ -423,7 +428,12 @@ class ConversationWorkspaceTest extends TestCase
         $component->call('selectChat', $vk->id);
         $this->assertTrue($component->instance()->supportsAttachments());
 
-        $external = BotUser::create(['chat_id' => '1008', 'platform' => 'max']);
+        $max = BotUser::create(['chat_id' => '1008', 'platform' => 'max']);
+        $component->call('selectChat', $max->id);
+        $this->assertTrue($component->instance()->supportsAttachments());
+
+        // External-source dialogs remain text-only.
+        $external = BotUser::create(['chat_id' => '1010', 'platform' => 'widget']);
         $component->call('selectChat', $external->id);
         $this->assertFalse($component->instance()->supportsAttachments());
     }
