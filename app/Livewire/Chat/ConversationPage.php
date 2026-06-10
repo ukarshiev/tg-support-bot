@@ -573,14 +573,14 @@ class ConversationPage extends Component
     /**
      * Whether file attachments can be delivered for the active dialog.
      *
-     * Only telegram and vk have a file-aware branch in SendReplyAction;
-     * external/max replies are text-only, so the attach control is hidden there.
+     * telegram, vk and max have a file-aware branch in SendReplyAction;
+     * external replies are text-only, so the attach control is hidden there.
      *
      * @return bool
      */
     public function supportsAttachments(): bool
     {
-        return in_array($this->activeBotUser?->platform, ['telegram', 'vk'], true);
+        return in_array($this->activeBotUser?->platform, ['telegram', 'vk', 'max'], true);
     }
 
     /**
