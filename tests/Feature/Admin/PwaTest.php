@@ -38,6 +38,10 @@ class PwaTest extends TestCase
         $sizes = array_column($manifest['icons'], 'sizes');
         $this->assertContains('192x192', $sizes);
         $this->assertContains('512x512', $sizes);
+
+        $purposes = array_column($manifest['icons'], 'purpose');
+        $this->assertContains('any', $purposes);
+        $this->assertContains('maskable', $purposes);
     }
 
     public function test_pwa_static_assets_exist(): void
@@ -45,6 +49,8 @@ class PwaTest extends TestCase
         $this->assertFileExists(public_path('offline.html'));
         $this->assertFileExists(public_path('icons/icon-192.png'));
         $this->assertFileExists(public_path('icons/icon-512.png'));
+        $this->assertFileExists(public_path('icons/icon-maskable-192.png'));
+        $this->assertFileExists(public_path('icons/icon-maskable-512.png'));
         $this->assertFileExists(public_path('icons/apple-touch-icon.png'));
     }
 
