@@ -16,6 +16,7 @@ use App\Livewire\Settings\TeamMemberCreatePage;
 use App\Livewire\Settings\TeamMemberEditPage;
 use App\Livewire\Settings\TeamPage;
 use App\Modules\Admin\Controllers\ChatAttachmentController;
+use App\Modules\Admin\Controllers\PwaController;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -38,6 +39,15 @@ class AdminServiceProvider extends ServiceProvider
         Route::middleware(['web', Authenticate::class])
             ->get('/admin/chats', ConversationPage::class)
             ->name('admin.chats');
+
+        // PWA manifest + service worker — public (the browser fetches them
+        // outside the session); served under /admin/ so the SW scope is /admin/.
+        Route::middleware(['web'])
+            ->get('/admin/manifest.webmanifest', [PwaController::class, 'manifest'])
+            ->name('admin.pwa.manifest');
+        Route::middleware(['web'])
+            ->get('/admin/sw.js', [PwaController::class, 'serviceWorker'])
+            ->name('admin.pwa.sw');
 
         // Streams locally-stored manager-reply attachments (e.g. MAX files) to the
         // chat thread — auth-gated, no public-disk/symlink dependency.

@@ -236,6 +236,14 @@ These are only *preference setters*. The actual desktop notification + sound pla
 
 The chat workspace also **badges its favicon** while the tab is in the background: on `new-incoming-messages` with `document.hidden`, Alpine redraws the favicon on a `<canvas>` (the original icon + a red count badge, accumulated in `pendingCount`) and swaps the `<link rel="icon">` href to the data URL; on `visibilitychange`→visible / window `focus` it restores the original favicon. No notification permission is required for the favicon badge.
 
+### Admin PWA (installable app)
+
+The admin is an installable **PWA** scoped to `/admin/`. `App\Modules\Admin\Controllers\PwaController` serves, **without auth** (the browser fetches them outside the session), two routes registered in `AdminServiceProvider::boot()`:
+- `GET /admin/manifest.webmanifest` (`admin.pwa.manifest`) — web app manifest: `start_url=/admin/chats`, `scope=/admin/`, `display=standalone`, `theme_color=#1B1F2E`, `background_color=#FFFFFF`, themed brand icons in `public/icons/` (192/512 `any` + 192/512 `maskable` full-bleed + `apple-touch-icon` 180).
+- `GET /admin/sw.js` (`admin.pwa.sw`) — the service worker, served with `Service-Worker-Allowed: /admin/`. Its `CACHE` name embeds a build version (`md5` of `public/build/manifest.json`), so a new asset build auto-invalidates the old cache.
+
+SW strategy: HTML **navigations** are network-first with the precached `public/offline.html` shell as fallback — **authenticated HTML is never written to the cache** (security); static assets (`/build/`, `/icons/`, manifest) are cache-first; Livewire/AJAX/POST and cross-origin requests pass straight through (so 5 s polling, Web Notifications, Web Audio and the favicon badge are unaffected online). Registration lives in `resources/js/app.js` and runs only on `/admin/*` pages in a secure context (HTTPS/localhost). Both admin layouts (`admin-chat`, `admin-settings`) carry the `<link rel="manifest">`, `theme-color`, and apple-touch-icon `<head>` tags. Install uses the browser's native prompt (no custom in-app button). Deploy note: `resources/js/app.js` is bundled, so an asset rebuild (`npm run build`) is required for the SW registration to ship. Tests: `tests/Feature/Admin/PwaTest.php`.
+
 **Component property naming**: uses `$formErrors` (not `$errors`) to avoid shadowing Blade's global `$errors` bag.
 
 **Route**: `GET /admin/settings/general` → name `admin.settings.general`; registered in `AdminServiceProvider::boot()` under `['web', Filament\Http\Middleware\Authenticate::class]`.
