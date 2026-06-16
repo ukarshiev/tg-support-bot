@@ -27,6 +27,7 @@ erDiagram
         string name
         string email UK
         string role
+        string avatar_path
         string password
         timestamp email_verified_at
         string remember_token
@@ -38,6 +39,10 @@ erDiagram
         bigint chat_id
         bigint topic_id
         string platform
+        string display_name
+        string username
+        string avatar_path
+        timestamp profile_synced_at
         string external_source_id
         boolean is_banned
         timestamp banned_at
@@ -51,6 +56,8 @@ erDiagram
         enum message_type
         bigint from_id
         bigint to_id
+        bigint sender_user_id FK "nullable"
+        string sender_name "nullable"
         timestamps
     }
 
@@ -123,6 +130,7 @@ erDiagram
     }
 
     BOT_USERS ||--o{ MESSAGES : "has many"
+    USERS ||--o{ MESSAGES : "sender (nullable)"
     MESSAGES ||--o| EXTERNAL_MESSAGES : "has one"
     BOT_USERS ||--o| EXTERNAL_USERS : "has one"
     BOT_USERS ||--o| AI_CONDITIONS : "has one"
@@ -145,6 +153,7 @@ Laravel authentication table for admin users.
 | `name` | `string` | No | — | Display name |
 | `email` | `string` | No | — | Unique login identifier |
 | `role` | `string` | No | `manager` | Access role: `admin` or `manager` |
+| `avatar_path` | `string` | Yes | NULL | Local storage path on the `local` disk (e.g. `avatars/user-42.jpg`) — uploaded via the Team admin UI; NULL = use deterministic initials |
 | `email_verified_at` | `timestamp` | Yes | NULL | Email verification timestamp |
 | `password` | `string` | No | — | Hashed password (bcrypt) |
 | `remember_token` | `string(100)` | Yes | NULL | Session remember token |
@@ -154,6 +163,8 @@ Laravel authentication table for admin users.
 **Indexes:**
 - PRIMARY on `id`
 - UNIQUE on `email` — prevents duplicate accounts
+
+**Migration:** `database/migrations/2026_06_15_000002_add_avatar_path_to_users_table.php`
 
 ---
 
@@ -167,6 +178,10 @@ Core table. Stores every user that has interacted with the bot across all platfo
 | `chat_id` | `bigint` | No | — | User's ID in Telegram, VK, or External system |
 | `topic_id` | `bigint` | Yes | NULL | Telegram forum topic ID for this user's conversation |
 | `platform` | `string` | No | — | Platform: `telegram`, `vk`, `external_source` |
+| `display_name` | `string` | Yes | NULL | Human-readable display name (first + last name or username fallback) — populated by `EnrichBotUserProfileJob` and sync'd from webhook on Telegram |
+| `username` | `string` | Yes | NULL | Platform handle/username (e.g. Telegram @username) — populated from DTO or async job |
+| `avatar_path` | `string` | Yes | NULL | Local storage path on the `local` disk under `avatars/` (e.g. `avatars/bot-user-42.jpg`) — populated by `EnrichBotUserProfileJob` |
+| `profile_synced_at` | `timestamp` | Yes | NULL | Last time profile data was fetched from the platform API; used as a 30-day TTL guard in `EnrichBotUserProfileJob` |
 | `external_source_id` | `string` | Yes | NULL | External source identifier (for `external_source` platform) |
 | `is_banned` | `boolean` | No | `false` | Whether user is banned from sending messages |
 | `banned_at` | `timestamp` | Yes | NULL | When the user was banned |
@@ -202,6 +217,8 @@ Tracks all individual messages exchanged between users and the support team.
 | `message_type` | `enum` | No | — | Direction: `incoming` or `outgoing` |
 | `from_id` | `bigint` | No | — | Sender's ID |
 | `to_id` | `bigint` | No | — | Recipient's ID |
+| `sender_user_id` | `bigint` | Yes | NULL | FK → `users.id` (nullOnDelete) — admin-panel operator who sent this outgoing message; null for incoming, AI auto-replies, and telegram-group replies |
+| `sender_name` | `string` | Yes | NULL | Name snapshot of the operator at send time — survives operator deletion; null when no author is recorded |
 | `created_at` | `timestamp` | Yes | NULL | Message time |
 | `updated_at` | `timestamp` | Yes | NULL | Last update time |
 
@@ -209,6 +226,9 @@ Tracks all individual messages exchanged between users and the support team.
 - PRIMARY on `id`
 - INDEX on `message_type` — used in filtering queries
 - FOREIGN KEY `bot_user_id` → `bot_users.id` ON DELETE CASCADE
+- FOREIGN KEY `sender_user_id` → `users.id` ON DELETE SET NULL
+
+**Migration:** `database/migrations/2026_06_15_000003_add_sender_to_messages_table.php`
 
 **Enums:**
 
