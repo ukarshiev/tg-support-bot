@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Jobs\EnrichBotUserProfileJob;
 use App\Modules\External\DTOs\ExternalMessageDto;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,6 +17,10 @@ use phpDocumentor\Reflection\Exception;
  * @property int                             $topic_id
  * @property int                             $chat_id
  * @property string                          $platform
+ * @property string|null                     $display_name
+ * @property string|null                     $username
+ * @property string|null                     $avatar_path
+ * @property \Illuminate\Support\Carbon|null $profile_synced_at
  * @property mixed                           $aiCondition
  * @property mixed                           $lastMessageManager
  * @property ExternalUser|null               $externalUser
@@ -34,6 +39,10 @@ class BotUser extends Model
         'chat_id',
         'topic_id',
         'platform',
+        'display_name',
+        'username',
+        'avatar_path',
+        'profile_synced_at',
         'is_banned',
         'banned_at',
         'is_closed',
@@ -43,6 +52,7 @@ class BotUser extends Model
 
     protected $casts = [
         'manager_last_read_at' => 'datetime',
+        'profile_synced_at' => 'datetime',
     ];
 
     /**
@@ -159,6 +169,34 @@ class BotUser extends Model
                         'platform' => 'telegram',
                     ]
                 );
+
+                if ($botUser->wasRecentlyCreated) {
+                    // New user — fill profile from DTO synchronously.
+                    $fill = [];
+                    if ($update->displayName !== null) {
+                        $fill['display_name'] = $update->displayName;
+                    }
+                    if ($update->username !== null) {
+                        $fill['username'] = $update->username;
+                    }
+                    if (!empty($fill)) {
+                        $botUser->update($fill);
+                    }
+                } else {
+                    // Existing user — opportunistically update only if changed.
+                    $fill = [];
+                    if ($update->displayName !== null && $botUser->display_name !== $update->displayName) {
+                        $fill['display_name'] = $update->displayName;
+                    }
+                    if ($update->username !== null && $botUser->username !== $update->username) {
+                        $fill['username'] = $update->username;
+                    }
+                    if (!empty($fill)) {
+                        $botUser->update($fill);
+                    }
+                }
+
+                self::maybeEnrichProfile($botUser);
             }
 
             return $botUser ?? null;
@@ -197,13 +235,37 @@ class BotUser extends Model
     public static function getUserByChatId(string|int $chatId, string $platform): ?BotUser
     {
         try {
-            return self::firstOrCreate([
+            $botUser = self::firstOrCreate([
                 'chat_id' => $chatId,
             ], [
                 'platform' => $platform,
             ]);
+
+            self::maybeEnrichProfile($botUser);
+
+            return $botUser;
         } catch (\Throwable $e) {
             return null;
+        }
+    }
+
+    /**
+     * Dispatch the async profile-enrichment job only when a (re)sync is due —
+     * i.e. the profile has never been synced or its data is older than the TTL.
+     *
+     * Guarding the dispatch (not just the job body) avoids enqueuing a no-op job
+     * on every incoming message; the job's own TTL check is the final safety net.
+     *
+     * @param BotUser $botUser
+     *
+     * @return void
+     */
+    private static function maybeEnrichProfile(BotUser $botUser): void
+    {
+        $syncedAt = $botUser->profile_synced_at;
+
+        if ($syncedAt === null || $syncedAt->diffInDays(now()) >= EnrichBotUserProfileJob::SYNC_TTL_DAYS) {
+            dispatch(new EnrichBotUserProfileJob($botUser));
         }
     }
 

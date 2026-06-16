@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Modules\Telegram\Services\TgMax;
 
+use App\Jobs\EnrichBotUserProfileJob;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Max\Actions\UploadFileMax;
@@ -174,6 +175,8 @@ class TgMaxMessageServiceTest extends TestCase
 
         (new TgMaxMessageService($dto))->handleUpdate();
 
-        Queue::assertNothingPushed();
+        // getUserByChatId() now always dispatches EnrichBotUserProfileJob (BR-011).
+        // Assert no message-forwarding job was dispatched (no text/caption to forward).
+        Queue::assertNotPushed(SendMaxMessageJob::class);
     }
 }

@@ -16,7 +16,8 @@
     ];
     $avatarIndex  = abs(crc32((string) $botUser->chat_id)) % 8;
     $avatarColor  = $avatarHex[$avatarIndex];
-    $initials     = strtoupper(substr((string) $botUser->chat_id, 0, 2));
+    $displayLabel = $botUser->display_name ?? (string) $botUser->chat_id;
+    $initials     = strtoupper(substr($displayLabel, 0, 2));
 
     /*
      * Platform badge — small coloured pill (TG / VK / Web / Max).
@@ -77,13 +78,23 @@
     onmouseenter="if(!{{ $isActive ? 'true' : 'false' }}) this.style.background='#252A3A'"
     onmouseleave="if(!{{ $isActive ? 'true' : 'false' }}) this.style.background='transparent'"
 >
-    {{-- Avatar: 44×44 circle, deterministic color, white initials 15/600 --}}
+    {{-- Avatar: 44×44 circle — photo if available, else deterministic color + initials --}}
     {{-- Design: node STtU2 — cornerRadius 22, fill = avatar color; Lqpcy — initials text --}}
-    <div
-        class="relative flex shrink-0 items-center justify-center rounded-full text-white select-none"
-        style="width:44px; height:44px; background:{{ $avatarColor }}; font-size:15px; font-weight:600; border-radius:22px; {{ ($isClosed || $isBanned) ? 'opacity:0.5;' : '' }}"
-        aria-hidden="true"
-    >{{ $initials }}</div>
+    @if($botUser->avatar_path)
+        <img
+            src="{{ route('admin.bot-user-avatar', $botUser->id) }}"
+            alt="{{ $displayLabel }}"
+            class="relative shrink-0 rounded-full object-cover select-none"
+            style="width:44px; height:44px; border-radius:22px; {{ ($isClosed || $isBanned) ? 'opacity:0.5;' : '' }}"
+            aria-hidden="true"
+        >
+    @else
+        <div
+            class="relative flex shrink-0 items-center justify-center rounded-full text-white select-none"
+            style="width:44px; height:44px; background:{{ $avatarColor }}; font-size:15px; font-weight:600; border-radius:22px; {{ ($isClosed || $isBanned) ? 'opacity:0.5;' : '' }}"
+            aria-hidden="true"
+        >{{ $initials }}</div>
+    @endif
 
     {{-- Info column --}}
     {{-- Design: node s9GO9k — vertical, gap 4, fill_container --}}
@@ -97,7 +108,7 @@
             {{-- Design: node qwERT — gap 6, align center --}}
             <div class="flex items-center min-w-0" style="gap:6px;">
                 <span class="truncate text-text-sidebar font-semibold" style="font-size:14px;">
-                    {{ $botUser->chat_id }}
+                    {{ $displayLabel }}
                 </span>
                 {{-- Platform badge --}}
                 {{-- Design: node QeXDw — cornerRadius 3, padding [2,5], platform fill --}}

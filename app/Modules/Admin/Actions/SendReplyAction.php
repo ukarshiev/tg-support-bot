@@ -4,6 +4,7 @@ namespace App\Modules\Admin\Actions;
 
 use App\Models\BotUser;
 use App\Models\Message;
+use App\Models\User;
 use App\Modules\Admin\Jobs\SendAdminDocumentJob;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Max\Actions\UploadFileMax;
@@ -28,10 +29,11 @@ class SendReplyAction
      * @param BotUser           $botUser Target user
      * @param string            $text    Message text (may be empty when file is provided)
      * @param UploadedFile|null $file    Optional file attachment
+     * @param User|null         $author  Operator sending the reply (null for AI/telegram-group paths)
      *
      * @return void
      */
-    public static function execute(BotUser $botUser, string $text, ?UploadedFile $file = null): void
+    public static function execute(BotUser $botUser, string $text, ?UploadedFile $file = null, ?User $author = null): void
     {
         // A new reply re-opens a previously closed conversation.
         if ($botUser->isClosed()) {
@@ -45,6 +47,8 @@ class SendReplyAction
             'from_id' => 0,
             'to_id' => 0,
             'text' => $text ?: null,
+            'sender_user_id' => $author?->id,
+            'sender_name' => $author?->name,
         ]);
 
         match (true) {

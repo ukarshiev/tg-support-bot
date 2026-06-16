@@ -11,6 +11,43 @@
 
         <div class="space-y-5">
 
+            {{-- Avatar upload --}}
+            <x-admin.form-field label="Фото" for="avatar" :error="$errors->first('avatar')">
+                <div class="flex items-center gap-4">
+                    {{-- Current avatar or preview of new upload — only for previewable image types --}}
+                    @if ($avatar && in_array($avatar->extension(), ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg']))
+                        <img src="{{ $avatar->temporaryUrl() }}" alt="Предпросмотр" class="h-14 w-14 rounded-full object-cover">
+                    @elseif ($currentAvatarPath)
+                        <img src="{{ route('admin.team-member-avatar', $userId) }}" alt="Текущее фото" class="h-14 w-14 rounded-full object-cover">
+                    @else
+                        <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-bg-secondary text-text-secondary">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                            </svg>
+                        </div>
+                    @endif
+                    <div class="flex flex-col gap-2">
+                        <input
+                            id="avatar"
+                            type="file"
+                            wire:model="avatar"
+                            accept="image/*"
+                            class="block text-sm text-text-secondary file:mr-3 file:rounded-lg file:border file:border-border-light file:bg-bg-primary file:px-3 file:py-1.5 file:text-sm file:text-text-primary file:transition file:hover:bg-bg-secondary"
+                        >
+                        @if ($currentAvatarPath && !$avatar)
+                            <button
+                                type="button"
+                                wire:click="removeAvatar"
+                                wire:confirm="Удалить фото участника? Действие необратимо."
+                                class="self-start text-[12px] text-red-500 hover:underline"
+                            >
+                                Удалить фото
+                            </button>
+                        @endif
+                    </div>
+                </div>
+            </x-admin.form-field>
+
             {{-- Name --}}
             <x-admin.form-field label="Имя" for="name" :error="$errors->first('name')">
                 <input

@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Modules\Ai\Actions;
 
+use App\Jobs\EnrichBotUserProfileJob;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Ai\Actions\DeliverAiAnswerToUser;
@@ -105,6 +106,10 @@ class DeliverAiAnswerToUserTest extends TestCase
 
         $this->assertFalse($result);
 
-        Queue::assertNothingPushed();
+        // getUserByChatId() now always dispatches EnrichBotUserProfileJob (BR-011).
+        // Verify only that no platform send jobs were dispatched for unsupported platforms.
+        Queue::assertNotPushed(SendTelegramMessageJob::class);
+        Queue::assertNotPushed(SendVkMessageJob::class);
+        Queue::assertNotPushed(SendMaxMessageJob::class);
     }
 }

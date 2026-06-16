@@ -331,7 +331,9 @@
                         $hdrColors = ['#6366F1','#E85D75','#34C759','#F5A623','#06B6D4','#10B981','#8B5CF6','#EF4444'];
                         $hdrIdx = abs(crc32((string) $activeBotUser->chat_id)) % 8;
                         $hdrColor = $hdrColors[$hdrIdx];
-                        $hdrInitials = strtoupper(substr((string) $activeBotUser->chat_id, 0, 2));
+                        $hdrDisplayName = $activeBotUser->display_name ?? (string) $activeBotUser->chat_id;
+                        $hdrInitials = strtoupper(substr($hdrDisplayName, 0, 2));
+                        $hdrHandle = $activeBotUser->username;
                         $platformLabel = match ($activeBotUser->platform) {
                             'telegram' => 'Telegram',
                             'vk'       => 'VK',
@@ -351,21 +353,31 @@
                         aria-label="Открыть сведения о клиенте"
                         title="Сведения о клиенте"
                     >
-                        {{-- User avatar (42×42 ellipse) with initials --}}
-                        <div
-                            class="relative shrink-0 flex items-center justify-center rounded-full text-white font-semibold select-none"
-                            style="width:42px; height:42px; background:{{ $hdrColor }}; font-size:16px;"
-                            aria-hidden="true"
-                        >{{ $hdrInitials }}</div>
+                        {{-- User avatar (42×42 ellipse) — photo or initials --}}
+                        @if($activeBotUser->avatar_path)
+                            <img
+                                src="{{ route('admin.bot-user-avatar', $activeBotUser->id) }}"
+                                alt="{{ $hdrDisplayName }}"
+                                class="relative shrink-0 rounded-full object-cover select-none"
+                                style="width:42px; height:42px;"
+                                aria-hidden="true"
+                            >
+                        @else
+                            <div
+                                class="relative shrink-0 flex items-center justify-center rounded-full text-white font-semibold select-none"
+                                style="width:42px; height:42px; background:{{ $hdrColor }}; font-size:16px;"
+                                aria-hidden="true"
+                            >{{ $hdrInitials }}</div>
+                        @endif
 
                         {{-- Name + platform sub-line --}}
                         {{-- Design: node O6aEj — vertical layout gap 2 --}}
                         <div class="flex flex-col min-w-0" style="gap:2px;">
                             <span class="text-sm font-semibold text-text-primary leading-tight truncate max-w-[280px]">
-                                {{ $activeBotUser->chat_id }}
+                                {{ $hdrDisplayName }}
                             </span>
                             <span class="text-xs text-text-secondary leading-tight truncate">
-                                {{ '@' . $activeBotUser->chat_id }} · {{ $platformLabel }}
+                                @if($hdrHandle){{ '@' . $hdrHandle }} · @endif{{ $platformLabel }}
                             </span>
                         </div>
                     </div>
@@ -535,9 +547,10 @@
                     @endphp
 
                     @if($isOutgoing)
-                        {{-- Outgoing: right-aligned, bg-accent (#4F6EF7), white text, cornerRadius [16,16,4,16] --}}
-                        {{-- Design: node uduZU / Bubble Out --}}
-                        <div class="flex w-full" style="justify-content:flex-end;">
+                        {{-- Outgoing: right-aligned with small manager avatar, bg-accent (#4F6EF7), white text, cornerRadius [16,16,4,16] --}}
+                        {{-- Design: node uduZU / Bubble Out — mirrors the incoming layout (bubble + 32×32 avatar) --}}
+                        <div class="flex items-end w-full" style="gap:10px; justify-content:flex-end;">
+                            {{-- Bubble --}}
                             <div class="flex flex-col" style="border-radius:16px 16px 4px 16px; background:#4F6EF7; padding:10px 14px; gap:4px; max-width:70%;">
                                 @if($message->attachments->isNotEmpty())
                                     <x-message-attachments
@@ -555,6 +568,56 @@
                                     {{ $message->created_at?->format('H:i') }}
                                 </p>
                             </div>
+                            {{-- Operator avatar: photo > initials > generic headset glyph --}}
+                            @php
+                                $sender = $message->sender;
+                                $senderName = $sender?->name ?? $message->sender_name;
+                                // Derive 2-letter initials from the name.
+                                $senderInitials = null;
+                                if ($senderName) {
+                                    $parts = explode(' ', trim($senderName));
+                                    $senderInitials = count($parts) >= 2
+                                        ? mb_strtoupper(mb_substr($parts[0], 0, 1) . mb_substr($parts[1], 0, 1))
+                                        : mb_strtoupper(mb_substr($parts[0], 0, 2));
+                                }
+                                // 8-color palette (same hue set used for team-member initials).
+                                $avatarPalette = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#10B981','#3B82F6','#EF4444','#14B8A6'];
+                                $senderColor = $senderName
+                                    ? $avatarPalette[abs(crc32($senderName)) % 8]
+                                    : '#4F6EF7';
+                            @endphp
+                            @if($sender && $sender->avatar_path)
+                                {{-- Known operator with uploaded photo --}}
+                                <img
+                                    src="{{ route('admin.team-member-avatar', $sender) }}"
+                                    alt="{{ $senderName }}"
+                                    title="{{ $senderName }}"
+                                    class="shrink-0 rounded-full object-cover select-none"
+                                    style="width:32px; height:32px;"
+                                >
+                            @elseif($senderInitials)
+                                {{-- Known operator — show initials circle --}}
+                                <div
+                                    class="flex shrink-0 items-center justify-center rounded-full text-white font-semibold select-none"
+                                    style="width:32px; height:32px; background:{{ $senderColor }}; font-size:11px;"
+                                    title="{{ $senderName }}"
+                                    aria-hidden="true"
+                                >{{ $senderInitials }}</div>
+                            @else
+                                {{-- No author recorded — generic headset glyph (historical / AI / telegram-group) --}}
+                                <div
+                                    class="flex shrink-0 items-center justify-center rounded-full select-none"
+                                    style="width:32px; height:32px; background:#EEF2FF;"
+                                    aria-hidden="true"
+                                    title="Менеджер"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F6EF7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M3 14v-3a9 9 0 0 1 18 0v3" />
+                                        <path d="M21 16a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h3z" />
+                                        <path d="M3 16a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H3z" />
+                                    </svg>
+                                </div>
+                            @endif
                         </div>
                     @else
                         {{-- Incoming: left-aligned with small avatar, bg-primary / bg-input bubble, cornerRadius [16,16,16,4] --}}
@@ -773,19 +836,31 @@
                     $rpColors = ['#6366F1','#E85D75','#34C759','#F5A623','#06B6D4','#10B981','#8B5CF6','#EF4444'];
                     $rpIdx = abs(crc32((string) $activeBotUser->chat_id)) % 8;
                     $rpColor = $rpColors[$rpIdx];
-                    $rpInitials = strtoupper(substr((string) $activeBotUser->chat_id, 0, 2));
+                    $rpDisplayName = $activeBotUser->display_name ?? (string) $activeBotUser->chat_id;
+                    $rpInitials = strtoupper(substr($rpDisplayName, 0, 2));
+                    $rpHandle = $activeBotUser->username;
                 @endphp
-                <div
-                    class="flex items-center justify-center rounded-full text-white font-semibold select-none shrink-0"
-                    style="width:64px; height:64px; background:{{ $rpColor }}; font-size:22px; border-radius:32px;"
-                    aria-hidden="true"
-                >{{ $rpInitials }}</div>
+                @if($activeBotUser->avatar_path)
+                    <img
+                        src="{{ route('admin.bot-user-avatar', $activeBotUser->id) }}"
+                        alt="{{ $rpDisplayName }}"
+                        class="flex items-center justify-center rounded-full object-cover select-none shrink-0"
+                        style="width:64px; height:64px; border-radius:32px;"
+                        aria-hidden="true"
+                    >
+                @else
+                    <div
+                        class="flex items-center justify-center rounded-full text-white font-semibold select-none shrink-0"
+                        style="width:64px; height:64px; background:{{ $rpColor }}; font-size:22px; border-radius:32px;"
+                        aria-hidden="true"
+                    >{{ $rpInitials }}</div>
+                @endif
 
                 {{-- Name + handle --}}
                 {{-- Design: node wAn8z — vertical, gap 4, center --}}
                 <div class="flex flex-col items-center w-full" style="gap:4px;">
                     <span class="text-text-primary font-semibold text-center" style="font-size:16px;">
-                        {{ $activeBotUser->chat_id }}
+                        {{ $rpDisplayName }}
                     </span>
                     @php
                         $rpPlatformLabel = match ($activeBotUser->platform) {
@@ -796,7 +871,7 @@
                         };
                     @endphp
                     <span class="text-text-secondary text-center" style="font-size:13px;">
-                        {{ '@' . $activeBotUser->chat_id }} · {{ $rpPlatformLabel }}
+                        @if($rpHandle){{ '@' . $rpHandle }} · @endif{{ $rpPlatformLabel }}
                     </span>
                 </div>
 

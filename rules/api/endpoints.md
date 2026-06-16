@@ -101,6 +101,8 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/admin/settings/api-webhooks` | session (admin only) | API and webhooks list (`ApiWebhooksPage`, custom Livewire) — name `admin.settings.api-webhooks` |
 | `GET` | `/admin/settings/api-webhooks/{source}` | session (admin only) | Per-source config (`ApiWebhookSourcePage`; source ∈ `[0-9]+`) — name `admin.settings.api-webhooks.source` |
 | `GET` | `/admin/settings/team` | session (admin only) | Team management screen (`TeamPage`, custom Livewire) — name `admin.settings.team` |
+| `GET` | `/admin/bot-user-avatars/{botUser}` | session | Stream locally-stored bot user avatar (fetched by `EnrichBotUserProfileJob`); `avatar_path` must start with `avatars/` — name `admin.bot-user-avatar` |
+| `GET` | `/admin/team-member-avatars/{user}` | session | Stream locally-stored team member (operator) avatar (uploaded via Team admin UI); `avatar_path` must start with `avatars/` and contain no `..` — name `admin.team-member-avatar` |
 
 > The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens. The underlying models, services, and artisan commands are unchanged.
 

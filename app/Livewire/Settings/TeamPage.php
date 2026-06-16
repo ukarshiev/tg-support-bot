@@ -6,6 +6,7 @@ namespace App\Livewire\Settings;
 
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -129,7 +130,17 @@ class TeamPage extends Component
             return;
         }
 
-        User::whereKey($userId)->delete();
+        $member = User::find($userId);
+
+        if (! $member) {
+            return;
+        }
+
+        if ($member->avatar_path !== null) {
+            Storage::disk('local')->delete($member->avatar_path);
+        }
+
+        $member->delete();
     }
 
     /**

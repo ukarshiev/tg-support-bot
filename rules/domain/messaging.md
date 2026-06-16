@@ -89,6 +89,11 @@ _Enforced in:_ `app/Services/Button/KeyboardBuilder.php`, `app/Services/Button/B
 **BR-010** — External source messages delivered via REST API must trigger a webhook notification to the source's `webhook_url` when the team replies.
 _Enforced in:_ `app/Jobs/SendMessage/SendWebhookMessage.php`, `app/Services/Webhook/WebhookService.php`
 
+**BR-011** — Outgoing messages sent from the admin-panel chat workspace record the authenticated operator as a name snapshot (`messages.sender_name`) and a FK (`messages.sender_user_id`). If the operator is later deleted, `sender_user_id` is nulled by the DB constraint but `sender_name` is preserved. The chat workspace displays the operator avatar/initials when available; falls back to the generic headset glyph when `sender_name` is null (historical messages, AI auto-replies, telegram-group replies).
+_Enforced in:_ `app/Modules/Admin/Actions/SendReplyAction.php @ execute()`, `app/Livewire/Chat/ConversationPage.php @ sendReply()`
+
+**DEFERRED (issue #172)** — AI Accept-callback operator attribution (`DeliverAiAnswerToUser`, `TelegramBotController` Accept handler) — AI paths continue to pass `null` as the author until a dedicated task implements it.
+
 ---
 
 ## 5. Message Type State Machine

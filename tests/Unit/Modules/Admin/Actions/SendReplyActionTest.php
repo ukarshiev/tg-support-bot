@@ -5,6 +5,7 @@ namespace Tests\Unit\Modules\Admin\Actions;
 use App\Models\BotUser;
 use App\Models\ExternalSource;
 use App\Models\ExternalUser;
+use App\Models\User;
 use App\Modules\Admin\Actions\SendReplyAction;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Max\Actions\UploadFileMax;
@@ -255,5 +256,56 @@ class SendReplyActionTest extends TestCase
 
         $botUser->refresh();
         $this->assertFalse($botUser->isClosed());
+    }
+
+    // ── Authorship ─────────────────────────────────────────────────────────────
+
+    public function test_passing_author_writes_sender_user_id_and_sender_name(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create(['name' => 'Operator Vasya']);
+        $botUser = BotUser::create(['chat_id' => 500, 'platform' => 'telegram']);
+
+        SendReplyAction::execute($botUser, 'Authored reply', null, $user);
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'sender_user_id' => $user->id,
+            'sender_name' => 'Operator Vasya',
+        ]);
+    }
+
+    public function test_omitting_author_leaves_sender_fields_null(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 501, 'platform' => 'telegram']);
+
+        SendReplyAction::execute($botUser, 'Anonymous reply');
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'sender_user_id' => null,
+            'sender_name' => null,
+        ]);
+    }
+
+    public function test_explicit_null_author_preserves_backward_compatibility(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 502, 'platform' => 'vk']);
+
+        SendReplyAction::execute($botUser, 'Compat reply', null, null);
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'sender_user_id' => null,
+            'sender_name' => null,
+        ]);
     }
 }

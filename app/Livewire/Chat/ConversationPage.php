@@ -17,6 +17,7 @@ use App\Modules\Telegram\Actions\CloseTopic;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -407,7 +408,10 @@ class ConversationPage extends Component
         $latest = $fresh->last();
         $count = $fresh->count();
 
-        $chatId = (string) (BotUser::where('id', $latest->bot_user_id)->value('chat_id') ?? '');
+        $notifyUser = BotUser::where('id', $latest->bot_user_id)->first(['chat_id', 'display_name']);
+        $chatId = $notifyUser !== null
+            ? (string) ($notifyUser->display_name ?? $notifyUser->chat_id)
+            : '';
         $preview = filled($latest->text)
             ? mb_substr((string) $latest->text, 0, 80)
             : 'Вложение';
@@ -442,7 +446,7 @@ class ConversationPage extends Component
         // Most recent page only — older messages are pulled in on scroll-up.
         // Fetch one extra row to detect whether more history exists.
         $batch = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments'])
+            ->with(['externalMessage', 'attachments', 'sender'])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::MESSAGES_PER_PAGE + 1)
@@ -473,7 +477,7 @@ class ConversationPage extends Component
         $oldest = $this->chatMessages->first();
 
         $batch = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments'])
+            ->with(['externalMessage', 'attachments', 'sender'])
             ->where(function ($q) use ($oldest): void {
                 $q->where('created_at', '<', $oldest->created_at)
                     ->orWhere(function ($q2) use ($oldest): void {
@@ -511,7 +515,7 @@ class ConversationPage extends Component
         $newest = $this->chatMessages->last();
 
         $query = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments'])
+            ->with(['externalMessage', 'attachments', 'sender'])
             ->orderBy('created_at')
             ->orderBy('id');
 
@@ -563,7 +567,9 @@ class ConversationPage extends Component
             'attachment' => ['nullable', 'file', 'max:20480'],
         ]);
 
-        SendReplyAction::execute($this->activeBotUser, $this->replyText, $file);
+        /** @var \App\Models\User $operator */
+        $operator = Auth::user();
+        SendReplyAction::execute($this->activeBotUser, $this->replyText, $file, $operator);
 
         $this->replyText = '';
         $this->attachment = null;

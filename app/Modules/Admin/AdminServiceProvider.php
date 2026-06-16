@@ -15,8 +15,10 @@ use App\Livewire\Settings\IntegrationsListPage;
 use App\Livewire\Settings\TeamMemberCreatePage;
 use App\Livewire\Settings\TeamMemberEditPage;
 use App\Livewire\Settings\TeamPage;
+use App\Modules\Admin\Controllers\BotUserAvatarController;
 use App\Modules\Admin\Controllers\ChatAttachmentController;
 use App\Modules\Admin\Controllers\PwaController;
+use App\Modules\Admin\Controllers\UserAvatarController;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -55,6 +57,18 @@ class AdminServiceProvider extends ServiceProvider
             ->get('/admin/chat-attachments/{attachment}', [ChatAttachmentController::class, 'show'])
             ->name('admin.chat-attachment')
             ->where('attachment', '[0-9]+');
+
+        // Streams locally-stored bot user avatars — fetched async by EnrichBotUserProfileJob.
+        Route::middleware(['web', Authenticate::class])
+            ->get('/admin/bot-user-avatars/{botUser}', [BotUserAvatarController::class, 'show'])
+            ->name('admin.bot-user-avatar')
+            ->where('botUser', '[0-9]+');
+
+        // Streams locally-stored team member (operator) avatars — uploaded via TeamMemberCreatePage / TeamMemberEditPage.
+        Route::middleware(['web', Authenticate::class])
+            ->get('/admin/team-member-avatars/{user}', [UserAvatarController::class, 'show'])
+            ->name('admin.team-member-avatar')
+            ->where('user', '[0-9]+');
 
         // Custom Livewire Settings routes.
         // Prefix: /admin/settings — verified not claimed by Filament's panel.

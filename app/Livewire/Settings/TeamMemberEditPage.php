@@ -7,9 +7,11 @@ namespace App\Livewire\Settings;
 use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 /**
  * «Редактирование участника» — edit a team member (name, email, role) and
@@ -26,6 +28,8 @@ use Livewire\Component;
 #[Layout('layouts.admin-settings')]
 class TeamMemberEditPage extends Component
 {
+    use WithFileUploads;
+
     /** @var int The edited user id */
     public int $userId = 0;
 
@@ -43,6 +47,12 @@ class TeamMemberEditPage extends Component
 
     /** @var string New password confirmation */
     public string $password_confirmation = '';
+
+    /** @var string|null Current avatar path stored in the DB */
+    public ?string $currentAvatarPath = null;
+
+    /** @var \Livewire\Features\SupportFileUploads\TemporaryUploadedFile|null New avatar image to upload (optional) */
+    public $avatar = null;
 
     /**
      * Boot: guard admin access, then prefill from the user.
@@ -72,12 +82,14 @@ class TeamMemberEditPage extends Component
         $this->name = $member->name;
         $this->email = $member->email;
         $this->role = $member->role->value;
+        $this->currentAvatarPath = $member->avatar_path;
     }
 
     /**
      * Validate and persist the changes, then return to the team list.
      *
      * Password is optional: a blank value keeps the current password.
+     * If a new avatar was uploaded, it overwrites the existing one.
      */
     public function save(): void
     {
@@ -86,6 +98,7 @@ class TeamMemberEditPage extends Component
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->userId)],
             'role' => ['required', Rule::in(array_keys(UserRole::options()))],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'avatar' => ['nullable', 'image', 'max:2048'],
         ], [
             'name.required' => 'Введите имя.',
             'email.required' => 'Введите email.',
@@ -95,6 +108,8 @@ class TeamMemberEditPage extends Component
             'role.in' => 'Недопустимая роль.',
             'password.min' => 'Пароль должен быть не короче 8 символов.',
             'password.confirmed' => 'Пароли не совпадают.',
+            'avatar.image' => 'Файл должен быть изображением.',
+            'avatar.max' => 'Размер изображения не должен превышать 2 МБ.',
         ]);
 
         $member = User::find($this->userId);
@@ -115,9 +130,34 @@ class TeamMemberEditPage extends Component
             $data['password'] = $validated['password'];
         }
 
+        if ($this->avatar !== null) {
+            $path = $this->avatar->storeAs('avatars', "user-{$member->id}.jpg", 'local');
+            $data['avatar_path'] = $path;
+        }
+
         $member->update($data);
 
         $this->redirectRoute('admin.settings.team');
+    }
+
+    /**
+     * Remove the current avatar: delete the file from local disk and null avatar_path.
+     */
+    public function removeAvatar(): void
+    {
+        $member = User::find($this->userId);
+
+        if (! $member) {
+            return;
+        }
+
+        if ($member->avatar_path !== null) {
+            Storage::disk('local')->delete($member->avatar_path);
+            $member->update(['avatar_path' => null]);
+            $this->currentAvatarPath = null;
+        }
+
+        $this->avatar = null;
     }
 
     /**
