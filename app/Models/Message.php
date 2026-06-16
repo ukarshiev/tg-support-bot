@@ -15,8 +15,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int                  $from_id
  * @property int                  $to_id
  * @property string|null          $text
+ * @property int|null             $sender_user_id
+ * @property string|null          $sender_name
  * @property ExternalMessage|null $externalMessage
  * @property BotUser|null         $botUser
+ * @property User|null            $sender
  * @property-read \Illuminate\Database\Eloquent\Collection<int, MessageAttachment> $attachments
  */
 class Message extends Model
@@ -30,6 +33,8 @@ class Message extends Model
         'from_id',
         'to_id',
         'text',
+        'sender_user_id',
+        'sender_name',
     ];
 
     /**
@@ -54,6 +59,17 @@ class Message extends Model
     public function botUser(): BelongsTo
     {
         return $this->belongsTo(BotUser::class);
+    }
+
+    /**
+     * The admin-panel operator who sent this outgoing message.
+     * Null for incoming messages, AI auto-replies, or Telegram-group replies.
+     *
+     * @return BelongsTo
+     */
+    public function sender(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'sender_user_id');
     }
 
     /**
