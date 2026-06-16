@@ -396,6 +396,8 @@ The API и вебхуки section follows the same two-page pattern as Integrati
    - **Статус**: v1 stub — renders a muted «—» placeholder badge. No `last_seen_at` column, no real online tracking yet. The placeholder is consistent with `ApiWebhookSourcePage`'s design-stub pattern.
    - **Действия**: delete button (hidden for the current user's own row). Two-step: `confirmDelete(userId)` shows inline confirm/cancel; `deleteMember()` executes deletion (BR-028 self-lockout guard).
 
+**Avatar upload**: each member may optionally have an uploaded avatar stored on the `local` disk at `avatars/user-{id}.jpg`. The avatar is uploaded from `TeamMemberCreatePage` or `TeamMemberEditPage` (both use `WithFileUploads`; validation: nullable, image, max 2 MB). Stored path is written to `users.avatar_path`. The team list renders an `<img>` via `admin.team-member-avatar` (`UserAvatarController::show()`) when `avatar_path` is set, otherwise falls back to the deterministic initials circle. `removeAvatar()` on `TeamMemberEditPage` deletes the file from disk and nulls `avatar_path`. `deleteMember()` on `TeamPage` also deletes the file from disk before removing the user record.
+
 **Avatar initials logic** (`avatarInitials(User)`):
 - Two-word name → first letter of each word uppercased.
 - Single-word name → first two letters uppercased.
@@ -410,6 +412,8 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 **Tests**:
 - `tests/Unit/Livewire/Settings/TeamPageTest.php` — access (admin/manager/guest), heading, members display, invite happy path + password reveal/dismiss + validation, delete happy path, self-lockout, avatar helpers.
 - `tests/Unit/Modules/Admin/Actions/InviteOperatorTest.php` — user creation, role assignment, password hashing, returned plain password (length + matches stored hash), persisted user.
+- `tests/Feature/Admin/TeamAvatarTest.php` — create with avatar (file stored, avatar_path set), create without avatar (null), edit replaces file, removeAvatar (file deleted + null), deleteMember removes file, team list renders img vs initials.
+- `tests/Feature/Admin/UserAvatarControllerTest.php` — serves file to authed user, guest redirect, 404 for invalid/traversal/empty path, 404 for missing file.
 
 ---
 

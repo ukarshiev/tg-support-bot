@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 /**
  * «Новый участник» — add a team member (operator) with an explicit password.
@@ -25,6 +26,8 @@ use Livewire\Component;
 #[Layout('layouts.admin-settings')]
 class TeamMemberCreatePage extends Component
 {
+    use WithFileUploads;
+
     /** @var string Member name */
     public string $name = '';
 
@@ -39,6 +42,9 @@ class TeamMemberCreatePage extends Component
 
     /** @var string Role slug: admin|manager */
     public string $role = '';
+
+    /** @var \Livewire\Features\SupportFileUploads\TemporaryUploadedFile|null Avatar image to upload (optional) */
+    public $avatar = null;
 
     /**
      * Boot: redirect non-admins to general settings.
@@ -55,6 +61,9 @@ class TeamMemberCreatePage extends Component
 
     /**
      * Validate and create the team member, then return to the team list.
+     *
+     * If an avatar was uploaded, it is stored on the `local` disk under
+     * `avatars/user-{id}.jpg` after the user record is created.
      */
     public function save(): void
     {
@@ -63,6 +72,7 @@ class TeamMemberCreatePage extends Component
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'role' => ['required', Rule::in(array_keys(UserRole::options()))],
+            'avatar' => ['nullable', 'image', 'max:2048'],
         ], [
             'name.required' => 'Введите имя.',
             'email.required' => 'Введите email.',
@@ -73,14 +83,21 @@ class TeamMemberCreatePage extends Component
             'password.confirmed' => 'Пароли не совпадают.',
             'role.required' => 'Выберите роль.',
             'role.in' => 'Недопустимая роль.',
+            'avatar.image' => 'Файл должен быть изображением.',
+            'avatar.max' => 'Размер изображения не должен превышать 2 МБ.',
         ]);
 
-        User::create([
+        $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => $validated['password'],
             'role' => UserRole::from($validated['role']),
         ]);
+
+        if ($this->avatar !== null) {
+            $path = $this->avatar->storeAs('avatars', "user-{$user->id}.jpg", 'local');
+            $user->update(['avatar_path' => $path]);
+        }
 
         $this->redirectRoute('admin.settings.team');
     }

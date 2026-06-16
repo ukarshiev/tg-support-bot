@@ -10,7 +10,8 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 /**
- * @property UserRole $role
+ * @property UserRole    $role
+ * @property string|null $avatar_path
  */
 class User extends Authenticatable implements FilamentUser
 {
@@ -45,6 +46,7 @@ class User extends Authenticatable implements FilamentUser
         'email',
         'password',
         'role',
+        'avatar_path',
     ];
 
     /**

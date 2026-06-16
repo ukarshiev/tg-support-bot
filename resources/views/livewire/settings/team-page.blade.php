@@ -66,11 +66,20 @@
 
                 {{-- Participant column --}}
                 <div class="flex items-center gap-3">
-                    <div
-                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white"
-                        style="background: {{ $avatarColor }}"
-                        aria-hidden="true"
-                    >{{ $initials }}</div>
+                    @if ($member->avatar_path)
+                        <img
+                            src="{{ route('admin.team-member-avatar', $member->id) }}"
+                            alt="{{ $memberLabel }}"
+                            class="h-9 w-9 shrink-0 rounded-full object-cover"
+                            aria-hidden="true"
+                        >
+                    @else
+                        <div
+                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white"
+                            style="background: {{ $avatarColor }}"
+                            aria-hidden="true"
+                        >{{ $initials }}</div>
+                    @endif
 
                     <div class="min-w-0">
                         <p class="truncate text-[13px] font-medium text-text-primary">
@@ -124,11 +133,20 @@
             <div class="relative flex items-center justify-between gap-2 px-4 py-3.5 transition hover:bg-bg-secondary/40 lg:hidden">
                 <a href="{{ $editUrl }}" class="absolute inset-0" aria-label="Редактировать «{{ $memberLabel }}»"></a>
                 <div class="flex min-w-0 items-center gap-3">
-                    <div
-                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white"
-                        style="background: {{ $avatarColor }}"
-                        aria-hidden="true"
-                    >{{ $initials }}</div>
+                    @if ($member->avatar_path)
+                        <img
+                            src="{{ route('admin.team-member-avatar', $member->id) }}"
+                            alt="{{ $memberLabel }}"
+                            class="h-9 w-9 shrink-0 rounded-full object-cover"
+                            aria-hidden="true"
+                        >
+                    @else
+                        <div
+                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white"
+                            style="background: {{ $avatarColor }}"
+                            aria-hidden="true"
+                        >{{ $initials }}</div>
+                    @endif
                     <div class="min-w-0">
                         <p class="truncate text-[13px] font-medium text-text-primary">
                             {{ $member->name !== '' ? $member->name : '—' }}
