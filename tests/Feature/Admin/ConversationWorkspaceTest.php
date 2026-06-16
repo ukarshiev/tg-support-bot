@@ -8,11 +8,13 @@ use App\Models\BotUser;
 use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\User;
+use App\Modules\Admin\Actions\DeleteBotUser;
 use App\Modules\Admin\Actions\SendReplyAction;
 use App\Modules\Admin\Jobs\SendAdminDocumentJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -726,5 +728,92 @@ class ConversationWorkspaceTest extends TestCase
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
             ->assertSee('Привет');
+    }
+
+    // ── Avatar cleanup on delete ───────────────────────────────────────────────
+
+    public function test_delete_bot_user_removes_avatar_file(): void
+    {
+        Storage::fake('local');
+
+        $avatarPath = 'avatars/bot-user-99.jpg';
+        Storage::disk('local')->put($avatarPath, 'AVATAR-BYTES');
+
+        $botUser = BotUser::create([
+            'chat_id' => 9999,
+            'platform' => 'telegram',
+            'avatar_path' => $avatarPath,
+        ]);
+
+        (new DeleteBotUser())->execute($botUser);
+
+        Storage::disk('local')->assertMissing($avatarPath);
+    }
+
+    // ── Operator authorship ────────────────────────────────────────────────────
+
+    public function test_send_reply_attributes_authenticated_operator(): void
+    {
+        Queue::fake();
+
+        $operator = User::factory()->create(['name' => 'Operator Masha']);
+        $botUser = BotUser::create(['chat_id' => '6000', 'platform' => 'telegram']);
+
+        Livewire::actingAs($operator)
+            ->test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->set('replyText', 'Attributed reply')
+            ->call('sendReply')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'sender_user_id' => $operator->id,
+            'sender_name' => 'Operator Masha',
+        ]);
+    }
+
+    public function test_outgoing_bubble_shows_operator_initials_when_author_known(): void
+    {
+        Queue::fake();
+
+        $operator = User::factory()->create(['name' => 'Anna Ivanova']);
+        $botUser = BotUser::create(['chat_id' => '6001', 'platform' => 'telegram']);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'Hello from operator',
+            'sender_user_id' => $operator->id,
+            'sender_name' => $operator->name,
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('AI');  // initials A+I of "Anna Ivanova"
+    }
+
+    public function test_outgoing_bubble_shows_generic_fallback_when_no_author(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => '6002', 'platform' => 'telegram']);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'Historic reply without author',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Менеджер');
     }
 }
