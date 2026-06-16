@@ -55,6 +55,21 @@ _Enforced in:_ `app/Models/BotUser.php @ getOrCreateByTelegramUpdate()`
 **BR-008** — For `external_source` platform users, an `ExternalUser` sub-record must be created or found by `external_id` + `source`.
 _Enforced in:_ `app/Models/BotUser.php @ getOrCreateExternalBotUser()`
 
+**BR-009** — When a `BotUser` for a Telegram private-chat message is first created via `getOrCreateByTelegramUpdate()`, the `display_name` and `username` fields must be filled synchronously from `TelegramUpdateDto::displayName` and `TelegramUpdateDto::username`.
+_Enforced in:_ `app/Models/BotUser.php @ getOrCreateByTelegramUpdate()`
+
+**BR-010** — For an existing `BotUser`, `display_name` and `username` are updated opportunistically when the incoming DTO carries a different value. No write is issued if the values are unchanged.
+_Enforced in:_ `app/Models/BotUser.php @ getOrCreateByTelegramUpdate()`
+
+**BR-011** — After a `BotUser` is found or created via `getOrCreateByTelegramUpdate()` (private chat) or `getUserByChatId()`, an `EnrichBotUserProfileJob` must be dispatched to the queue. The job fetches the avatar from the platform API and updates `avatar_path` and `profile_synced_at`. The job is guarded by a 30-day TTL (`profile_synced_at`): it skips work if `profile_synced_at` is set and less than 30 days old.
+_Enforced in:_ `app/Jobs/EnrichBotUserProfileJob.php`, `app/Models/BotUser.php`
+
+**BR-012** — When `DeleteBotUser::execute()` removes a user, the locally stored avatar file (`avatar_path` on the `local` disk) must be deleted before the DB row is removed. PII profile fields (`display_name`, `username`, `avatar_path`, `profile_synced_at`) must be nulled before the delete.
+_Enforced in:_ `app/Modules/Admin/Actions/DeleteBotUser.php`
+
+**BR-013** — In the admin chat workspace, `display_name` is shown wherever the user's name appears (dialog list, chat header, right panel). If `display_name` is NULL, `chat_id` is used as the fallback. If `avatar_path` is set, the avatar image is shown instead of the initials circle.
+_Enforced in:_ `resources/views/components/chat-item.blade.php`, `resources/views/livewire/chat/conversation-page.blade.php`
+
 **BR-020** — When `CloseTopic::execute()` successfully closes a conversation (`is_closed = true`), a `Feedback` record with `status = 'awaiting_rating'` must be created and a rating form must be sent to the user on their platform. Every close event creates a new feedback record — history accumulates.
 _Enforced in:_ `app/Modules/Telegram/Actions/CloseTopic.php`, `app/Modules/Feedback/Actions/SendFeedbackForm.php`
 

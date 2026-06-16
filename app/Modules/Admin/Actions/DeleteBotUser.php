@@ -10,6 +10,7 @@ use App\Models\Feedback;
 use App\Models\Message;
 use App\Models\MessageAttachment;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class DeleteBotUser
 {
@@ -43,6 +44,17 @@ class DeleteBotUser
             AiMessage::where('bot_user_id', $botUser->id)->delete();
             Feedback::where('bot_user_id', $botUser->id)->delete();
             AiCondition::where('bot_user_id', $botUser->id)->delete();
+
+            // Remove the locally-stored avatar file and clear PII profile fields.
+            if ($botUser->avatar_path) {
+                Storage::disk('local')->delete($botUser->avatar_path);
+            }
+            $botUser->update([
+                'display_name' => null,
+                'username' => null,
+                'avatar_path' => null,
+                'profile_synced_at' => null,
+            ]);
 
             $botUser->delete();
         });

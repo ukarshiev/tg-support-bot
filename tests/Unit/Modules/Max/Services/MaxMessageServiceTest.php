@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Modules\Max\Services;
 
+use App\Jobs\EnrichBotUserProfileJob;
 use App\Models\BotUser;
 use App\Modules\Max\Services\MaxMessageService;
 use App\Modules\Telegram\Jobs\SendMaxTelegramMessageJob;
@@ -244,6 +245,8 @@ class MaxMessageServiceTest extends TestCase
         $dto = MaxUpdateDtoMock::getDto($payload);
         (new MaxMessageService($dto))->handleUpdate();
 
-        Queue::assertNothingPushed();
+        // getUserByChatId() now always dispatches EnrichBotUserProfileJob (BR-011).
+        // Assert the message-processing job was not dispatched (no text/attachment to forward).
+        Queue::assertNotPushed(SendMaxTelegramMessageJob::class);
     }
 }
