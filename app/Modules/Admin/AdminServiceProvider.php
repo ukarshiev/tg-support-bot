@@ -36,7 +36,7 @@ class AdminServiceProvider extends ServiceProvider
     {
         // ── Chat workspace route ───────────────────────────────────────────────
         // Full-screen standalone Livewire route at /admin/chats.
-        // This is the primary manager entry point when MANAGER_INTERFACE=admin_panel.
+        // The admin panel is an always-active manager surface (Telegram group is an optional addition).
         // Middleware mirrors the settings routes: web session + Filament Authenticate.
         Route::middleware(['web', Authenticate::class])
             ->get('/admin/chats', ConversationPage::class)
@@ -94,7 +94,7 @@ class AdminServiceProvider extends ServiceProvider
 
                 Route::get('/integrations/{channel}', IntegrationChannelPage::class)
                     ->name('integrations.channel')
-                    ->where('channel', 'telegram|telegram_ai|vk|max');
+                    ->where('channel', 'telegram|telegram_ai|vk|max|widget');
 
                 // AI assistant settings.
                 Route::get('/ai', AiAssistantPage::class)
