@@ -17,7 +17,6 @@ use App\Services\Settings\SettingsService;
  *   Telegram AI — telegram_ai.token (secret)
  *   VK          — vk.token (secret), vk.secret_key (secret), vk.confirm_code (secret)
  *   MAX         — max.token (secret), max.secret_key (secret)
- *   Widget      — widget.site_key (non-secret, non-empty)
  *
  * Note: telegram.group_id moved to the «Основные» general settings screen —
  *       it is no longer part of the Telegram channel connection check.
@@ -40,7 +39,6 @@ class ChannelStatusService
             'telegram_ai' => $this->telegramAi(),
             'vk' => $this->vk(),
             'max' => $this->max(),
-            'widget' => $this->widget(),
         ];
     }
 
@@ -105,23 +103,6 @@ class ChannelStatusService
     {
         $connected = $this->isNonEmpty('max.token')
             && $this->isNonEmpty('max.secret_key');
-
-        return [
-            'connected' => $connected,
-            'label' => $connected ? 'Подключён' : 'Не настроен',
-        ];
-    }
-
-    /**
-     * Widget channel status.
-     *
-     * Connected when widget.site_key is set (non-empty).
-     *
-     * @return array{connected: bool, label: string}
-     */
-    public function widget(): array
-    {
-        $connected = $this->isNonEmpty('widget.site_key');
 
         return [
             'connected' => $connected,
