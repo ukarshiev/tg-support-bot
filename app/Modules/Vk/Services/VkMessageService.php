@@ -3,6 +3,7 @@
 namespace App\Modules\Vk\Services;
 
 use App\Models\BotUser;
+use App\Models\Message;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\ShouldAiReply;
@@ -42,15 +43,56 @@ class VkMessageService extends ToTgMessageService
                 throw new \Exception('Unknown event type', 1);
             }
 
-            if (!empty($this->update->listFileUrl)) {
-                $this->sendDocument();
-            } elseif (!empty($this->update->text)) {
-                $this->sendMessage();
-            } elseif (!empty($this->update->geo)) {
-                $this->sendLocation();
+            // When the Telegram supergroup is configured, forward the message to
+            // the user's forum topic; the job persists the row after the API call.
+            // When the group is NOT configured, persist directly so the admin
+            // workspace always shows incoming VK messages (group-OFF path).
+            if (!empty((string) app(SettingsService::class)->get('telegram.group_id'))) {
+                if (!empty($this->update->listFileUrl)) {
+                    $this->sendDocument();
+                } elseif (!empty($this->update->text)) {
+                    $this->sendMessage();
+                } elseif (!empty($this->update->geo)) {
+                    $this->sendLocation();
+                }
+            } else {
+                $this->persistIncomingVkMessage();
+                if (!empty($this->update->text)) {
+                    $this->maybeDispatchAi($this->update->text);
+                }
             }
         } catch (\Throwable $e) {
             Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+        }
+    }
+
+    /**
+     * Persist an incoming VK message directly to the `messages` table without
+     * routing it through the Telegram supergroup.
+     *
+     * Called only when no telegram.group_id is configured. The group-ON path
+     * persists via SendVkTelegramMessageJob::saveMessage() instead, so the two
+     * branches are mutually exclusive and produce exactly one row each.
+     *
+     * @return void
+     */
+    protected function persistIncomingVkMessage(): void
+    {
+        $message = Message::create([
+            'bot_user_id' => $this->botUser->id,
+            'platform' => $this->botUser->platform,
+            'message_type' => 'incoming',
+            'from_id' => $this->update->id ?? 0,
+            'to_id' => 0,
+            'text' => $this->update->text ?? null,
+        ]);
+
+        foreach ($this->update->listAttachments as $attachment) {
+            $message->attachments()->create([
+                'file_id' => $attachment['file_id'],
+                'file_type' => $attachment['type'],
+                'file_name' => $attachment['file_name'] ?? null,
+            ]);
         }
     }
 

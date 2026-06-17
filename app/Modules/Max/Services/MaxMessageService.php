@@ -3,6 +3,7 @@
 namespace App\Modules\Max\Services;
 
 use App\Models\BotUser;
+use App\Models\Message;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\ShouldAiReply;
@@ -33,6 +34,12 @@ class MaxMessageService extends ToTgMessageService
     /**
      * Handle an incoming Max update and route it to the appropriate send method.
      *
+     * When the Telegram supergroup is configured, the message is forwarded to the
+     * user's forum topic and persisted via SendMaxTelegramMessageJob::saveMessage().
+     * When the group is NOT configured, the message is persisted directly so the
+     * admin workspace always shows incoming Max messages (group-OFF path).
+     * The two branches are mutually exclusive: no duplicate rows are created.
+     *
      * @return void
      *
      * @throws \Exception
@@ -51,10 +58,20 @@ class MaxMessageService extends ToTgMessageService
                 'rawAttachments' => $this->update->rawData['message']['body']['attachments'] ?? [],
             ]);
 
-            if (!empty($this->update->listAttachments)) {
-                $this->sendAttachments();
-            } elseif (!empty($this->update->text)) {
-                $this->sendMessage();
+            // When the Telegram supergroup is configured, forward to the group topic;
+            // the job persists the row after the API call succeeds.
+            if (!empty((string) app(SettingsService::class)->get('telegram.group_id'))) {
+                if (!empty($this->update->listAttachments)) {
+                    $this->sendAttachments();
+                } elseif (!empty($this->update->text)) {
+                    $this->sendMessage();
+                }
+            } else {
+                // Group-OFF path: persist directly so the admin workspace shows the message.
+                $this->persistIncomingMaxMessage();
+                if (!empty($this->update->text)) {
+                    $this->maybeDispatchAi($this->update->text);
+                }
             }
         } catch (\Throwable $e) {
             Log::channel('app')->log(
@@ -62,6 +79,35 @@ class MaxMessageService extends ToTgMessageService
                 $e->getMessage(),
                 ['file' => $e->getFile(), 'line' => $e->getLine()]
             );
+        }
+    }
+
+    /**
+     * Persist an incoming Max message directly to the `messages` table without
+     * routing it through the Telegram supergroup.
+     *
+     * Called only when no telegram.group_id is configured. The group-ON path
+     * persists via SendMaxTelegramMessageJob::saveMessage() instead.
+     *
+     * @return void
+     */
+    protected function persistIncomingMaxMessage(): void
+    {
+        $message = Message::create([
+            'bot_user_id' => $this->botUser->id,
+            'platform' => $this->botUser->platform,
+            'message_type' => 'incoming',
+            'from_id' => $this->update->from_id ?? 0,
+            'to_id' => 0,
+            'text' => $this->update->text ?? null,
+        ]);
+
+        foreach ($this->update->listAttachments as $attachment) {
+            $message->attachments()->create([
+                'file_id' => $attachment['file_id'],
+                'file_type' => $attachment['type'],
+                'file_name' => $attachment['file_name'] ?? null,
+            ]);
         }
     }
 
