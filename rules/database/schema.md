@@ -410,20 +410,6 @@ Persistent key-value store for runtime-editable application configuration. Creat
 
 **Known keys and types** are declared in `app/Services/Settings/SettingKeyRegistry.php`. Unknown keys are accepted but default to `type=string`, no config fallback, `is_secret=false`.
 
-**Widget channel keys** (`widget.*`) — all non-secret, `config => null` (DB-only):
-
-| Key | Type | Description |
-|---|---|---|
-| `widget.enabled` | `bool` | Whether the widget is active (shown on the site) |
-| `widget.site_key` | `string` | Public embed key included in the `<script>` snippet |
-| `widget.allowed_domains` | `json` | JSON array of domains allowed to load the widget; empty = no restriction |
-| `widget.title` | `string` | Widget header title |
-| `widget.greeting` | `string` | Greeting message shown to new visitors |
-| `widget.color` | `string` | Accent hex colour (e.g. `#4F46E5`) |
-| `widget.position` | `string` | Button corner position: `bottom-right` or `bottom-left` |
-
-These keys are managed from `/admin/settings/integrations/widget` (`IntegrationChannelPage`, `channel=widget`). No new DB table — all values go into the `settings` table. Runtime widget delivery (endpoint, JS embed) is a separate future task.
-
 **Encryption:** `SettingsService` calls `Crypt::encrypt()` before writing and `Crypt::decrypt()` after reading for keys where `is_secret=true`. The `value` column stores the raw encrypted string — do not read it directly; always go through `SettingsService`.
 
 **DB stays empty by default.** No seed data is written at first deploy. `SettingsService::get()` falls back to `config()`/`.env` for every unknown key, so the app works normally with an empty `settings` table. Values enter the DB only when saved from the admin panel.

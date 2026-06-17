@@ -76,8 +76,6 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/` | Main landing page |
-| `GET` | `/live_chat_promo` | Live chat promo page |
-| `GET` | `/preview/chat` | Chat widget preview |
 | `GET` | `/docs/swagger-v1-json` | OpenAPI JSON |
 | `GET` | `/docs/swagger-v1-ui` | Swagger UI |
 
