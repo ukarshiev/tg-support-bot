@@ -27,14 +27,12 @@ class SettingsServiceTest extends TestCase
 
     // ── Fallback to config() ─────────────────────────────────────────────────
 
-    public function test_get_falls_back_to_config_when_no_db_row_exists(): void
+    public function test_get_returns_null_when_no_db_row_and_no_config_fallback(): void
     {
-        // 'app.manager_interface' has config fallback 'app.manager_interface'.
-        config(['app.manager_interface' => 'telegram_group']);
+        // 'app.bot_name' has config => null — returns null when no DB row.
+        $value = $this->service->get('app.bot_name');
 
-        $value = $this->service->get('app.manager_interface');
-
-        $this->assertSame('telegram_group', $value);
+        $this->assertNull($value);
     }
 
     public function test_get_returns_null_for_unknown_key_with_no_db_row(): void
@@ -53,62 +51,60 @@ class SettingsServiceTest extends TestCase
 
     // ── DB override ──────────────────────────────────────────────────────────
 
-    public function test_get_returns_db_value_overriding_config_fallback(): void
+    public function test_get_returns_db_value_when_row_exists(): void
     {
-        config(['app.manager_interface' => 'telegram_group']);
-
         Setting::create([
-            'key' => 'app.manager_interface',
-            'value' => 'admin_panel',
+            'key' => 'app.bot_name',
+            'value' => 'My Support Bot',
             'type' => 'string',
             'is_secret' => false,
         ]);
 
-        $value = $this->service->get('app.manager_interface');
+        $value = $this->service->get('app.bot_name');
 
-        $this->assertSame('admin_panel', $value);
+        $this->assertSame('My Support Bot', $value);
     }
 
     // ── set() + cache invalidation ───────────────────────────────────────────
 
     public function test_set_creates_db_row_and_get_returns_new_value(): void
     {
-        $this->service->set('app.manager_interface', 'admin_panel');
+        $this->service->set('app.bot_name', 'Support Bot');
 
-        $value = $this->service->get('app.manager_interface');
+        $value = $this->service->get('app.bot_name');
 
-        $this->assertSame('admin_panel', $value);
+        $this->assertSame('Support Bot', $value);
     }
 
     public function test_set_invalidates_cache_so_next_get_reads_from_db(): void
     {
         // Prime the cache with the old value by calling get() first.
         Setting::create([
-            'key' => 'app.manager_interface',
-            'value' => 'telegram_group',
+            'key' => 'app.bot_name',
+            'value' => 'Old Name',
             'type' => 'string',
             'is_secret' => false,
         ]);
-        $this->service->get('app.manager_interface'); // warms the cache
+        $this->service->get('app.bot_name'); // warms the cache
 
         // Now overwrite via set().
-        $this->service->set('app.manager_interface', 'admin_panel');
+        $this->service->set('app.bot_name', 'New Name');
 
         // After set() the cache entry must be gone; next get() reads from DB.
-        $value = $this->service->get('app.manager_interface');
-        $this->assertSame('admin_panel', $value);
+        $value = $this->service->get('app.bot_name');
+        $this->assertSame('New Name', $value);
     }
 
     public function test_set_updates_existing_db_row(): void
     {
-        $this->service->set('app.manager_interface', 'telegram_group');
-        $this->service->set('app.manager_interface', 'admin_panel');
+        $this->service->set('app.bot_name', 'First Name');
+        $this->service->set('app.bot_name', 'Second Name');
 
-        $count = Setting::where('key', 'app.manager_interface')->count();
+        $count = Setting::where('key', 'app.bot_name')->count();
         $this->assertSame(1, $count);
 
-        $value = $this->service->get('app.manager_interface');
-        $this->assertSame('admin_panel', $value);
+        $value = $this->service->get('app.bot_name');
+        $this->assertSame('Second Name', $value);
     }
 
     // ── Secret encryption ────────────────────────────────────────────────────
@@ -137,13 +133,13 @@ class SettingsServiceTest extends TestCase
 
     public function test_non_secret_key_is_stored_as_plain_text(): void
     {
-        $this->service->set('app.manager_interface', 'admin_panel');
+        $this->service->set('app.bot_name', 'My Bot');
 
         $rawRow = \Illuminate\Support\Facades\DB::table('settings')
-            ->where('key', 'app.manager_interface')
+            ->where('key', 'app.bot_name')
             ->value('value');
 
-        $this->assertSame('admin_panel', $rawRow, 'Non-secret value must be stored as plain text');
+        $this->assertSame('My Bot', $rawRow, 'Non-secret value must be stored as plain text');
     }
 
     // ── Type coercion ────────────────────────────────────────────────────────
@@ -221,38 +217,36 @@ class SettingsServiceTest extends TestCase
 
     public function test_has_returns_false_when_no_db_row(): void
     {
-        $this->assertFalse($this->service->has('app.manager_interface'));
+        $this->assertFalse($this->service->has('app.bot_name'));
     }
 
     public function test_has_returns_true_when_db_row_exists(): void
     {
-        $this->service->set('app.manager_interface', 'telegram_group');
+        $this->service->set('app.bot_name', 'My Bot');
 
-        $this->assertTrue($this->service->has('app.manager_interface'));
+        $this->assertTrue($this->service->has('app.bot_name'));
     }
 
     // ── forget() ────────────────────────────────────────────────────────────
 
     public function test_forget_deletes_db_row(): void
     {
-        $this->service->set('app.manager_interface', 'admin_panel');
-        $this->service->forget('app.manager_interface');
+        $this->service->set('app.bot_name', 'My Bot');
+        $this->service->forget('app.bot_name');
 
-        $this->assertFalse($this->service->has('app.manager_interface'));
+        $this->assertFalse($this->service->has('app.bot_name'));
     }
 
-    public function test_forget_invalidates_cache_so_get_falls_back_to_config(): void
+    public function test_forget_invalidates_cache_so_get_returns_null_when_no_config_fallback(): void
     {
-        config(['app.manager_interface' => 'telegram_group']);
+        $this->service->set('app.bot_name', 'My Bot');
+        $this->service->get('app.bot_name'); // warms cache
 
-        $this->service->set('app.manager_interface', 'admin_panel');
-        $this->service->get('app.manager_interface'); // warms cache with 'admin_panel'
+        $this->service->forget('app.bot_name');
 
-        $this->service->forget('app.manager_interface');
-
-        // After forget, get() must return the config fallback.
-        $value = $this->service->get('app.manager_interface');
-        $this->assertSame('telegram_group', $value);
+        // After forget, get() must return null (no config fallback for app.bot_name).
+        $value = $this->service->get('app.bot_name');
+        $this->assertNull($value);
     }
 
     public function test_forget_does_not_throw_when_key_does_not_exist(): void
@@ -267,40 +261,38 @@ class SettingsServiceTest extends TestCase
     public function test_get_serves_value_from_cache_on_second_call(): void
     {
         Setting::create([
-            'key' => 'app.manager_interface',
-            'value' => 'admin_panel',
+            'key' => 'app.bot_name',
+            'value' => 'Cached Bot',
             'type' => 'string',
             'is_secret' => false,
         ]);
 
-        $first = $this->service->get('app.manager_interface'); // warms cache
+        $first = $this->service->get('app.bot_name'); // warms cache
         // Delete the DB row to prove the next call uses cache, not DB.
-        Setting::where('key', 'app.manager_interface')->delete();
+        Setting::where('key', 'app.bot_name')->delete();
 
-        $second = $this->service->get('app.manager_interface');
+        $second = $this->service->get('app.bot_name');
 
-        $this->assertSame('admin_panel', $first);
-        $this->assertSame('admin_panel', $second);
+        $this->assertSame('Cached Bot', $first);
+        $this->assertSame('Cached Bot', $second);
     }
 
     public function test_get_caches_null_sentinel_when_no_db_row(): void
     {
-        config(['app.manager_interface' => 'telegram_group']);
+        // First call: no DB row — should cache the sentinel (null).
+        $first = $this->service->get('app.bot_name');
 
-        // First call: no DB row — should cache the sentinel.
-        $first = $this->service->get('app.manager_interface');
-
-        // Insert a DB row now — a second get() must still return config fallback
+        // Insert a DB row now — a second get() must still return null
         // because the sentinel is cached and we haven't called set().
         Setting::create([
-            'key' => 'app.manager_interface',
-            'value' => 'admin_panel',
+            'key' => 'app.bot_name',
+            'value' => 'Late Insert',
             'type' => 'string',
             'is_secret' => false,
         ]);
-        $second = $this->service->get('app.manager_interface');
+        $second = $this->service->get('app.bot_name');
 
-        $this->assertSame('telegram_group', $first);
-        $this->assertSame('telegram_group', $second);
+        $this->assertNull($first);
+        $this->assertNull($second);
     }
 }
