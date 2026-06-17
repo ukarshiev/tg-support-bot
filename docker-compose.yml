@@ -100,6 +100,25 @@ services:
             - 8.8.8.8
             - 1.1.1.1
 
+    scheduler:
+        build: .
+        container_name: laravel_scheduler
+        restart: always
+        depends_on:
+            - app
+            - redis
+        env_file:
+            - .env
+        working_dir: /var/www
+        volumes:
+            - .:/var/www
+        command: php artisan schedule:work
+        networks:
+            - pet
+        dns:
+            - 8.8.8.8
+            - 1.1.1.1
+
     node:
         build: ./docker/node
         container_name: node_server
