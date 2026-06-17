@@ -53,7 +53,6 @@ class IntegrationChannelPageTest extends TestCase
             'telegram_ai' => ['connected' => $telegramAiConnected, 'label' => 'x'],
             'vk' => ['connected' => false, 'label' => 'x'],
             'max' => ['connected' => false, 'label' => 'x'],
-            'widget' => ['connected' => false, 'label' => 'x'],
         ]);
 
         return $mock;
@@ -75,10 +74,6 @@ class IntegrationChannelPageTest extends TestCase
         $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
         $settings->shouldReceive('get')->with('max.token')->andReturn('');
         $settings->shouldReceive('get')->with('max.secret_key')->andReturn('');
-        $settings->shouldReceive('get')->with('widget.site_key')->andReturn('');
-        $settings->shouldReceive('get')->with('widget.allowed_domains')->andReturn(null);
-        $settings->shouldReceive('get')->with('widget.greeting')->andReturn('');
-
         $component = new IntegrationChannelPage();
         $component->mount('telegram', $settings, $this->statusMock(true));
 
@@ -372,120 +367,5 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertArrayHasKey('telegram_secret_key', $component->formErrors);
         // group_id is no longer validated on this page.
         $this->assertArrayNotHasKey('telegram_group_id', $component->formErrors);
-    }
-
-    // ── Widget tests ──────────────────────────────────────────────────────────
-
-    public function test_mount_widget_channel_sets_channel_slug(): void
-    {
-        $settings = $this->settingsMock();
-
-        $component = new IntegrationChannelPage();
-        $component->mount('widget', $settings, $this->statusMock());
-
-        $this->assertSame('widget', $component->channel);
-    }
-
-    public function test_save_widget_persists_site_key_domains_and_greeting(): void
-    {
-        $settings = $this->settingsMock();
-        $settings->shouldReceive('set')->with('widget.site_key', 'abc123key456789012345678901234')->once();
-        $settings->shouldReceive('set')->with('widget.allowed_domains', ['example.com', 'shop.example.com'])->once();
-        $settings->shouldReceive('set')->with('widget.greeting', 'Привет!')->once();
-
-        $component = new IntegrationChannelPage();
-        $component->mount('widget', $settings, $this->statusMock());
-        $component->widgetSiteKey = 'abc123key456789012345678901234';
-        $component->widgetAllowedDomains = "example.com\nshop.example.com";
-        $component->widgetGreeting = 'Привет!';
-        $component->save($settings);
-
-        $this->assertTrue($component->saved);
-        $this->assertEmpty($component->formErrors);
-    }
-
-    public function test_save_widget_converts_allowed_domains_textarea_to_json_array(): void
-    {
-        $settings = $this->settingsMock();
-        $settings->shouldReceive('set')->with('widget.allowed_domains', ['foo.com', 'bar.com'])->once();
-        // No site_key set — blank field should not call set for widget.site_key.
-        $settings->shouldReceive('set')->with('widget.site_key', Mockery::any())->never();
-
-        $component = new IntegrationChannelPage();
-        $component->mount('widget', $settings, $this->statusMock());
-        $component->widgetSiteKey = '';
-        $component->widgetAllowedDomains = "foo.com\nbar.com";
-        $component->widgetGreeting = '';
-        $component->save($settings);
-
-        $this->assertTrue($component->saved);
-    }
-
-    public function test_save_widget_skips_blank_site_key(): void
-    {
-        $settings = $this->settingsMock();
-        $settings->shouldReceive('set')->with('widget.allowed_domains', [])->once();
-        // Blank site_key must not call set.
-        $settings->shouldReceive('set')->with('widget.site_key', Mockery::any())->never();
-
-        $component = new IntegrationChannelPage();
-        $component->mount('widget', $settings, $this->statusMock());
-        $component->widgetSiteKey = '';
-        $component->widgetAllowedDomains = '';
-        $component->widgetGreeting = '';
-        $component->save($settings);
-
-        $this->assertTrue($component->saved);
-        $this->assertEmpty($component->formErrors);
-    }
-
-    public function test_connect_widget_delegates_to_save_without_calling_webhook_service(): void
-    {
-        $settings = $this->settingsMock();
-        $settings->shouldReceive('set')->with('widget.allowed_domains', [])->once();
-
-        /** @var \Mockery\MockInterface&WebhookRegistrationService $webhook */
-        $webhook = Mockery::mock(WebhookRegistrationService::class);
-        $webhook->shouldNotReceive('verifyTelegram');
-        $webhook->shouldNotReceive('verifyVk');
-        $webhook->shouldNotReceive('verifyMax');
-        $webhook->shouldNotReceive('registerTelegram');
-        $webhook->shouldNotReceive('registerVk');
-        $webhook->shouldNotReceive('registerMax');
-
-        $component = new IntegrationChannelPage();
-        $component->mount('widget', $settings, $this->statusMock());
-        $component->widgetSiteKey = '';
-        $component->widgetAllowedDomains = '';
-        $component->widgetGreeting = '';
-        $component->connect($settings, $webhook);
-
-        $this->assertTrue($component->saved);
-    }
-
-    public function test_load_fields_converts_stored_json_array_to_textarea_string(): void
-    {
-        /** @var \Mockery\MockInterface&SettingsService $settings */
-        $settings = Mockery::mock(SettingsService::class);
-        // telegram.group_id is no longer loaded on this page.
-        $settings->shouldReceive('get')->with('telegram.token')->andReturn('');
-        $settings->shouldReceive('get')->with('telegram.secret_key')->andReturn('');
-        $settings->shouldReceive('get')->with('telegram_ai.token')->andReturn('');
-        $settings->shouldReceive('get')->with('telegram_ai.secret')->andReturn('');
-        $settings->shouldReceive('get')->with('vk.token')->andReturn('');
-        $settings->shouldReceive('get')->with('vk.secret_key')->andReturn('');
-        $settings->shouldReceive('get')->with('vk.confirm_code')->andReturn('');
-        $settings->shouldReceive('get')->with('max.token')->andReturn('');
-        $settings->shouldReceive('get')->with('max.secret_key')->andReturn('');
-        $settings->shouldReceive('get')->with('widget.site_key')->andReturn('mykey123');
-        $settings->shouldReceive('get')->with('widget.allowed_domains')->andReturn(['foo.com', 'bar.com']);
-        $settings->shouldReceive('get')->with('widget.greeting')->andReturn('Привет');
-
-        $component = new IntegrationChannelPage();
-        $component->mount('widget', $settings, $this->statusMock());
-
-        $this->assertSame('mykey123', $component->widgetSiteKey);
-        $this->assertSame("foo.com\nbar.com", $component->widgetAllowedDomains);
-        $this->assertSame('Привет', $component->widgetGreeting);
     }
 }

@@ -24,7 +24,7 @@ class ChannelStatusServiceTest extends TestCase
 
     // ── all() ────────────────────────────────────────────────────────────────
 
-    public function test_all_returns_all_five_channels(): void
+    public function test_all_returns_all_four_channels(): void
     {
         $settings = $this->makeSettings([]);
         $service = new ChannelStatusService($settings);
@@ -35,7 +35,6 @@ class ChannelStatusServiceTest extends TestCase
         $this->assertArrayHasKey('telegram_ai', $result);
         $this->assertArrayHasKey('vk', $result);
         $this->assertArrayHasKey('max', $result);
-        $this->assertArrayHasKey('widget', $result);
     }
 
     // ── telegram() ───────────────────────────────────────────────────────────
@@ -213,40 +212,6 @@ class ChannelStatusServiceTest extends TestCase
         $service = new ChannelStatusService($settings);
 
         $this->assertFalse($service->max()['connected']);
-    }
-
-    // ── widget() ─────────────────────────────────────────────────────────────
-
-    public function test_widget_connected_when_site_key_set(): void
-    {
-        $settings = $this->makeSettings([
-            'widget.site_key' => 'abc123',
-        ]);
-        $service = new ChannelStatusService($settings);
-
-        $status = $service->widget();
-
-        $this->assertTrue($status['connected']);
-        $this->assertSame('Подключён', $status['label']);
-    }
-
-    public function test_widget_not_connected_when_site_key_missing(): void
-    {
-        $settings = $this->makeSettings([
-            'widget.site_key' => '',
-        ]);
-        $service = new ChannelStatusService($settings);
-
-        $this->assertFalse($service->widget()['connected']);
-        $this->assertSame('Не настроен', $service->widget()['label']);
-    }
-
-    public function test_widget_not_connected_when_site_key_absent(): void
-    {
-        $settings = $this->makeSettings([]);
-        $service = new ChannelStatusService($settings);
-
-        $this->assertFalse($service->widget()['connected']);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
