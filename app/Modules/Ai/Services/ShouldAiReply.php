@@ -14,12 +14,11 @@ class ShouldAiReply
      * processed by the main Telegram bot.
      *
      * Rules (all must pass):
-     * 1. AI is globally enabled (AI_ENABLED=true).
-     * 2. Manager interface is telegram_group (admin_panel does not use AI here).
-     * 3. Message arrived from a private chat with the main bot.
-     * 4. Update type is a regular message (not callback, edited, etc.).
-     * 5. Text is non-empty and not a slash-command (/start, /contact, etc.).
-     * 6. Bot user exists, is not banned, is not closed.
+     * 1. AI is globally enabled.
+     * 2. Message arrived from a private chat with the main bot.
+     * 3. Update type is a regular message (not callback, edited, etc.).
+     * 4. Text is non-empty and not a slash-command (/start, /contact, etc.).
+     * 5. Bot user exists, is not banned, is not closed.
      *
      * @param TelegramUpdateDto $update
      * @param BotUser|null      $botUser
@@ -30,13 +29,6 @@ class ShouldAiReply
     {
         if (!$this->isAiEnabled()) {
             $this->logSkip('ai_disabled', $update, $botUser);
-            return false;
-        }
-
-        if (!$this->isTelegramGroupInterface()) {
-            $this->logSkip('manager_interface_not_telegram_group', $update, $botUser, [
-                'manager_interface' => config('app.manager_interface'),
-            ]);
             return false;
         }
 
@@ -77,8 +69,8 @@ class ShouldAiReply
      * Determine whether AI should generate a reply for an incoming message
      * received from a non-Telegram source (VK, Max, etc.).
      *
-     * Reuses the AI-enabled, manager-interface, replyable-text and user-active
-     * checks from the Telegram path, but does not depend on a TelegramUpdateDto.
+     * Reuses the AI-enabled, replyable-text and user-active checks from the
+     * Telegram path, but does not depend on a TelegramUpdateDto.
      *
      * @param BotUser|null $botUser
      * @param string|null  $text
@@ -89,13 +81,6 @@ class ShouldAiReply
     {
         if (!$this->isAiEnabled()) {
             $this->logExternalSkip('ai_disabled', $botUser);
-            return false;
-        }
-
-        if (!$this->isTelegramGroupInterface()) {
-            $this->logExternalSkip('manager_interface_not_telegram_group', $botUser, [
-                'manager_interface' => config('app.manager_interface'),
-            ]);
             return false;
         }
 
@@ -124,14 +109,6 @@ class ShouldAiReply
     public function isAiEnabled(): bool
     {
         return (bool) app(SettingsService::class)->get('ai.enabled');
-    }
-
-    /**
-     * @return bool
-     */
-    public function isTelegramGroupInterface(): bool
-    {
-        return config('app.manager_interface') === 'telegram_group';
     }
 
     /**
