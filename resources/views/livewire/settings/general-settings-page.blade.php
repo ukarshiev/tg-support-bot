@@ -13,6 +13,24 @@
 
             <div class="space-y-5">
 
+                {{-- Group ID --}}
+                <x-admin.form-field
+                    label="ID группы для приёма сообщений"
+                    for="group_id"
+                    hint="ID супергруппы Telegram, куда дублируются обращения. Необязательно — оставьте пустым, чтобы работать только в админке."
+                    :error="$formErrors['group_id'] ?? null"
+                >
+                    <input
+                        id="group_id"
+                        type="text"
+                        required
+                        wire:model="group_id"
+                        maxlength="50"
+                        placeholder="-100XXXXXXXXXX"
+                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 @if (!empty($formErrors['group_id'])) border-red-400 @endif"
+                    />
+                </x-admin.form-field>
+
                 {{-- Topic name template --}}
                 <x-admin.form-field
                     label="Шаблон названия топика"
