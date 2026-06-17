@@ -7,6 +7,7 @@ use App\Models\ExternalSource;
 use App\Models\ExternalUser;
 use App\Models\User;
 use App\Modules\Admin\Actions\SendReplyAction;
+use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Max\Actions\UploadFileMax;
 use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
@@ -307,5 +308,64 @@ class SendReplyActionTest extends TestCase
             'sender_user_id' => null,
             'sender_name' => null,
         ]);
+    }
+
+    // ── Supergroup mirror ──────────────────────────────────────────────────────
+
+    public function test_mirrors_reply_to_group_when_telegram_configured(): void
+    {
+        Queue::fake();
+
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('telegram.token', 'main_token');
+        $settings->set('telegram.secret_key', 'secret');
+        $settings->set('telegram.group_id', '-100111222333');
+
+        $botUser = BotUser::create(['chat_id' => 600, 'platform' => 'telegram', 'topic_id' => 10]);
+
+        SendReplyAction::execute($botUser, 'Mirrored reply');
+
+        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job) use ($botUser): bool {
+            return $job->botUserId === $botUser->id
+                && $job->text === 'Mirrored reply';
+        });
+
+        // Only one messages row (not two).
+        $this->assertSame(1, \App\Models\Message::where('bot_user_id', $botUser->id)->count());
+    }
+
+    public function test_does_not_mirror_to_group_when_telegram_not_configured(): void
+    {
+        Queue::fake();
+
+        // Telegram channel not configured — no token/secret set.
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.token', null);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.secret_key', null);
+
+        $botUser = BotUser::create(['chat_id' => 601, 'platform' => 'vk']);
+
+        SendReplyAction::execute($botUser, 'VK reply, no mirror');
+
+        Queue::assertNotPushed(MirrorAdminReplyToGroupJob::class);
+    }
+
+    public function test_mirror_uses_placeholder_text_for_file_only_reply(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('telegram.token', 'main_token');
+        $settings->set('telegram.secret_key', 'secret');
+        $settings->set('telegram.group_id', '-100111222333');
+
+        $botUser = BotUser::create(['chat_id' => 602, 'platform' => 'telegram', 'topic_id' => 11]);
+
+        SendReplyAction::execute($botUser, '');
+
+        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job): bool {
+            // The «Ответ из админки:» label + newline is added by the job's prefix.
+            return $job->text === '[вложение]' && $job->prefix === "👤 Ответ из админки:\n";
+        });
     }
 }

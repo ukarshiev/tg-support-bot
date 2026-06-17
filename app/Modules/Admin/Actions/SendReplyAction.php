@@ -5,16 +5,20 @@ namespace App\Modules\Admin\Actions;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Models\User;
+use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
 use App\Modules\Admin\Jobs\SendAdminDocumentJob;
+use App\Modules\Admin\Services\ChannelStatusService;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Max\Actions\UploadFileMax;
 use App\Modules\Max\DTOs\MaxTextMessageDto;
 use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Vk\Api\VkMethods;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +29,12 @@ class SendReplyAction
 {
     /**
      * Send a manager reply to the user via the appropriate platform.
+     *
+     * In addition to delivering the reply to the user and saving the messages row,
+     * when the Telegram supergroup is configured (telegram.token + telegram.group_id)
+     * the reply is mirrored to the user's forum topic with the prefix
+     * «Ответ из админки: ». The mirror is text-only; file mirroring is deferred.
+     * The mirror DOES NOT create a second messages row and DOES NOT re-deliver to the user.
      *
      * @param BotUser           $botUser Target user
      * @param string            $text    Message text (may be empty when file is provided)
@@ -57,6 +67,45 @@ class SendReplyAction
             $botUser->platform === 'max' => self::sendMaxReply($botUser, $text, $file, $message),
             default => self::sendExternalReply($botUser, $text),
         };
+
+        self::maybeMirrorToGroup($botUser, $text, $file);
+    }
+
+    /**
+     * Mirror the admin-panel reply to the Telegram supergroup forum topic.
+     *
+     * Only fires when the Telegram channel integration is fully configured
+     * (telegram.token + telegram.group_id set in settings). Text-only mirror;
+     * file attachment mirroring is out of scope for now.
+     *
+     * If the user's forum topic does not yet exist, TopicCreateJob is dispatched
+     * first and MirrorAdminReplyToGroupJob will retry until topic_id is available.
+     *
+     * @param BotUser           $botUser
+     * @param string            $text
+     * @param UploadedFile|null $file
+     *
+     * @return void
+     */
+    private static function maybeMirrorToGroup(BotUser $botUser, string $text, ?UploadedFile $file): void
+    {
+        $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
+        if (!app(ChannelStatusService::class)->telegram()['connected'] || $groupId === '') {
+            return;
+        }
+
+        // Determine mirror text — file-only replies get a placeholder. The
+        // «Ответ из админки:» label + newline is added by the job's prefix.
+        $mirrorText = $text !== ''
+            ? $text
+            : '[вложение]';
+
+        // Ensure the forum topic exists before mirroring.
+        if (empty($botUser->topic_id)) {
+            TopicCreateJob::dispatch($botUser->id);
+        }
+
+        MirrorAdminReplyToGroupJob::dispatch($botUser->id, $mirrorText);
     }
 
     /**
