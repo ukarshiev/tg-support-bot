@@ -349,7 +349,6 @@ class ConversationPageTest extends TestCase
     public function test_send_reply_saves_message_and_dispatches_job(): void
     {
         Queue::fake();
-        config(['app.manager_interface' => 'admin_panel']);
 
         $botUser = BotUser::create(['chat_id' => 100, 'platform' => 'telegram']);
 
@@ -359,28 +358,6 @@ class ConversationPageTest extends TestCase
             ->call('sendReply')
             ->assertHasNoErrors()
             ->assertNotified('Сообщение отправлено');
-
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $botUser->id,
-            'message_type' => 'outgoing',
-            'text' => 'Hello!',
-        ]);
-
-        Queue::assertPushed(SendTelegramSimpleQueryJob::class);
-    }
-
-    public function test_send_reply_works_in_telegram_group_mode(): void
-    {
-        Queue::fake();
-        config(['app.manager_interface' => 'telegram_group']);
-
-        $botUser = BotUser::create(['chat_id' => 100, 'platform' => 'telegram']);
-
-        Livewire::test(ConversationPage::class)
-            ->call('selectChat', $botUser->id)
-            ->set('replyText', 'Hello!')
-            ->call('sendReply')
-            ->assertHasNoErrors();
 
         $this->assertDatabaseHas('messages', [
             'bot_user_id' => $botUser->id,
@@ -402,19 +379,8 @@ class ConversationPageTest extends TestCase
 
     // ── shouldShowReplyForm ────────────────────────────────────────────────────
 
-    public function test_should_show_reply_form_returns_true_in_admin_panel_mode(): void
+    public function test_should_show_reply_form_returns_true(): void
     {
-        config(['app.manager_interface' => 'admin_panel']);
-
-        $instance = Livewire::test(ConversationPage::class)->instance();
-
-        $this->assertTrue($instance->shouldShowReplyForm());
-    }
-
-    public function test_should_show_reply_form_returns_true_in_telegram_group_mode(): void
-    {
-        config(['app.manager_interface' => 'telegram_group']);
-
         $instance = Livewire::test(ConversationPage::class)->instance();
 
         $this->assertTrue($instance->shouldShowReplyForm());

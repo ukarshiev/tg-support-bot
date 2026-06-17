@@ -22,7 +22,7 @@ use Tests\TestCase;
  * Feature tests for the 3-column manager chat workspace (ConversationPage).
  *
  * Covers:
- *  - Page renders under auth with MANAGER_INTERFACE=admin_panel
+ *  - Page renders under auth
  *  - Dialog list populates with BotUsers
  *  - Search filter narrows the dialog list
  *  - Status-filter tabs (all / open / closed)
@@ -32,7 +32,7 @@ use Tests\TestCase;
  *  - Attachments gated to telegram/vk via supportsAttachments()
  *  - Quick-reply insertion
  *  - Media gallery returns image attachments
- *  - Reply form shown in both manager-interface modes
+ *  - Reply form always shown (no mode gating)
  */
 class ConversationWorkspaceTest extends TestCase
 {
@@ -43,8 +43,6 @@ class ConversationWorkspaceTest extends TestCase
         parent::setUp();
 
         $this->actingAs(User::factory()->create());
-
-        config(['app.manager_interface' => 'admin_panel']);
     }
 
     // ── Render ─────────────────────────────────────────────────────────────────
@@ -635,10 +633,8 @@ class ConversationWorkspaceTest extends TestCase
         $this->assertNull($botUser->closed_at);
     }
 
-    public function test_reply_form_shown_in_telegram_group_mode(): void
+    public function test_reply_form_always_shown_when_dialog_selected(): void
     {
-        config(['app.manager_interface' => 'telegram_group']);
-
         $botUser = BotUser::create(['chat_id' => '1003', 'platform' => 'telegram']);
 
         $component = Livewire::test(ConversationPage::class)

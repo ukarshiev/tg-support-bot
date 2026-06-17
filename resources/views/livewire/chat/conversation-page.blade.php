@@ -652,6 +652,57 @@
                 @endforeach
                 </div>
                 @endif
+
+                {{-- ── Pending AI drafts — shown in the admin workspace (always-both) ───── --}}
+                @if($pendingAiDrafts->isNotEmpty())
+                    <div class="flex flex-col" style="gap:12px; padding:0 0 8px 0;">
+                        @foreach($pendingAiDrafts as $draft)
+                            <div wire:key="ai-draft-{{ $draft->id }}" class="flex flex-col" style="border:2px dashed #4F6EF7; border-radius:14px 14px 0 14px; background:#F5F7FF; padding:14px 16px; gap:10px; margin-top:16px;">
+                                {{-- Header --}}
+                                <div class="flex items-center" style="gap:8px;">
+                                    <div class="flex items-center justify-center rounded-lg text-white font-bold" style="width:28px; height:28px; background:#4F6EF7; font-size:11px; flex-shrink:0;">ИИ</div>
+                                    <span class="text-xs font-semibold" style="color:#4F6EF7;">ИИ-черновик</span>
+                                    <span class="text-xs" style="color:#9CA3AF; margin-left:auto;">{{ $draft->created_at?->format('H:i') }}</span>
+                                </div>
+                                {{-- Draft text --}}
+                                <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $draft->text_ai }}</p>
+                                {{-- Actions --}}
+                                <div class="flex items-center" style="gap:8px; flex-wrap:wrap;">
+                                    <button
+                                        type="button"
+                                        wire:click="acceptAiDraft({{ $draft->id }})"
+                                        wire:loading.attr="disabled"
+                                        wire:target="acceptAiDraft({{ $draft->id }})"
+                                        class="flex items-center gap-1.5 rounded-lg text-white text-xs font-semibold transition hover:opacity-90 disabled:opacity-50"
+                                        style="background:#10B981; padding:7px 14px; border:none; cursor:pointer;"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                        Принять
+                                    </button>
+                                    <button
+                                        type="button"
+                                        wire:click="editAiDraft({{ $draft->id }})"
+                                        class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80"
+                                        style="background:#EEF2FF; color:#4F6EF7; padding:7px 14px; border:none; cursor:pointer;"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        Изменить
+                                    </button>
+                                    <button
+                                        type="button"
+                                        wire:click="cancelAiDraft({{ $draft->id }})"
+                                        wire:confirm="Отменить ИИ-черновик?"
+                                        class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80"
+                                        style="background:#FEE2E2; color:#EF4444; padding:7px 14px; border:none; cursor:pointer;"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        Отмена
+                                    </button>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
             </div>
 
             {{-- Input area --}}
@@ -718,7 +769,7 @@
 
                     {{-- Input row: attach + textarea + send --}}
                     {{-- Design: FEYxe (attach 40×40) + Euru3 (input, fill, bg-input, rounded-12) + K6yaRa (send 44×44 bg-accent rounded-12) --}}
-                    <form wire:submit.prevent="sendReply" class="flex items-center" style="gap:5px; align-items:center;">
+                    <form wire:submit.prevent="sendReply" class="flex items-end" style="gap:5px; align-items:flex-end;">
 
                         {{-- Attach button (telegram + vk only) --}}
                         @if($this->supportsAttachments())
@@ -737,12 +788,20 @@
 
                         {{-- Text input --}}
                         <div class="relative flex-1 flex">
+                            {{-- Auto-growing textarea: 1 line by default, grows with
+                                 content up to max-height, then scrolls. autosize() runs
+                                 on input (instant, client-side) and whenever replyText
+                                 changes programmatically (insertQuickReply / clear after
+                                 send) via $wire.$watch. --}}
                             <textarea
                                 wire:model.live="replyText"
                                 rows="1"
                                 placeholder="Напишите сообщение..."
                                 class="w-full resize-none text-sm text-text-primary placeholder-text-secondary outline-none border-none bg-transparent"
-                                style="background:#F1F3F5; border-radius:12px; padding:12px 16px; height:44px; line-height:1.25; overflow:hidden;"
+                                style="background:#F1F3F5; border-radius:12px; padding:12px 16px; line-height:1.25; min-height:44px; max-height:160px; overflow-y:auto;"
+                                x-data="{ autosize() { this.$el.style.height = 'auto'; this.$el.style.height = Math.min(this.$el.scrollHeight, 160) + 'px'; } }"
+                                x-init="$nextTick(() => autosize()); $wire.$watch('replyText', () => $nextTick(() => autosize()))"
+                                x-on:input="autosize()"
                                 x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); $wire.sendReply(); }"
                                 aria-label="Текст сообщения"
                             ></textarea>
