@@ -8,7 +8,6 @@ use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use phpDocumentor\Reflection\Exception;
 
 class DeepSeekProvider extends BaseAiProvider
 {
@@ -29,10 +28,6 @@ class DeepSeekProvider extends BaseAiProvider
     public function processMessage(AiRequestDto $request): ?AiResponseDto
     {
         try {
-            if (!$this->checkRateLimit()) {
-                throw new Exception('OpenAI rate limit exceeded');
-            }
-
             $this->ensureValidToken();
 
             $response = $this->makeApiCall($request);

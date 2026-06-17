@@ -13,7 +13,7 @@ use Livewire\Component;
 /**
  * Per-channel integration configuration page.
  *
- * Handles config forms for Telegram, Telegram AI bot, VK, and MAX channels.
+ * Handles config forms for Telegram, Telegram AI bot, VK, MAX, and Widget channels.
  * Reads/writes via SettingsService (secrets are stored encrypted).
  *
  * The primary «Сохранить» button runs a verify-before-save flow via connect():
@@ -29,11 +29,17 @@ use Livewire\Component;
  * For telegram_ai the flow is identical except there is no webhook registration
  * step (webhook is set via `php artisan ai-bot:set-webhook`).
  *
+ * For widget: save() is the primary action — NO verify-before-save. Widget has
+ * no external API to verify against.
+ *
  * save() (settings-only, no verify/webhook) remains available for tests that
  * call it directly.
  *
+ * Note: telegram.group_id was moved to GeneralSettingsPage (the «Основные» screen).
+ * The Telegram page now manages only the bot token and webhook secret key.
+ *
  * Route: /admin/settings/integrations/{channel}
- *        where channel ∈ {telegram, telegram_ai, vk, max}
+ *        where channel ∈ {telegram, telegram_ai, vk, max, widget}
  *
  * Access: authenticated users via route middleware.
  * Layout: custom dark-sidebar admin layout (layouts.admin-settings).
@@ -41,13 +47,10 @@ use Livewire\Component;
 #[Layout('layouts.admin-settings')]
 class IntegrationChannelPage extends Component
 {
-    /** @var string The current channel slug (telegram|telegram_ai|vk|max) */
+    /** @var string The current channel slug (telegram|telegram_ai|vk|max|widget) */
     public string $channel = 'telegram';
 
     // ── Telegram (main bot) fields ────────────────────────────────────────────
-
-    /** @var string|null */
-    public ?string $telegram_group_id = null;
 
     /** @var string|null */
     public ?string $telegram_token = null;
@@ -81,6 +84,17 @@ class IntegrationChannelPage extends Component
 
     /** @var string|null */
     public ?string $max_secret_key = null;
+
+    // ── Widget fields ─────────────────────────────────────────────────────────
+
+    /** @var string|null Public site key (goes into the embed snippet; non-secret) */
+    public ?string $widgetSiteKey = null;
+
+    /** @var string Allowed domains — one per line in the textarea; stored as JSON array */
+    public string $widgetAllowedDomains = '';
+
+    /** @var string|null Greeting message sent to new visitors */
+    public ?string $widgetGreeting = null;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -120,9 +134,17 @@ class IntegrationChannelPage extends Component
      * Step 4: persist via saveX(), register webhook (telegram|vk|max), show success notice.
      *
      * For telegram_ai: same flow (step 1-3 using verifyTelegram) but no webhook registration.
+     * For widget: bypasses this method entirely — «Сохранить» calls save() directly.
      */
     public function connect(SettingsService $settings, WebhookRegistrationService $webhook): void
     {
+        // Widget has no external API — skip verify and delegate to save().
+        if ($this->channel === 'widget') {
+            $this->save($settings);
+
+            return;
+        }
+
         $this->formErrors = [];
         $this->saved = false;
         $this->webhookMessage = null;
@@ -144,15 +166,12 @@ class IntegrationChannelPage extends Component
             return;
         }
 
-        // Telegram group to verify the bot's access to (entered value, else stored).
-        $telegramGroupId = ($this->telegram_group_id !== null && $this->telegram_group_id !== '')
-            ? $this->telegram_group_id
-            : (string) ($settings->get('telegram.group_id') ?? '');
-
-        // Step 3: verify the token (and, for Telegram, the group access) against the platform API.
+        // Step 3: verify the token against the platform API.
+        // For telegram/telegram_ai the group ID is no longer verified here —
+        // it is configured on the «Основные» general settings screen.
         $verifyResult = match ($this->channel) {
-            'telegram' => $webhook->verifyTelegram($tokenToVerify, $telegramGroupId),
-            'telegram_ai' => $webhook->verifyTelegram($tokenToVerify, $telegramGroupId),
+            'telegram' => $webhook->verifyTelegram($tokenToVerify, null),
+            'telegram_ai' => $webhook->verifyTelegram($tokenToVerify, null),
             'vk' => $webhook->verifyVk($tokenToVerify),
             'max' => $webhook->verifyMax($tokenToVerify),
             default => ['success' => false, 'message' => 'Неизвестный канал.'],
@@ -213,7 +232,8 @@ class IntegrationChannelPage extends Component
      * Save the current channel's form values via SettingsService.
      *
      * Kept as a standalone method so unit tests can call it directly without
-     * triggering the webhook step.
+     * triggering the webhook step. For widget this is also the primary save
+     * action (no verify-before-save).
      */
     public function save(SettingsService $settings): void
     {
@@ -225,6 +245,7 @@ class IntegrationChannelPage extends Component
             'telegram_ai' => $this->saveTelegramAi($settings),
             'vk' => $this->saveVk($settings),
             'max' => $this->saveMax($settings),
+            'widget' => $this->saveWidget($settings),
             default => $this->formErrors['channel'] = 'Неизвестный канал.',
         };
     }
@@ -272,13 +293,10 @@ class IntegrationChannelPage extends Component
     private function validateFields(): ?string
     {
         if ($this->channel === 'telegram') {
-            // All Telegram fields are required. Secret fields are pre-filled from
-            // settings, so an existing config already satisfies these checks.
-            if (trim((string) $this->telegram_group_id) === '') {
-                $this->formErrors['telegram_group_id'] = 'Укажите ID группы.';
-            } elseif (strlen((string) $this->telegram_group_id) > 50) {
-                $this->formErrors['telegram_group_id'] = 'Максимальная длина — 50 символов.';
-            }
+            // Token and secret key are required. The group ID is no longer
+            // managed here — it was moved to the «Основные» general settings screen.
+            // Secret fields are pre-filled from settings, so an existing config
+            // already satisfies these checks.
             if (trim((string) $this->telegram_token) === '') {
                 $this->formErrors['telegram_token'] = 'Укажите токен бота.';
             }
@@ -401,7 +419,7 @@ class IntegrationChannelPage extends Component
      */
     private function loadFields(SettingsService $settings): void
     {
-        $this->telegram_group_id = (string) ($settings->get('telegram.group_id') ?? '');
+        // telegram.group_id is no longer loaded here — it was moved to GeneralSettingsPage.
         $this->telegram_token = (string) ($settings->get('telegram.token') ?? '');
         $this->telegram_secret_key = (string) ($settings->get('telegram.secret_key') ?? '');
 
@@ -417,24 +435,33 @@ class IntegrationChannelPage extends Component
 
         $this->max_token = (string) ($settings->get('max.token') ?? '');
         $this->max_secret_key = (string) ($settings->get('max.secret_key') ?? '');
+
+        // Widget — public (non-secret) settings.
+        $this->widgetSiteKey = (string) ($settings->get('widget.site_key') ?? '');
+
+        // allowed_domains is stored as a JSON array; show as newline-joined textarea.
+        $storedDomains = $settings->get('widget.allowed_domains');
+        if (is_array($storedDomains) && count($storedDomains) > 0) {
+            $this->widgetAllowedDomains = implode("\n", $storedDomains);
+        } else {
+            $this->widgetAllowedDomains = '';
+        }
+
+        $this->widgetGreeting = (string) ($settings->get('widget.greeting') ?? '');
     }
 
     /**
      * Validate and save Telegram main bot channel settings.
+     *
+     * telegram.group_id is no longer persisted here — it was moved to GeneralSettingsPage.
      */
     private function saveTelegram(SettingsService $settings): void
     {
-        if (strlen((string) $this->telegram_group_id) > 50) {
-            $this->formErrors['telegram_group_id'] = 'Максимальная длина — 50 символов.';
-        }
-
         if (! empty($this->formErrors)) {
             return;
         }
 
-        $settings->set('telegram.group_id', $this->telegram_group_id ?? '');
-
-        // Save each secret only when non-empty (do not overwrite existing secrets with blank)
+        // Save each secret only when non-empty (do not overwrite existing secrets with blank).
         if ($this->telegram_token !== '' && $this->telegram_token !== null) {
             $settings->set('telegram.token', $this->telegram_token);
         }
@@ -502,6 +529,41 @@ class IntegrationChannelPage extends Component
         }
         if ($this->max_secret_key !== '') {
             $settings->set('max.secret_key', $this->max_secret_key);
+        }
+
+        $this->saved = true;
+    }
+
+    /**
+     * Validate and save Widget channel settings.
+     *
+     * No external verification step — settings are saved directly.
+     * allowed_domains textarea (one domain per line) is stored as a JSON array.
+     * Persists: widget.site_key (when non-empty), widget.allowed_domains (json), widget.greeting (when non-empty).
+     */
+    private function saveWidget(SettingsService $settings): void
+    {
+        // Run validation (sets formErrors when invalid).
+        $validationError = $this->validateFields();
+        if ($validationError !== null) {
+            return;
+        }
+
+        if (trim((string) $this->widgetSiteKey) !== '') {
+            $settings->set('widget.site_key', $this->widgetSiteKey);
+        }
+
+        // Split the textarea into a trimmed, non-empty domain array.
+        $domains = array_values(
+            array_filter(
+                array_map('trim', explode("\n", $this->widgetAllowedDomains)),
+                static fn (string $d): bool => $d !== '',
+            )
+        );
+        $settings->set('widget.allowed_domains', $domains);
+
+        if (trim((string) $this->widgetGreeting) !== '') {
+            $settings->set('widget.greeting', $this->widgetGreeting);
         }
 
         $this->saved = true;

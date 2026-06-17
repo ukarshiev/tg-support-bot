@@ -264,6 +264,7 @@ class WebhookRegistrationServiceTest extends TestCase
         Http::fake([
             'https://api.telegram.org/*/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true]], 200),
             'https://api.telegram.org/*/getChat' => Http::response(['ok' => true, 'result' => ['id' => -1001234567890, 'type' => 'supergroup']], 200),
+            'https://api.telegram.org/*/getChatMember' => Http::response(['ok' => true, 'result' => ['status' => 'administrator']], 200),
         ]);
 
         $settings = $this->makeSettings([]);
@@ -272,6 +273,23 @@ class WebhookRegistrationServiceTest extends TestCase
         $result = $service->verifyTelegram('bot123:validtoken', '-1001234567890');
 
         $this->assertTrue($result['success']);
+    }
+
+    public function test_verify_telegram_returns_error_when_bot_not_admin_in_group(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true]], 200),
+            'https://api.telegram.org/*/getChat' => Http::response(['ok' => true, 'result' => ['id' => -1001234567890, 'type' => 'supergroup']], 200),
+            'https://api.telegram.org/*/getChatMember' => Http::response(['ok' => true, 'result' => ['status' => 'member']], 200),
+        ]);
+
+        $settings = $this->makeSettings([]);
+        $service = new WebhookRegistrationService($settings);
+
+        $result = $service->verifyTelegram('bot123:validtoken', '-1001234567890');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('администратор', $result['message']);
     }
 
     // ── verifyVk() ───────────────────────────────────────────────────────────

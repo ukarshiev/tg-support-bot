@@ -38,11 +38,4 @@ interface AiProviderInterface
      * @return string
      */
     public function getModelName(): string;
-
-    /**
-     * Get current rate limiting status.
-     *
-     * @return array
-     */
-    public function getRateLimitStatus(): array;
 }

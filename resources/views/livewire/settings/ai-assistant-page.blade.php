@@ -21,23 +21,23 @@
                     <p class="mt-0.5 text-[13px] text-text-secondary">ИИ будет помогать операторам составлять ответы · применяется сразу</p>
                 </div>
             </div>
-            {{-- Cannot be enabled until the AI bot integration is configured; disabling stays allowed --}}
-            <x-admin.toggle name="ai_enabled" id="ai_enabled" wire:model.live="ai_enabled" :disabled="! $aiBotConnected && ! $ai_enabled" />
+            {{-- AI works without the AI bot — drafts are shown in the admin workspace. Disabling stays allowed. --}}
+            <x-admin.toggle name="ai_enabled" id="ai_enabled" wire:model.live="ai_enabled" />
         </div>
 
-        {{-- AI bot integration required notice --}}
+        {{-- Soft informer: without the AI bot, drafts appear in the admin panel only (not duplicated to the group) --}}
         @unless ($aiBotConnected)
-            <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+            <div class="rounded-xl border border-blue-200 bg-blue-50 p-4">
                 <div class="flex items-start gap-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-5 w-5 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div class="flex-1">
-                        <p class="text-sm font-semibold text-yellow-800">Сначала настройте «Бот AI помощника»</p>
-                        <p class="mt-1 text-xs text-yellow-700">Включить ИИ-помощника нельзя, пока не настроена интеграция «Бот AI помощника»: ответы ИИ публикуются в супергруппе от его имени, и без рабочего токена они не отправляются.</p>
+                        <p class="text-sm font-semibold text-blue-800">ИИ работает в админке без «Бота AI помощника»</p>
+                        <p class="mt-1 text-xs text-blue-700">Черновики ответов ИИ показываются в разделе «Чаты» с кнопками «Принять / Изменить / Отмена». «Бот AI помощника» нужен только чтобы дополнительно дублировать черновик в Telegram-супергруппу.</p>
                         <a href="{{ route('admin.settings.integrations.channel', 'telegram_ai') }}" wire:navigate
                            class="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline">
-                            Настроить «Бот AI помощника»
+                            Настроить «Бот AI помощника» (необязательно)
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
@@ -87,16 +87,7 @@
                             </div>
 
                             <div class="flex items-center gap-2">
-                                @if ($active)
-                                    <span class="inline-flex items-center rounded-lg px-2 py-1 text-xs font-medium" style="background:#ECFDF5;color:#10A37F">Активен</span>
-                                @elseif (! $configured)
-                                    <span class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium" style="background:#FEF9C3;color:#A16207" title="Укажите доступы провайдера, чтобы его можно было выбрать">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                        </svg>
-                                        Доступы не указаны
-                                    </span>
-                                @else
+                                @if (! $active && $configured)
                                     <button type="button" wire:click="$set('default_provider', '{{ $slug }}')"
                                             class="inline-flex items-center justify-center rounded-lg bg-bg-input px-3.5 py-1.5 text-xs font-medium text-text-primary transition hover:bg-border-light">
                                         Выбрать
@@ -116,21 +107,23 @@
                         {{-- Description --}}
                         <p class="mt-4 text-[13px] text-text-secondary">{{ $p['desc'] }}</p>
 
-                        {{-- Details (active only) --}}
-                        @if ($active)
-                            <div class="mt-4 flex gap-6">
+                        {{-- Details — shown identically for every provider on mobile and desktop --}}
+                        @php
+                            $statusLabel = $active ? 'Активен' : ($configured ? 'Подключён' : 'Доступы не указаны');
+                            $statusColor = $configured ? '#10A37F' : '#A16207';
+                        @endphp
+                        <div class="mt-4 flex gap-6">
+                            <div>
+                                <p class="text-[11px] text-text-secondary">Статус</p>
+                                <p class="text-xs font-medium" style="color:{{ $statusColor }}">{{ $statusLabel }}</p>
+                            </div>
+                            @if ($configured)
                                 <div>
                                     <p class="text-[11px] text-text-secondary">Модель</p>
                                     <p class="text-xs font-medium text-text-primary">{{ $providerModels[$slug] ?: '—' }}</p>
                                 </div>
-                                <div>
-                                    <p class="text-[11px] text-text-secondary">Статус</p>
-                                    <p class="text-xs font-medium" style="color:{{ ($providerConfigured[$slug] ?? false) ? '#10A37F' : '#9CA3AF' }}">
-                                        {{ ($providerConfigured[$slug] ?? false) ? 'Подключён' : 'Не настроен' }}
-                                    </p>
-                                </div>
-                            </div>
-                        @endif
+                            @endif
+                        </div>
                     </div>
                 @endforeach
             </div>
@@ -173,61 +166,6 @@
                     </div>
                     <x-admin.toggle name="auto_reply" id="auto_reply" wire:model.live="auto_reply" />
                 </div>
-
-                <div class="h-px bg-border-light"></div>
-
-                {{-- Rate limits --}}
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <x-admin.form-field
-                        label="Запросов в минуту"
-                        for="rate_limit_per_minute"
-                        hint="Лимит обращений к AI-провайдеру в минуту"
-                        :error="$formErrors['rate_limit_per_minute'] ?? null"
-                    >
-                        <input
-                            id="rate_limit_per_minute"
-                            type="number"
-                            min="1"
-                            wire:model="rate_limit_per_minute"
-                            class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
-                                @if (!empty($formErrors['rate_limit_per_minute'])) border-red-400 @endif"
-                        />
-                    </x-admin.form-field>
-
-                    <x-admin.form-field
-                        label="Запросов в час"
-                        for="rate_limit_per_hour"
-                        hint="Лимит обращений к AI-провайдеру в час"
-                        :error="$formErrors['rate_limit_per_hour'] ?? null"
-                    >
-                        <input
-                            id="rate_limit_per_hour"
-                            type="number"
-                            min="1"
-                            wire:model="rate_limit_per_hour"
-                            class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
-                                @if (!empty($formErrors['rate_limit_per_hour'])) border-red-400 @endif"
-                        />
-                    </x-admin.form-field>
-                </div>
-
-                <div class="h-px bg-border-light"></div>
-
-                {{-- Disable timeout --}}
-                <x-admin.form-field
-                    label="Таймаут отключения (сек)"
-                    for="disable_timeout"
-                    hint="Максимальное время ожидания ответа от провайдера в секундах"
-                    :error="$formErrors['disable_timeout'] ?? null"
-                >
-                    <input
-                        id="disable_timeout"
-                        type="text"
-                        wire:model="disable_timeout"
-                        placeholder="7200"
-                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
-                    />
-                </x-admin.form-field>
 
                 <div class="h-px bg-border-light"></div>
 

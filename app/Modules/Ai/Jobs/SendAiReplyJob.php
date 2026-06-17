@@ -4,6 +4,7 @@ namespace App\Modules\Ai\Jobs;
 
 use App\Models\AiMessage;
 use App\Models\BotUser;
+use App\Modules\Admin\Services\ChannelStatusService;
 use App\Modules\Ai\Actions\DeliverAiAnswerToUser;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
@@ -42,9 +43,8 @@ class SendAiReplyJob implements ShouldQueue
     }
 
     /**
-     * Generate an AI reply and deliver it to both audiences:
-     *   1. Post into the supergroup topic as the AI bot (visual marker for managers).
-     *   2. Send to the user privately as the main bot.
+     * Generate an AI reply, deliver it to the user, and post it to the
+     * supergroup forum topic when the Telegram AI bot is configured.
      *
      * @param AiBotApi           $aiBotApi
      * @param AiAssistantService $aiService
@@ -59,15 +59,21 @@ class SendAiReplyJob implements ShouldQueue
                 throw new \RuntimeException('BotUser not found: ' . $this->botUserId, 1);
             }
 
-            // For brand-new VK/Max users the supergroup topic may still be in flight;
-            // wait for it before we try to post the AI reply marker into thread_id=null.
-            if (empty($botUser->topic_id)) {
+            $aiBotToken = (string) app(SettingsService::class)->get('telegram_ai.token');
+            $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
+            $telegramConnected = app(ChannelStatusService::class)->telegram()['connected']
+                && $groupId !== '';
+            $aiBotConfigured = $aiBotToken !== '' && $telegramConnected;
+
+            // When the supergroup will be used, the topic must exist first.
+            if ($aiBotConfigured && empty($botUser->topic_id)) {
                 Log::channel('app')->info('SendAiReplyJob: topic_id not ready, releasing', [
                     'source' => 'send_ai_reply_topic_pending',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,
                 ]);
                 $this->release(5);
+
                 return;
             }
 
@@ -86,23 +92,41 @@ class SendAiReplyJob implements ShouldQueue
 
             $replyText = $aiResponse->response;
 
-            $supergroupResponse = $aiBotApi->send('sendMessage', [
-                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-                'message_thread_id' => $botUser->topic_id,
-                'text' => $replyText,
-                'parse_mode' => 'html',
-            ]);
+            if ($aiBotConfigured) {
+                $supergroupResponse = $aiBotApi->send('sendMessage', [
+                    'chat_id' => $groupId,
+                    'message_thread_id' => $botUser->topic_id,
+                    'text' => $replyText,
+                    'parse_mode' => 'html',
+                ]);
 
-            if ($supergroupResponse->ok !== true) {
-                throw new \RuntimeException('Telegram API error posting AI reply to supergroup: ' . json_encode((array) $supergroupResponse), 1);
+                if ($supergroupResponse->ok !== true) {
+                    throw new \RuntimeException('Telegram API error posting AI reply to supergroup: ' . json_encode((array) $supergroupResponse), 1);
+                }
+
+                AiMessage::create([
+                    'bot_user_id' => $botUser->id,
+                    'message_id' => $supergroupResponse->message_id,
+                    'text_ai' => $replyText,
+                    'text_manager' => $replyText,
+                    'status' => AiMessage::STATUS_ACCEPTED,
+                ]);
+
+                Log::channel('app')->info('SendAiReplyJob: AI reply posted to supergroup', [
+                    'source' => 'ai_reply_supergroup',
+                    'bot_user_id' => $botUser->id,
+                    'supergroup_message_id' => $supergroupResponse->message_id,
+                ]);
+            } else {
+                // Supergroup not configured: record auto-reply for admin panel only.
+                AiMessage::create([
+                    'bot_user_id' => $botUser->id,
+                    'message_id' => null,
+                    'text_ai' => $replyText,
+                    'text_manager' => $replyText,
+                    'status' => AiMessage::STATUS_ACCEPTED,
+                ]);
             }
-
-            AiMessage::create([
-                'bot_user_id' => $botUser->id,
-                'message_id' => $supergroupResponse->message_id,
-                'text_ai' => $replyText,
-                'text_manager' => $replyText,
-            ]);
 
             $delivered = app(DeliverAiAnswerToUser::class)->execute($botUser, $replyText, $this->updateDto);
             if (!$delivered) {
@@ -113,7 +137,6 @@ class SendAiReplyJob implements ShouldQueue
                 'source' => 'ai_reply_sent',
                 'bot_user_id' => $botUser->id,
                 'platform' => $botUser->platform,
-                'supergroup_message_id' => $supergroupResponse->message_id,
             ]);
         } catch (\Throwable $e) {
             Log::channel('app')->log(

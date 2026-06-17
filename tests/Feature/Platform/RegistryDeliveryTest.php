@@ -7,7 +7,7 @@ use App\Models\Feedback;
 use App\Models\Message;
 use App\Modules\Ai\Actions\DeliverAiAnswerToUser;
 use App\Modules\Feedback\Actions\SendFeedbackForm;
-use App\Modules\Max\Jobs\SendMaxMessageJob;
+use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
 use App\Platform\PlatformChannelRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -92,7 +92,7 @@ class RegistryDeliveryTest extends TestCase
         $this->assertTrue($result);
         $this->assertCount(0, $channel->aiAnswers);
 
-        Queue::assertPushed(SendMaxMessageJob::class);
+        Queue::assertPushed(SendMaxSimpleMessageJob::class);
     }
 
     public function test_returns_false_when_no_channel_registered_for_unknown_platform(): void

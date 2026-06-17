@@ -3,37 +3,54 @@
 namespace App\Modules\Ai\Actions;
 
 use App\Models\BotUser;
+use App\Models\Message;
 use App\Modules\Max\DTOs\MaxTextMessageDto;
-use App\Modules\Max\Jobs\SendMaxMessageJob;
+use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
-use App\Modules\Vk\Jobs\SendVkMessageJob;
+use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
 use App\Platform\PlatformChannelRegistry;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Dispatch an AI-generated answer to the end user using the platform-specific
- * send job. Used by AI auto-reply (`SendAiReplyJob`) and AI draft accept
- * (`AiAcceptMessage`) so both flows deliver to the same set of platforms.
+ * Persist an AI-generated answer to the `messages` table and dispatch a
+ * best-effort platform send using the "simple" (non-saving) send job.
  *
- * Built-in platforms (telegram/vk/max) are handled directly. Any other platform
- * is delegated to a {@see \App\Contracts\PlatformChannel} registered in the
- * {@see PlatformChannelRegistry} by a pluggable module (e.g. the paid Avito
- * package) — so the core needs no edits to support a new platform.
+ * The outgoing `Message` row is created BEFORE the send job is dispatched,
+ * so the AI answer ALWAYS appears in the admin chat thread at `/admin/chats`
+ * regardless of whether the platform send ultimately succeeds. This mirrors
+ * the pattern used by {@see \App\Modules\Admin\Actions\SendReplyAction}.
+ *
+ * Built-in platforms (telegram/vk/max) are handled directly. Any other
+ * platform is delegated to a {@see \App\Contracts\PlatformChannel} registered
+ * in the {@see PlatformChannelRegistry} by a pluggable module (e.g. the paid
+ * Avito package) — the core needs no edits to support a new platform; those
+ * channels are responsible for their own persistence.
  */
 class DeliverAiAnswerToUser
 {
     /**
-     * @param BotUser                $botUser   Target user
-     * @param string                 $text      AI answer text to deliver
-     * @param TelegramUpdateDto|null $updateDto Optional originating TG update (callback or webhook).
-     *                                          Forwarded to the platform-specific job so its saveMessage
-     *                                          path keeps the same shape as a manager-driven reply.
+     * Persist the AI answer and dispatch the platform send job.
      *
-     * @return bool true if a send job was dispatched (or a registered channel handled it),
-     *              false if platform is unsupported
+     * For telegram/vk/max:
+     * 1. Strip HTML markup to obtain the plain-text version for `messages.text`.
+     *    Telegram users still receive the HTML-formatted message (via parse_mode=html).
+     * 2. Create the `Message` row with `message_type = 'outgoing'` immediately.
+     * 3. Dispatch a "simple" (non-saving) send job so there is exactly one row.
+     *
+     * For pluggable platforms (default branch), delivery is delegated to the
+     * registered {@see PlatformChannel}; that channel owns its own persistence.
+     *
+     * @param BotUser                $botUser   Target user
+     * @param string                 $text      AI answer text (may contain Telegram HTML markup)
+     * @param TelegramUpdateDto|null $updateDto Optional originating TG update (not used for
+     *                                          persistence in this action; kept for signature
+     *                                          compatibility with callers)
+     *
+     * @return bool true if delivery was attempted (or a registered channel handled it),
+     *              false if the platform is unsupported and no channel is registered
      */
     public function execute(BotUser $botUser, string $text, ?TelegramUpdateDto $updateDto = null): bool
     {
@@ -47,40 +64,70 @@ class DeliverAiAnswerToUser
 
         switch ($botUser->platform) {
             case 'telegram':
-                SendTelegramMessageJob::dispatch(
-                    $botUser->id,
-                    $updateDto ?? $this->emptyTelegramUpdate(),
+                $plainText = $this->stripHtmlForPlainText($text);
+
+                Message::create([
+                    'bot_user_id' => $botUser->id,
+                    'platform' => $botUser->platform,
+                    'message_type' => 'outgoing',
+                    'from_id' => 0,
+                    'to_id' => 0,
+                    'text' => $plainText ?: null,
+                ]);
+
+                // Send PLAIN text with parse_mode explicitly disabled (null → omitted
+                // by toArray()). The DTO defaults parse_mode to 'html'; left at the
+                // default, Telegram rejects AI output that isn't valid Telegram HTML
+                // (stray '<', '&', code) with 400 "can't parse entities" and the
+                // answer never reaches the user. Plain delivery is robust for any text.
+                SendTelegramSimpleQueryJob::dispatch(
                     TGTextMessageDto::from([
                         'methodQuery' => 'sendMessage',
-                        'typeSource' => 'private',
                         'chat_id' => $botUser->chat_id,
-                        'text' => $text,
-                        'parse_mode' => 'html',
+                        'text' => $plainText,
+                        'parse_mode' => null,
                     ]),
-                    'outgoing',
                 );
                 return true;
 
             case 'vk':
-                SendVkMessageJob::dispatch(
-                    $botUser->id,
-                    $updateDto,
+                $plainText = $this->stripHtmlForPlainText($text);
+
+                Message::create([
+                    'bot_user_id' => $botUser->id,
+                    'platform' => $botUser->platform,
+                    'message_type' => 'outgoing',
+                    'from_id' => 0,
+                    'to_id' => 0,
+                    'text' => $plainText ?: null,
+                ]);
+
+                SendVkSimpleMessageJob::dispatch(
                     VkTextMessageDto::from([
                         'methodQuery' => 'messages.send',
                         'peer_id' => $botUser->chat_id,
-                        'message' => $this->stripHtmlForPlainText($text),
+                        'message' => $plainText,
                     ]),
                 );
                 return true;
 
             case 'max':
-                SendMaxMessageJob::dispatch(
-                    $botUser->id,
-                    $updateDto,
+                $plainText = $this->stripHtmlForPlainText($text);
+
+                Message::create([
+                    'bot_user_id' => $botUser->id,
+                    'platform' => $botUser->platform,
+                    'message_type' => 'outgoing',
+                    'from_id' => 0,
+                    'to_id' => 0,
+                    'text' => $plainText ?: null,
+                ]);
+
+                SendMaxSimpleMessageJob::dispatch(
                     MaxTextMessageDto::from([
                         'methodQuery' => 'sendMessage',
                         'user_id' => $botUser->chat_id,
-                        'text' => $this->stripHtmlForPlainText($text),
+                        'text' => $plainText,
                     ]),
                 );
                 return true;
@@ -124,21 +171,5 @@ class DeliverAiAnswerToUser
         $plain = strip_tags($text);
         $plain = html_entity_decode($plain, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         return trim($plain);
-    }
-
-    /**
-     * Build a minimal stub TelegramUpdateDto for AI flows that did not originate
-     * from a Telegram webhook (e.g. AI auto-reply triggered by a VK/Max message).
-     *
-     * @return TelegramUpdateDto
-     */
-    private function emptyTelegramUpdate(): TelegramUpdateDto
-    {
-        return new TelegramUpdateDto(
-            updateId: 0,
-            typeQuery: 'message',
-            aiTechMessage: false,
-            typeSource: 'private',
-        );
     }
 }

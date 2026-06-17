@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Chat;
 
+use App\Models\AiMessage;
 use App\Models\AutoReply;
 use App\Models\BotUser;
 use App\Models\Message;
@@ -13,6 +14,8 @@ use App\Modules\Admin\Actions\ClearBotUserHistory;
 use App\Modules\Admin\Actions\DeleteBotUser;
 use App\Modules\Admin\Actions\SendReplyAction;
 use App\Modules\Admin\Actions\UnbanBotUser;
+use App\Modules\Ai\Actions\AiAcceptMessage;
+use App\Modules\Ai\Actions\AiCancelMessage;
 use App\Modules\Telegram\Actions\CloseTopic;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
@@ -66,6 +69,14 @@ class ConversationPage extends Component
     #[Locked]
     public Collection $chatMessages;
 
+    /**
+     * Pending AI drafts for the active dialog (admin_panel mode only).
+     *
+     * @var \Illuminate\Support\Collection<int, AiMessage>
+     */
+    #[Locked]
+    public Collection $pendingAiDrafts;
+
     /** Number of messages loaded per page (initial load + each scroll-up batch). */
     private const MESSAGES_PER_PAGE = 50;
 
@@ -108,6 +119,7 @@ class ConversationPage extends Component
     {
         $this->dialogList = collect();
         $this->chatMessages = collect();
+        $this->pendingAiDrafts = collect();
         $this->lastSeenMessageId = (int) Message::max('id');
         $this->loadDialogList();
     }
@@ -300,6 +312,7 @@ class ConversationPage extends Component
         }
 
         $this->loadMessages();
+        $this->loadPendingAiDrafts();
         $this->loadDialogList();
 
         // Always scroll to the bottom when opening a dialog.
@@ -364,6 +377,7 @@ class ConversationPage extends Component
         // Append only messages newer than the last loaded one — this preserves
         // any older history the manager scrolled up to load.
         $added = $this->loadNewerMessages();
+        $this->loadPendingAiDrafts();
 
         if ($added > 0) {
             $this->markConversationRead($this->activeBotUser);
@@ -775,8 +789,8 @@ class ConversationPage extends Component
      * Whether the reply form should be rendered in the chat workspace.
      *
      * Always true: SendReplyAction routes the reply by BotUser platform
-     * (telegram/vk/external) and does not depend on MANAGER_INTERFACE, so the
-     * manager can reply from the workspace regardless of the active mode.
+     * (telegram/vk/external), so the manager can always reply from the workspace
+     * (the admin panel is an always-active surface).
      *
      * @return bool
      */
@@ -826,6 +840,122 @@ class ConversationPage extends Component
     public function getAutoReplies(): Collection
     {
         return AutoReply::where('enabled', true)->orderBy('id')->get();
+    }
+
+    /**
+     * Load pending AI drafts for the active dialog.
+     *
+     * Drafts are always shown in the admin panel workspace regardless of
+     * whether the Telegram supergroup is configured.
+     *
+     * @return void
+     */
+    private function loadPendingAiDrafts(): void
+    {
+        if (! $this->activeBotUserId) {
+            $this->pendingAiDrafts = collect();
+
+            return;
+        }
+
+        $this->pendingAiDrafts = AiMessage::where('bot_user_id', $this->activeBotUserId)
+            ->where('status', AiMessage::STATUS_PENDING)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Accept a pending AI draft: deliver to user and mark as accepted.
+     *
+     * @param int $aiMessageId AiMessage primary key
+     *
+     * @return void
+     */
+    public function acceptAiDraft(int $aiMessageId): void
+    {
+        if (! $this->activeBotUserId) {
+            return;
+        }
+
+        $draft = AiMessage::where('id', $aiMessageId)
+            ->where('bot_user_id', $this->activeBotUserId)
+            ->where('status', AiMessage::STATUS_PENDING)
+            ->first();
+
+        if ($draft === null) {
+            return;
+        }
+
+        app(AiAcceptMessage::class)->executeForDraft($draft);
+
+        $this->loadPendingAiDrafts();
+        $this->loadMessages();
+        $this->loadDialogList();
+        $this->dispatch('messages-updated');
+
+        Notification::make()
+            ->title('ИИ-ответ отправлен')
+            ->success()
+            ->send();
+    }
+
+    /**
+     * Cancel a pending AI draft: mark as cancelled, remove from workspace.
+     *
+     * @param int $aiMessageId AiMessage primary key
+     *
+     * @return void
+     */
+    public function cancelAiDraft(int $aiMessageId): void
+    {
+        if (! $this->activeBotUserId) {
+            return;
+        }
+
+        $draft = AiMessage::where('id', $aiMessageId)
+            ->where('bot_user_id', $this->activeBotUserId)
+            ->where('status', AiMessage::STATUS_PENDING)
+            ->first();
+
+        if ($draft === null) {
+            return;
+        }
+
+        app(AiCancelMessage::class)->executeForDraft($draft);
+
+        $this->loadPendingAiDrafts();
+    }
+
+    /**
+     * Edit a pending AI draft: copy text_ai into the reply input and cancel the draft.
+     *
+     * The operator can then edit the text freely and send it as a normal reply.
+     *
+     * @param int $aiMessageId AiMessage primary key
+     *
+     * @return void
+     */
+    public function editAiDraft(int $aiMessageId): void
+    {
+        if (! $this->activeBotUserId) {
+            return;
+        }
+
+        $draft = AiMessage::where('id', $aiMessageId)
+            ->where('bot_user_id', $this->activeBotUserId)
+            ->where('status', AiMessage::STATUS_PENDING)
+            ->first();
+
+        if ($draft === null) {
+            return;
+        }
+
+        $this->replyText = (string) $draft->text_ai;
+
+        app(AiCancelMessage::class)->executeForDraft($draft);
+
+        $this->loadPendingAiDrafts();
     }
 
     /**

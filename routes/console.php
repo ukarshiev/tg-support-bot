@@ -8,7 +8,8 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// Keep the Telescope entries table bounded — drop records older than 48h.
-// Requires a scheduler (cron running `php artisan schedule:run`); otherwise
-// run `php artisan telescope:prune` manually.
-Schedule::command('telescope:prune --hours=48')->daily();
+// Keep the Telescope entries table bounded — drop records older than 24h.
+// Runs via the `scheduler` docker service (`php artisan schedule:work`);
+// otherwise wire a cron (`* * * * * php artisan schedule:run`) or run
+// `php artisan telescope:prune` manually.
+Schedule::command('telescope:prune --hours=24')->daily();

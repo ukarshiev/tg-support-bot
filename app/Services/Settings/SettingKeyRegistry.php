@@ -22,11 +22,6 @@ class SettingKeyRegistry
      */
     private static array $keys = [
         // ── App ─────────────────────────────────────────────────────────────
-        'app.manager_interface' => [
-            'type' => 'string',
-            'config' => 'app.manager_interface',
-            'is_secret' => false,
-        ],
         'app.bot_name' => [
             'type' => 'string',
             'config' => null,
@@ -139,11 +134,6 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => false,
         ],
-        'ai.disable_timeout' => [
-            'type' => 'string',
-            'config' => null,
-            'is_secret' => false,
-        ],
         'ai.auto_escalation' => [
             'type' => 'bool',
             'config' => null,
@@ -151,16 +141,6 @@ class SettingKeyRegistry
         ],
         'ai.enable_logging' => [
             'type' => 'bool',
-            'config' => null,
-            'is_secret' => false,
-        ],
-        'ai.rate_limit.requests_per_minute' => [
-            'type' => 'int',
-            'config' => null,
-            'is_secret' => false,
-        ],
-        'ai.rate_limit.requests_per_hour' => [
-            'type' => 'int',
             'config' => null,
             'is_secret' => false,
         ],
@@ -193,6 +173,23 @@ class SettingKeyRegistry
             'type' => 'string',
             'config' => null,
             'is_secret' => true,
+        ],
+
+        // ── Widget (site chat widget) ────────────────────────────────────────────
+        'widget.site_key' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'widget.allowed_domains' => [
+            'type' => 'json',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'widget.greeting' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
         ],
 
         // ── AI system prompt ─────────────────────────────────────────────────

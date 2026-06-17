@@ -8,7 +8,6 @@ use App\Modules\Ai\Contracts\AiProviderInterface;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
 use App\Services\Settings\SettingsService;
-use Illuminate\Support\Facades\Cache;
 
 abstract class BaseAiProvider implements AiProviderInterface
 {
@@ -87,44 +86,6 @@ abstract class BaseAiProvider implements AiProviderInterface
     public function getModelName(): string
     {
         return $this->modelName;
-    }
-
-    /**
-     * Get current rate limiting status.
-     *
-     * @return array
-     */
-    public function getRateLimitStatus(): array
-    {
-        $cacheKey = "ai_rate_limit_{$this->providerName}";
-        $requests = Cache::get($cacheKey, 0);
-        $limit = (int) (app(SettingsService::class)->get('ai.rate_limit.requests_per_minute') ?? 60);
-
-        return [
-            'current_requests' => $requests,
-            'limit' => $limit,
-            'remaining' => max(0, $limit - $requests),
-            'reset_time' => now()->addMinute()->timestamp,
-        ];
-    }
-
-    /**
-     * Check rate limit for current provider.
-     *
-     * @return bool
-     */
-    protected function checkRateLimit(): bool
-    {
-        $cacheKey = "ai_rate_limit_{$this->providerName}";
-        $requests = Cache::get($cacheKey, 0);
-        $limit = (int) (app(SettingsService::class)->get('ai.rate_limit.requests_per_minute') ?? 60);
-
-        if ($requests >= $limit) {
-            return false;
-        }
-
-        Cache::put($cacheKey, $requests + 1, now()->addMinute());
-        return true;
     }
 
     /**

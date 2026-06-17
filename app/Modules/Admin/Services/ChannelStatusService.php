@@ -13,10 +13,14 @@ use App\Services\Settings\SettingsService;
  * are present AND at least one secret credential key is set.
  *
  * Required keys per platform:
- *   Telegram    — telegram.token (secret), telegram.secret_key (secret), telegram.group_id
+ *   Telegram    — telegram.token (secret), telegram.secret_key (secret)
  *   Telegram AI — telegram_ai.token (secret)
  *   VK          — vk.token (secret), vk.secret_key (secret), vk.confirm_code (secret)
  *   MAX         — max.token (secret), max.secret_key (secret)
+ *   Widget      — widget.site_key (non-secret, non-empty)
+ *
+ * Note: telegram.group_id moved to the «Основные» general settings screen —
+ *       it is no longer part of the Telegram channel connection check.
  */
 class ChannelStatusService
 {
@@ -25,7 +29,7 @@ class ChannelStatusService
     }
 
     /**
-     * Return connection status for all four channels.
+     * Return connection status for all channels.
      *
      * @return array<string, array{connected: bool, label: string}>
      */
@@ -36,19 +40,23 @@ class ChannelStatusService
             'telegram_ai' => $this->telegramAi(),
             'vk' => $this->vk(),
             'max' => $this->max(),
+            'widget' => $this->widget(),
         ];
     }
 
     /**
      * Telegram channel status.
      *
+     * Connected when the bot token and webhook secret key are both set.
+     * The group ID is configured on the «Основные» general settings screen
+     * and is no longer part of this check.
+     *
      * @return array{connected: bool, label: string}
      */
     public function telegram(): array
     {
         $connected = $this->isNonEmpty('telegram.token')
-            && $this->isNonEmpty('telegram.secret_key')
-            && $this->isNonEmpty('telegram.group_id');
+            && $this->isNonEmpty('telegram.secret_key');
 
         return [
             'connected' => $connected,
@@ -97,6 +105,23 @@ class ChannelStatusService
     {
         $connected = $this->isNonEmpty('max.token')
             && $this->isNonEmpty('max.secret_key');
+
+        return [
+            'connected' => $connected,
+            'label' => $connected ? 'Подключён' : 'Не настроен',
+        ];
+    }
+
+    /**
+     * Widget channel status.
+     *
+     * Connected when widget.site_key is set (non-empty).
+     *
+     * @return array{connected: bool, label: string}
+     */
+    public function widget(): array
+    {
+        $connected = $this->isNonEmpty('widget.site_key');
 
         return [
             'connected' => $connected,

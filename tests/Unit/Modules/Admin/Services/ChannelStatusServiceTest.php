@@ -24,7 +24,7 @@ class ChannelStatusServiceTest extends TestCase
 
     // ── all() ────────────────────────────────────────────────────────────────
 
-    public function test_all_returns_all_four_channels(): void
+    public function test_all_returns_all_five_channels(): void
     {
         $settings = $this->makeSettings([]);
         $service = new ChannelStatusService($settings);
@@ -35,16 +35,18 @@ class ChannelStatusServiceTest extends TestCase
         $this->assertArrayHasKey('telegram_ai', $result);
         $this->assertArrayHasKey('vk', $result);
         $this->assertArrayHasKey('max', $result);
+        $this->assertArrayHasKey('widget', $result);
     }
 
     // ── telegram() ───────────────────────────────────────────────────────────
 
-    public function test_telegram_connected_when_all_required_keys_set(): void
+    public function test_telegram_connected_when_token_and_secret_key_set(): void
     {
+        // telegram.group_id is no longer part of the connection check —
+        // it was moved to the «Основные» general settings screen.
         $settings = $this->makeSettings([
             'telegram.token' => 'tok',
             'telegram.secret_key' => 'sec',
-            'telegram.group_id' => '-1001234',
         ]);
         $service = new ChannelStatusService($settings);
 
@@ -54,12 +56,24 @@ class ChannelStatusServiceTest extends TestCase
         $this->assertSame('Подключён', $status['label']);
     }
 
+    public function test_telegram_connected_regardless_of_group_id(): void
+    {
+        // group_id is not part of the Telegram integration check — confirmed by service.
+        $settings = $this->makeSettings([
+            'telegram.token' => 'tok',
+            'telegram.secret_key' => 'sec',
+            'telegram.group_id' => '',
+        ]);
+        $service = new ChannelStatusService($settings);
+
+        $this->assertTrue($service->telegram()['connected']);
+    }
+
     public function test_telegram_not_connected_when_token_missing(): void
     {
         $settings = $this->makeSettings([
             'telegram.token' => '',
             'telegram.secret_key' => 'sec',
-            'telegram.group_id' => '-1001234',
         ]);
         $service = new ChannelStatusService($settings);
 
@@ -74,19 +88,6 @@ class ChannelStatusServiceTest extends TestCase
         $settings = $this->makeSettings([
             'telegram.token' => 'tok',
             'telegram.secret_key' => '',
-            'telegram.group_id' => '-1001234',
-        ]);
-        $service = new ChannelStatusService($settings);
-
-        $this->assertFalse($service->telegram()['connected']);
-    }
-
-    public function test_telegram_not_connected_when_group_id_missing(): void
-    {
-        $settings = $this->makeSettings([
-            'telegram.token' => 'tok',
-            'telegram.secret_key' => 'sec',
-            'telegram.group_id' => '',
         ]);
         $service = new ChannelStatusService($settings);
 
@@ -212,6 +213,40 @@ class ChannelStatusServiceTest extends TestCase
         $service = new ChannelStatusService($settings);
 
         $this->assertFalse($service->max()['connected']);
+    }
+
+    // ── widget() ─────────────────────────────────────────────────────────────
+
+    public function test_widget_connected_when_site_key_set(): void
+    {
+        $settings = $this->makeSettings([
+            'widget.site_key' => 'abc123',
+        ]);
+        $service = new ChannelStatusService($settings);
+
+        $status = $service->widget();
+
+        $this->assertTrue($status['connected']);
+        $this->assertSame('Подключён', $status['label']);
+    }
+
+    public function test_widget_not_connected_when_site_key_missing(): void
+    {
+        $settings = $this->makeSettings([
+            'widget.site_key' => '',
+        ]);
+        $service = new ChannelStatusService($settings);
+
+        $this->assertFalse($service->widget()['connected']);
+        $this->assertSame('Не настроен', $service->widget()['label']);
+    }
+
+    public function test_widget_not_connected_when_site_key_absent(): void
+    {
+        $settings = $this->makeSettings([]);
+        $service = new ChannelStatusService($settings);
+
+        $this->assertFalse($service->widget()['connected']);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

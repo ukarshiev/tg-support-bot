@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * @property int         $id
- * @property string      $key        Dot-notation setting key (e.g. 'app.manager_interface')
+ * @property string      $key        Dot-notation setting key (e.g. 'telegram.group_id')
  * @property string|null $value      Raw stored value; encrypted string when is_secret = true
  * @property string      $type       PHP type for coercion: 'string' | 'bool' | 'int' | 'json'
  * @property bool        $is_secret  When true, value is encrypted in the DB by SettingsService

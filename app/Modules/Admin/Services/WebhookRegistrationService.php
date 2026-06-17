@@ -36,7 +36,8 @@ class WebhookRegistrationService
      *
      * @param string      $token   Bot token to verify.
      * @param string|null $groupId Optional Telegram group/chat ID — when provided (non-empty),
-     *                             also verifies the bot can access that chat via getChat.
+     *                             also verifies the bot can access that chat via getChat AND
+     *                             that the bot is an administrator in it via getChatMember.
      *
      * @return array{success: bool, message: string, botId: int|null, botUsername: string|null}
      *                                                                                          On success, botId/botUsername carry the identity returned by getMe.
@@ -54,22 +55,46 @@ class WebhookRegistrationService
                 return ['success' => false, 'message' => 'Неверный токен Telegram.', 'botId' => null, 'botUsername' => null];
             }
 
-            // Optionally verify the bot has access to the configured group.
+            // Identity captured from getMe (used for the admin check below and to
+            // auto-store the AI bot id/username).
+            $me = $result->rawData['result'] ?? [];
+            $botId = isset($me['id']) ? (int) $me['id'] : null;
+
+            // When a group is provided, verify (1) the bot can access the chat and
+            // (2) the bot is an administrator in it.
             if ($groupId !== null && $groupId !== '') {
                 $chat = TelegramMethods::sendQueryTelegram('getChat', ['chat_id' => $groupId], $token);
 
                 if ($chat->ok !== true) {
-                    return ['success' => false, 'message' => 'Неверный ID группы или бот не добавлен в группу.', 'botId' => null, 'botUsername' => null];
+                    // Surface Telegram's own reason so a correct-looking ID that still
+                    // fails (bot not added, wrong -100 prefix, chat_id empty, …) is diagnosable.
+                    $desc = (string) ($chat->rawData['description'] ?? '');
+                    $message = 'Неверный ID группы или бот не добавлен в группу.';
+                    if ($desc !== '') {
+                        $message .= ' Ответ Telegram: ' . $desc;
+                    }
+
+                    return ['success' => false, 'message' => $message, 'botId' => null, 'botUsername' => null];
+                }
+
+                if ($botId !== null) {
+                    $member = TelegramMethods::sendQueryTelegram('getChatMember', [
+                        'chat_id' => $groupId,
+                        'user_id' => $botId,
+                    ], $token);
+
+                    $status = $member->rawData['result']['status'] ?? null;
+
+                    if (! in_array($status, ['administrator', 'creator'], true)) {
+                        return ['success' => false, 'message' => 'Бот добавлен в группу, но без прав администратора.', 'botId' => null, 'botUsername' => null];
+                    }
                 }
             }
-
-            // Identity captured from getMe (used to auto-store the AI bot id/username).
-            $me = $result->rawData['result'] ?? [];
 
             return [
                 'success' => true,
                 'message' => 'Токен Telegram прошёл проверку.',
-                'botId' => isset($me['id']) ? (int) $me['id'] : null,
+                'botId' => $botId,
                 'botUsername' => isset($me['username']) ? (string) $me['username'] : null,
             ];
         } catch (\Throwable) {

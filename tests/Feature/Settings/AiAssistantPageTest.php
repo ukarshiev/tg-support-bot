@@ -214,7 +214,7 @@ class AiAssistantPageTest extends TestCase
         $this->assertFalse((bool) $settings->get('ai.enabled'));
     }
 
-    public function test_master_toggle_blocked_until_ai_bot_configured(): void
+    public function test_master_toggle_can_be_enabled_without_ai_bot_configured(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
@@ -226,12 +226,13 @@ class AiAssistantPageTest extends TestCase
 
         Livewire::test(AiAssistantPage::class)
             ->assertSet('aiBotConnected', false)
-            ->assertSee('Сначала настройте')
+            // No blocking notice is shown — AI can always be enabled.
+            ->assertDontSee('Сначала настройте')
             ->set('ai_enabled', true)
-            // Enabling is blocked — toggle reverts and nothing is persisted.
-            ->assertSet('ai_enabled', false);
+            // Toggle stays enabled — no guard blocks it.
+            ->assertSet('ai_enabled', true);
 
-        $this->assertFalse((bool) $settings->get('ai.enabled'));
+        $this->assertTrue((bool) $settings->get('ai.enabled'));
     }
 
     // ── Auto-reply confirm flow ───────────────────────────────────────────────
