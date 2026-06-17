@@ -1,16 +1,16 @@
 # Admin Panel Domain
 
-> **Purpose:** Define business rules, key concepts, and invariants for the Admin module (`app/Modules/Admin/`). This module implements the `admin_panel` mode of the `ManagerInterfaceContract`.
+> **Purpose:** Define business rules, key concepts, and invariants for the Admin module (`app/Modules/Admin/`). The admin panel and Telegram supergroup work SIMULTANEOUSLY — there is no exclusive mode.
 > **Context:** Read this file before modifying anything inside `app/Modules/Admin/`, Filament resources, Livewire pages, or the `SendReplyAction`.
-> **Version:** 1.5
+> **Version:** 2.0
 
 ---
 
 ## 1. What is this domain?
 
-The Admin Panel domain provides an alternative manager interface for the support team. Instead of working through a Telegram supergroup with forum topics, managers can use the `/admin` web panel (built with Filament 3) to view conversations and send replies.
+The Admin Panel domain provides the web management interface for the support team. Managers use the `/admin` web panel (built with Filament 3 for auth + custom Livewire screens) to view conversations and send replies. The admin panel **always works simultaneously** with the Telegram supergroup when that channel is configured.
 
-**This domain owns:** `App\Livewire\Chat\ConversationPage` (standalone Livewire chat workspace, chrome-free, at `/admin/chats`), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), `AiAssistantPage` (custom Livewire full-page at `/admin/settings/ai`), `AiProviderAccessPage` (custom Livewire full-page at `/admin/settings/ai/{provider}`), `ApiWebhooksPage` (custom Livewire full-page at `/admin/settings/api-webhooks` — source card list), `ApiWebhookSourcePage` (custom Livewire full-page at `/admin/settings/api-webhooks/{source}` — per-source edit page), the Filament panel + navigation (`AdminPanelProvider`), the admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`, `resources/views/layouts/admin-chat.blade.php`), `SendReplyAction`, `AdminPanelInterface`, `ChannelStatusService`, `WebhookRegistrationService`.
+**This domain owns:** `App\Livewire\Chat\ConversationPage` (standalone Livewire chat workspace, chrome-free, at `/admin/chats`), `GeneralSettingsPage` (custom Livewire full-page at `/admin/settings/general`), `IntegrationsListPage` (custom Livewire full-page at `/admin/settings/integrations`), `IntegrationChannelPage` (custom Livewire full-page at `/admin/settings/integrations/{channel}`), `AiAssistantPage` (custom Livewire full-page at `/admin/settings/ai`), `AiProviderAccessPage` (custom Livewire full-page at `/admin/settings/ai/{provider}`), `ApiWebhooksPage` (custom Livewire full-page at `/admin/settings/api-webhooks` — source card list), `ApiWebhookSourcePage` (custom Livewire full-page at `/admin/settings/api-webhooks/{source}` — per-source edit page), the Filament panel + navigation (`AdminPanelProvider`), the admin design system (`resources/views/components/admin/`, `resources/views/layouts/admin-settings.blade.php`, `resources/views/layouts/admin-chat.blade.php`), `SendReplyAction`, `MirrorAdminReplyToGroupJob`, `ChannelStatusService`, `WebhookRegistrationService`.
 
 > **Redesign note:** The legacy Filament resources (Conversations, Bot Users, External Sources, Feedback, Users) have been **removed**. The admin now consists of fully custom Livewire/Blade screens — the chat workspace (`/admin/chats`) and the Settings section (`/admin/settings/*`) — built on the admin design system, outside Filament's default chrome. The Filament panel is retained only for authentication (the `/admin/login` page) — it registers no resources, pages, widgets or dashboard. The panel root `/admin` redirects to the chat workspace, and login lands there too (`Filament::getUrl()` resolves to the first navigation item, «Диалоги»). Navigation to the custom screens is registered via `AdminPanelProvider::navigationItems()`. The underlying models, services, flows and artisan commands (bot users, external sources, feedback, users) are unchanged — only their Filament admin UI was removed (their redesigned screens are pending).
 
@@ -22,8 +22,6 @@ The Admin Panel domain provides an alternative manager interface for the support
 
 | Concept | Description |
 |---|---|
-| `ManagerInterfaceContract` | Interface that decouples manager UI from business logic. Implementations: `TelegramGroupInterface`, `AdminPanelInterface` |
-| `AdminPanelInterface` | Implementation of `ManagerInterfaceContract` for `admin_panel` mode. Both methods are no-ops — messages arrive via DB, UI updates via Livewire polling |
 | `App\Livewire\Chat\ConversationPage` | **Primary manager workspace** — standalone full-page Livewire component at `GET /admin/chats`. Full-screen, chrome-free (no Filament top-nav/sidebar). Uses `layouts.admin-chat` layout. 3-column layout: left sidebar 360px dark (header + search + pill-filter tabs + dialog list), center chat area (header + message thread + input bar with quick-reply chips + optional file attachment for telegram/vk), right user info panel (profile + Блок/Закрыть buttons + ИНФОРМАЦИЯ rows — incl. a conditional «Ссылка на профиль» from `ConversationPage::profileUrl()`: `https://vk.com/id{chat_id}` for VK only (Telegram has no working link from a numeric id — needs a `@username` we don't store), hidden for other platforms / non-numeric ids — + МЕДИАФАЙЛЫ grid + «Удалить чат») — a **Telegram-style centered modal** (narrow `w-[300px]` `max-w-[90vw]`, `max-h-[85vh]`, scale+fade in, over the chat on a darkened `bg-black/40` backdrop that flex-centers it), **opened by clicking the chat name/avatar in the header OR the «Показать профиль» item in the header ⋮ menu**, and closed by clicking the backdrop, the × button, or `Escape` (the panel itself uses `x-on:click.stop`) — all via the Alpine `infoPanelOpen` flag (client-side only, no Livewire round-trip). The chat header also has a **⋮ more-actions dropdown** (Alpine `menuOpen`, click-outside/Escape to close) with: «Показать профиль» (→ `infoPanelOpen`), «Очистить историю» (→ `clearHistory()` / `ClearBotUserHistory` — deletes the thread's messages + attachments + AI messages, keeps the BotUser), and «Удалить чат» (last, red text → `deleteChat()` / `DeleteBotUser` — removes the BotUser and everything). Self-contained — no `botUserId` route param. Dialog selection via `selectChat(int $botUserId)`. Protected by `Filament\Http\Middleware\Authenticate` |
 | Filament navigation | The Filament panel keeps no resources, pages, widgets or dashboard — it serves only login. Links to the custom screens are registered in `AdminPanelProvider::navigationItems()`: «Диалоги» → `route('admin.chats')` (sort 1) and «Настройки» → `route('admin.settings.general')` (sort 2). `->homeUrl()` and the first nav item both point at `/admin/chats`, so `/admin` and post-login both land on «Диалоги» |
 | Dialog list ordering | `ConversationPage::loadDialogList()` uses a raw correlated subquery to order by `MAX(messages.created_at) DESC` because `BotUser::messages()` has swapped FK args. Do not switch to `withMax()` without fixing the model relation |
@@ -31,16 +29,16 @@ The Admin Panel domain provides an alternative manager interface for the support
 | Unread badge heuristic | First iteration: a dialog is flagged unread if `lastMessage->message_type === 'incoming'`. No DB counter — a proper unread field is deferred |
 | `chat-item` component | `resources/views/components/chat-item.blade.php` — anonymous Blade component for the dialog list card. Avatar: 44×44 circle, initials, deterministic color from `crc32(chat_id) % 8` (8 hex colours). Platform badge: small pill with platform hex colour. Unread: accent pill when `hasUnread`. Matches design node `WyN0x` |
 | Media gallery | Right panel shows image/sticker `MessageAttachment`s for the active dialog via `ConversationPage::getImageAttachments()`. Reuses the Alpine.js lightbox |
-| `SendReplyAction` | Static action that dispatches the correct queue job (Telegram, VK, or Webhook) based on `botUser->platform` |
+| `SendReplyAction` | Static action that dispatches the correct queue job (Telegram, VK, or Webhook) based on `botUser->platform`, saves the reply to `messages`, and mirrors the reply to the Telegram supergroup (when configured) via `MirrorAdminReplyToGroupJob` |
+| `MirrorAdminReplyToGroupJob` | New async job dispatched by `SendReplyAction::maybeMirrorToGroup()`. Sends a copy of the admin-panel reply to the supergroup forum topic with the prefix «Ответ из админки: ». NEVER creates a `messages` row. NEVER re-delivers to the user. 5 tries, backoff [5, 10, 20, 30, 60]s; releases if `topic_id` is not yet available |
 | Livewire Polling | `ConversationPage` refreshes every 5 seconds via `getPollingInterval(): '5s'` |
-| `MANAGER_INTERFACE` | Config key. Values: `telegram_group` (default) or `admin_panel`. Readable from `.env` OR from the `settings` DB table via `SettingsService` (DB row overrides env) |
-| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits only the Telegram topic-name template (`telegram.template_topic_name`). Bot name, description, and `MANAGER_INTERFACE` were removed from this screen. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService` |
+| `GeneralSettingsPage` | Custom Livewire full-page component at `/admin/settings/general` — edits `telegram.group_id` (Telegram supergroup ID, required, max 50 chars) and `telegram.template_topic_name` (forum topic name template). Bot name, description, and the former manager-interface radio were removed from this screen. Requires authenticated user (Filament `Authenticate` middleware redirects guests to `/admin/login`). Saves via `SettingsService` |
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
 | `admin-settings` layout | Full-page layout at `resources/views/layouts/admin-settings.blade.php` — dark sidebar (280px) + main content area. Used by all custom Livewire settings screens |
 | Logout control | «Выйти» posts to `route('filament.admin.auth.logout')` (`POST /admin/logout`, Filament). Rendered in two spots: a row at the bottom of `<x-admin.sidebar>` (settings screens) and an icon button next to the settings gear in the `ConversationPage` left panel header (chat workspace). Both are `<form method="POST">` with `@csrf` |
-| `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX channel cards with connection status badges. Reads statuses via `ChannelStatusService`. «Виджет для сайта» shown as disabled «Скоро» placeholder |
-| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max). Per-channel config form (read/write via `SettingsService`). Primary action button is **«Сохранить»** — runs a **verify-before-save** flow: (1) field validation, (2) token verification via `WebhookRegistrationService::verifyX($token)` (entered value or stored fallback), (3) persist settings only on verification success, (4) register webhook (telegram\|vk\|max) or show success notice (telegram_ai — no webhook registration via UI; uses `php artisan ai-bot:set-webhook`) |
-| `ChannelStatusService` | `app/Modules/Admin/Services/ChannelStatusService.php`. Computes `connected/label` per channel based on whether required `SettingsService` keys are non-empty. Shared by list and per-channel pages |
+| `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX/Widget channel cards with connection status badges. Reads statuses via `ChannelStatusService`. All cards are clickable links (widget card is no longer a disabled «Скоро» placeholder — see BR-029) |
+| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max\|widget). Per-channel config form (read/write via `SettingsService`). Primary action button is **«Сохранить»** — for telegram/vk/max/telegram_ai runs a **verify-before-save** flow; for widget saves directly with no external verification (BR-031). Widget form fields: `widget.site_key` (plain text input, key generated in «API и вебхуки»), `widget.allowed_domains` (textarea), `widget.greeting`. |
+| `ChannelStatusService` | `app/Modules/Admin/Services/ChannelStatusService.php`. Computes `connected/label` per channel based on whether required `SettingsService` keys are non-empty. Supergroup is "connected" when `telegram.token` AND `telegram.secret_key` are set. Shared by list and per-channel pages |
 | `WebhookRegistrationService` | `app/Modules/Admin/Services/WebhookRegistrationService.php`. Provides **verify** methods (`verifyTelegram`, `verifyVk`, `verifyMax`) that accept an explicit token and call the platform API to confirm validity before any data is persisted (returns `{success: bool, message: string}`), and **register** methods (`registerTelegram`, `registerVk`, `registerMax`) that read tokens from `SettingsService` and perform the actual webhook registration. Never logs tokens |
 
 ---
@@ -50,7 +48,7 @@ The Admin Panel domain provides an alternative manager interface for the support
 **BR-001** — The `/admin` panel is accessible only to authenticated users from the `users` table (Laravel Filament auth). Unauthenticated requests are redirected to `/admin/login`.
 _Enforced in:_ `app/Modules/Admin/AdminPanelProvider.php`
 
-**BR-002** — The reply form in `ConversationPage` is shown in **both** modes (`telegram_group` and `admin_panel`). `SendReplyAction` routes the reply by `BotUser.platform` and does not depend on `MANAGER_INTERFACE`, so a manager can reply directly from the `/admin/chats` workspace regardless of the active interface mode.
+**BR-002** — The reply form in `ConversationPage` is always shown. `SendReplyAction` routes the reply by `BotUser.platform` — there is no mode gate.
 _Enforced in:_ `App\Livewire\Chat\ConversationPage::shouldShowReplyForm()` — returns `true`
 
 **BR-003** — `SendReplyAction::execute(BotUser, string $text, ?UploadedFile $file = null)` must determine the user's platform from `botUser->platform` and dispatch the correct job via queue. Never send synchronously.
@@ -81,19 +79,24 @@ _Enforced in:_ `App\Livewire\Chat\ConversationPage::getPollingInterval()`
 **BR-005** — Every reply sent via `SendReplyAction` must be persisted to the `messages` table as `message_type = 'outgoing'` before dispatching the queue job.
 _Enforced in:_ `SendReplyAction::execute()` — `Message::create([..., 'message_type' => 'outgoing', ...])`
 
-**BR-006** — In `admin_panel` mode, `AdminPanelInterface::notifyIncomingMessage()` saves the incoming message (and optional attachment) directly to the `messages` table. No Telegram group forwarding is performed. Livewire polling picks up new messages automatically.
-_Enforced in:_ `AdminPanelInterface::notifyIncomingMessage()` — creates `Message` + `MessageAttachment` records
+**BR-006** — Incoming messages are always saved to the `messages` table first. When the Telegram supergroup is configured (`ChannelStatusService::telegram()['connected']` AND `telegram.group_id` non-empty), `TelegramBotController::notifyIncomingMessage()` additionally forwards the message to the user's forum topic. The admin workspace picks up all messages via Livewire polling regardless of supergroup configuration.
+_Enforced in:_ `app/Modules/Telegram/Controllers/TelegramBotController.php @ notifyIncomingMessage()`
 
-**BR-007** — In `admin_panel` mode, `AdminPanelInterface::createConversation()` is a no-op. No Telegram forum topic is created. The conversation appears automatically in the chat workspace (`/admin/chats`) once the `BotUser` record exists.
-_Enforced in:_ `AdminPanelInterface::createConversation()` — empty body
+**BR-007** — Telegram forum topics are created lazily. When a message arrives for a user without a `topic_id` and the supergroup is configured, `TopicCreateJob` is dispatched. When the supergroup is not configured, no topic is created and the conversation is handled through the admin workspace only.
+_Enforced in:_ `app/Modules/Telegram/Controllers/TelegramBotController.php @ notifyIncomingMessage()`; `app/Modules/Telegram/Jobs/TopicCreateJob.php`
 
 **BR-008** — The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) requires an authenticated user. Unauthenticated visitors are redirected to `/admin/login` by Filament's `Authenticate` middleware applied in `AdminServiceProvider::boot()`. The route does not add a separate admin-role guard at the middleware layer — access is open to any authenticated user; role enforcement can be added to `mount()` if needed in future.
 _Enforced in:_ `AdminServiceProvider::boot()` — `Route::middleware(['web', Authenticate::class])->prefix('admin/settings')...`
 
-**BR-009** — The only setting editable from the General Settings screen is `telegram.template_topic_name`, persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults. (Bot name, description, and `app.manager_interface` were removed from this screen.)
-_Enforced in:_ `GeneralSettingsPage::save()` — calls `SettingsService::set('telegram.template_topic_name', …)`; `GeneralSettingsPage::mount()` — loads via `SettingsService::get()`
+**BR-009** — The General Settings screen manages two settings, both persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults.
+- `telegram.group_id` — ID of the Telegram supergroup for receiving messages. **Required, max 50 characters.** `save()` validates and rejects blank values or values > 50 chars with per-field `formErrors`.
+- `telegram.template_topic_name` — Telegram forum topic name template. Optional, max 255 characters.
 
-**BR-010** — `MANAGER_INTERFACE` is **no longer editable from the admin panel**. It is switched only via the `.env` file (`MANAGER_INTERFACE=…`) followed by `docker compose restart app`, because the `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` is resolved from `config('app.manager_interface')` at container boot time. (The previous General-Settings radio + restart notice were removed.)
+(Bot name, description, and `app.manager_interface` were removed from this screen.)
+
+_Enforced in:_ `GeneralSettingsPage::save()` — validates both fields, calls `SettingsService::set('telegram.group_id', …)` and `SettingsService::set('telegram.template_topic_name', …)`; `GeneralSettingsPage::mount()` — loads both via `SettingsService::get()`
+
+**BR-010** — The `MANAGER_INTERFACE` concept and the `ManagerInterfaceContract` DI pattern have been **removed entirely**. `AppServiceProvider` no longer binds `ManagerInterfaceContract`. `AdminPanelInterface` and `TelegramGroupInterface` have been deleted. The admin panel and Telegram supergroup work simultaneously; neither requires a mode switch. The `.env` key `MANAGER_INTERFACE` and the `config/app.php` `manager_interface` key no longer exist. The `app.manager_interface` key was removed from `SettingKeyRegistry`.
 
 **BR-011** — Admin Design System tokens are declared in `resources/css/app.css @theme` (Tailwind v4). All custom admin screens MUST use the token variables (`bg-sidebar`, `text-accent`, `bg-bg-input`, etc.) — never hardcode hex values in Blade. Blade components under `resources/views/components/admin/` are the single source for reusable UI primitives.
 _Enforced by:_ design review; tokens defined at `resources/css/app.css:@theme`
@@ -110,8 +113,8 @@ _Enforced in:_ `IntegrationChannelPage::connect()` → `resolveVerificationToken
 **BR-014a** — On the «Бот AI помощника» channel (`channel=telegram_ai`) the two inputs `telegram_ai.token` and `telegram_ai.secret` are **both required**: `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before verification when either is blank (fields are pre-filled from settings, so an existing config already passes). There is **no manual username field** — the bot's `telegram_ai.id` and `telegram_ai.username` are captured automatically from the `getMe` response during verification (`WebhookRegistrationService::verifyTelegram()` returns `botId`/`botUsername`) and persisted in `connect()`. Both are informational (not compared at runtime). Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`.
 _Enforced in:_ `IntegrationChannelPage::validateFields()` + `connect()` (telegram_ai branch); `WebhookRegistrationService::verifyTelegram()`; `app/Services/Settings/SettingKeyRegistry.php @ telegram_ai.id`; `resources/views/livewire/settings/integration-channel-page.blade.php`
 
-**BR-014b** — On the «Подключить Telegram» channel (`channel=telegram`) **all three fields are required**: `telegram.group_id`, `telegram.token`, `telegram.secret_key`. `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before verification when any is blank (group_id also keeps the ≤50-char check). Fields are pre-filled from settings, so editing an existing config already passes; the stored-token fallback (BR-014 step 2) is therefore not reached for telegram/telegram_ai (it remains effective for vk/max). Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`.
-_Enforced in:_ `IntegrationChannelPage::validateFields()` (telegram branch); `resources/views/livewire/settings/integration-channel-page.blade.php`
+**BR-014b** — On the «Подключить Telegram» channel (`channel=telegram`) **two fields are required**: `telegram.token` and `telegram.secret_key`. `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before verification when either is blank. Fields are pre-filled from settings, so editing an existing config already passes. The `verifyTelegram($token, null)` call passes `null` as the group argument — group access is no longer verified here. `telegram.group_id` was **moved to the «Основные» General Settings screen** (BR-009) and is no longer a field on this page. Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`.
+_Enforced in:_ `IntegrationChannelPage::validateFields()` (telegram branch); `IntegrationChannelPage::connect()` (passes `null` as group arg); `resources/views/livewire/settings/integration-channel-page.blade.php`
 
 **BR-014c** — On the «Подключить ВКонтакте» channel (`channel=vk`) **all three fields are required**: `vk.token`, `vk.secret_key`, `vk.confirm_code`. `validateFields()` sets a per-field error and aborts «Сохранить» (`connect()`) before VK verification when any is blank. Fields are pre-filled from settings, so editing an existing config already passes. Required labels render a red asterisk via the `required` prop on `<x-admin.form-field>`.
 _Enforced in:_ `IntegrationChannelPage::validateFields()` (vk branch); `resources/views/livewire/settings/integration-channel-page.blade.php`
@@ -122,8 +125,22 @@ _Enforced in:_ `IntegrationChannelPage::validateFields()` (max branch); `resourc
 **BR-015** — Saving a secret field (token, key) with an empty string does NOT overwrite the existing secret in the DB. This prevents accidentally blanking credentials when only non-secret fields are edited.
 _Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — `if ($field !== '') { $settings->set(...) }`
 
-**BR-016** — The «Виджет для сайта» card on the Integrations list is a disabled placeholder («Скоро»). It must not be a clickable link and must not have a route. It is rendered as a `<div>` with `cursor-not-allowed opacity-50`.
-_Enforced in:_ `resources/views/livewire/settings/integrations-list-page.blade.php`
+**BR-016** — ~~The «Виджет для сайта» card on the Integrations list is a disabled placeholder («Скоро»).~~ **Superseded by BR-029.** The widget card is now a clickable `<a>` link identical in style to the other channel cards.
+
+**BR-029** — The «Виджет для сайта» (`channel=widget`) is a full settings channel registered under `/admin/settings/integrations/widget`. Its card on the Integrations list page is a clickable `<a href="{{ route('admin.settings.integrations.channel', ['channel' => 'widget']) }}">` — not a disabled placeholder. Status is computed by `ChannelStatusService::widget()`: connected = `widget.site_key` non-empty (no `widget.enabled` toggle — the toggle was removed). The route constraint for `integrations.channel` includes `widget` (i.e. `telegram|telegram_ai|vk|max|widget`).
+_Enforced in:_ `AdminServiceProvider::boot()` (route constraint); `resources/views/livewire/settings/integrations-list-page.blade.php`
+
+**BR-030** — The widget channel integration page (`/admin/settings/integrations/widget`) renders a form with: public site key (`widget.site_key`) as a plain text input (the operator types or pastes the key; it is generated in the «API и вебхуки» section — hint: «Ключ генерируется в разделе «API и вебхуки»»), allowed-domains textarea (one per line; stored as `widget.allowed_domains` JSON array), greeting message (`widget.greeting`), and a read-only embed snippet (`<script src=".../widget.js?key={SITE_KEY}" async></script>`) with an Alpine `navigator.clipboard` copy button. The snippet reflects the typed key in real-time. Removed fields (no longer present): enabled toggle, «Сгенерировать» button, title (`widget.title`), accent colour (`widget.color`), position select (`widget.position`).
+_Enforced in:_ `IntegrationChannelPage` (widget branch); `resources/views/livewire/settings/integration-channel-page.blade.php` (widget block)
+
+**BR-031** — The widget channel has NO verify-before-save step. Widget has no external API. The «Сохранить» button calls `save()` directly (not `connect()`). Inside `save()`, `saveWidget()` runs `validateFields()` inline (no widget-specific validation rules remain), then persists `widget.site_key` (when non-empty), `widget.allowed_domains` (json), and `widget.greeting` (when non-empty) via `SettingsService`. The `connect()` method for `widget` delegates immediately to `save()` so both call paths converge on the same save logic.
+_Enforced in:_ `IntegrationChannelPage::connect()` (widget shortcut → `save()`); `IntegrationChannelPage::saveWidget()`
+
+**BR-032** — Widget validation rules: the `widgetSiteKey` field is non-secret and public (it appears in the embed snippet on the site). Blank `widgetSiteKey` does not overwrite an existing stored key (skip the `set()` call when empty). There are no other widget-specific validation constraints — the enabled-requires-site-key and position-must-be-valid rules were removed along with those fields.
+_Enforced in:_ `IntegrationChannelPage::validateFields()` (widget branch — no widget rules); `IntegrationChannelPage::saveWidget()`
+
+**BR-033** — The registered `widget.*` settings keys in `SettingKeyRegistry` are: `widget.site_key` (string, non-secret), `widget.allowed_domains` (json, non-secret), `widget.greeting` (string, non-secret). All have `config => null` (DB-only, no `.env`/`config()` fallback). Removed keys: `widget.enabled`, `widget.title`, `widget.color`, `widget.position`. See `rules/database/schema.md` (widget channel keys table).
+_Enforced in:_ `app/Services/Settings/SettingKeyRegistry.php` (widget.* entries)
 
 **BR-017** — AI assistant settings (master toggle, provider, auto-reply, context limit, system prompt) are managed at `/admin/settings/ai` via `AiAssistantPage`. Values are persisted via `SettingsService`. The `ИИ-ассистент` sidebar item must link to `admin.settings.ai` and be marked active on both `admin.settings.ai` and `admin.settings.ai.provider` routes.
 _Enforced in:_ `resources/views/layouts/admin-settings.blade.php @ nav-item ИИ-ассистент`; `AdminServiceProvider::boot()` route `admin.settings.ai`
@@ -166,14 +183,15 @@ _Enforced in:_ `TeamPage::deleteMember()`
 
 ---
 
-## 4. Architecture Flow (admin_panel mode)
+## 4. Architecture Flow (always-both model)
 
 ```mermaid
 flowchart TD
     UserMsg[User sends message\nTelegram / VK / External] -->|webhook / REST| Controller
     Controller --> DTO[DTO parsing]
-    DTO --> AdminPanelInterface[AdminPanelInterface::notifyIncomingMessage\nsaves Message + attachment to DB]
-    AdminPanelInterface --> DB[(messages table)]
+    DTO --> DB[(messages table)]
+    DTO -->|supergroup configured?| TopicFwd[Forward to supergroup forum topic]
+    TopicFwd --> TelegramAPI
 
     Manager[Manager opens /admin] -->|Livewire polling 5s| ConversationPage
     ConversationPage --> DB
@@ -182,38 +200,13 @@ flowchart TD
     SendReplyAction --> DB
     SendReplyAction -->|dispatch| QueueJob[SendTelegramSimpleQueryJob\nSendVkSimpleMessageJob\nSendWebhookMessage]
     QueueJob --> PlatformAPI[Telegram API / VK API / Webhook]
+    SendReplyAction -->|supergroup configured?| Mirror[MirrorAdminReplyToGroupJob]
+    Mirror --> TelegramAPI
 ```
 
 ---
 
-## 5. DI Binding
-
-`AppServiceProvider` binds `ManagerInterfaceContract` based on `config('app.manager_interface')`:
-
-```php
-$this->app->bind(
-    ManagerInterfaceContract::class,
-    config('app.manager_interface') === 'admin_panel'
-        ? AdminPanelInterface::class
-        : TelegramGroupInterface::class,
-);
-```
-
-The binding is resolved at container boot time from `config()`. The binding does **not** read from `SettingsService` — this is intentional to avoid DB dependency at boot time and to prevent disrupting message delivery if the DB setting changes mid-request. A container restart is required for the DI binding to pick up a changed value.
-
----
-
-## 6. Mode Switching Rules
-
-- Switching mode does **not** require `php artisan migrate`
-- Switching mode does **not** modify any DB records
-- `BotUser.topic_id` is preserved after switching to `admin_panel` — it is simply ignored in this mode
-- History in `/admin` is available in both modes (all messages in `messages` table)
-- **Via `.env` only**: change `MANAGER_INTERFACE` in `.env`, then `docker compose restart app`. (The admin-panel switch was removed — `MANAGER_INTERFACE` is no longer editable from the General Settings screen.)
-
----
-
-## 6a. General Settings Screen (custom Livewire, `/admin/settings/general`)
+## 5. General Settings Screen (custom Livewire, `/admin/settings/general`)
 
 `app/Livewire/Settings/GeneralSettingsPage.php` — full-page Livewire component (not a Filament page).
 
@@ -224,9 +217,10 @@ The binding is resolved at container boot time from `config()`. The binding does
 **Form fields** (persisted via `SettingsService`):
 | Field | Setting key | Validation |
 |---|---|---|
+| ID группы для приёма сообщений | `telegram.group_id` | **required**, string, max:50 |
 | Шаблон названия топика | `telegram.template_topic_name` | nullable, string, max:255 |
 
-(Bot name `app.bot_name`, description `app.bot_description`, and the manager-interface radio `app.manager_interface` were removed from this screen.)
+(Bot name `app.bot_name`, description `app.bot_description`, and the manager-interface radio `app.manager_interface` were removed from this screen. `telegram.group_id` was moved here from the Telegram integration page.)
 
 **Notifications & sound card** (browser-level preferences, **not** DB/`SettingsService`): a second card «Оповещения о новых сообщениях» provides two controls handled entirely client-side (Alpine + `localStorage` + the Web Notifications / Web Audio APIs), with no server round-trip:
 - **Уведомления в браузере** — requests `Notification.requestPermission()`; shows status (Включены / Заблокированы / Включить / Не поддерживается).
@@ -254,7 +248,7 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 
 ---
 
-## 6b. Integrations Screens (custom Livewire, `/admin/settings/integrations`)
+## 6. Integrations Screens (custom Livewire, `/admin/settings/integrations`)
 
 ### IntegrationsListPage (`GET /admin/settings/integrations`)
 
@@ -265,26 +259,32 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 **Required keys by channel**:
 | Channel | Required for "connected" |
 |---|---|
-| Telegram | `telegram.token`, `telegram.secret_key`, `telegram.group_id` |
+| Telegram | `telegram.token`, `telegram.secret_key` |
 | Telegram AI bot | `telegram_ai.token` |
 | VK | `vk.token`, `vk.secret_key`, `vk.confirm_code` |
 | MAX | `max.token`, `max.secret_key` |
+| Widget | `widget.site_key` (non-empty) |
+
+(Note: `telegram.group_id` was removed from the Telegram connection check. It is now configured and validated on the «Основные» General Settings screen — BR-009.)
 
 **Tests**: `tests/Feature/Settings/IntegrationsListPageTest.php`
 
 ### IntegrationChannelPage (`GET /admin/settings/integrations/{channel}`)
 
-`app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`.
+`app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max|widget`.
 
 **Form fields**:
 | Channel | Fields |
 |---|---|
-| Telegram | `telegram.token`(secret), `telegram.secret_key`(secret), `telegram.group_id` |
+| Telegram | `telegram.token`(secret), `telegram.secret_key`(secret) |
 | Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret); `telegram_ai.id`(int) + `telegram_ai.username`(string) auto-captured from getMe |
 | VK | `vk.token`(secret), `vk.secret_key`(secret), `vk.confirm_code`(secret) |
 | MAX | `max.token`(secret), `max.secret_key`(secret) |
+| Widget | `widget.site_key` (plain text input — key generated in «API и вебхуки»), `widget.allowed_domains` (textarea→JSON), `widget.greeting` |
 
-**Channel set**: `telegram` (main Telegram bot), `telegram_ai` (AI assistant bot — separate bot account), `vk`, `max`. The `telegram_ai` channel saves settings only; webhook registration for the AI bot is done via artisan: `php artisan ai-bot:set-webhook`.
+(Note: `telegram.group_id` was removed from the Telegram channel page. Configure it on the «Основные» General Settings screen instead.)
+
+**Channel set**: `telegram` (main Telegram bot), `telegram_ai` (AI assistant bot — separate bot account), `vk`, `max`, `widget`. The `telegram_ai` channel saves settings only; webhook registration for the AI bot is done via artisan: `php artisan ai-bot:set-webhook`.
 
 **Secret fields** rendered as `type="password"` inputs with `autocomplete="new-password"`. Blank submission does not overwrite existing stored value (BR-015).
 
@@ -297,7 +297,7 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 
 ---
 
-## 6c. AI Assistant Screens (custom Livewire, `/admin/settings/ai`)
+## 7. AI Assistant Screens (custom Livewire, `/admin/settings/ai`)
 
 ### AiAssistantPage (`GET /admin/settings/ai`)
 
@@ -328,7 +328,7 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 
 ---
 
-## 6d. API and Webhooks Screens (custom Livewire, `/admin/settings/api-webhooks`)
+## 8. API and Webhooks Screens (custom Livewire, `/admin/settings/api-webhooks`)
 
 The API и вебхуки section follows the same two-page pattern as Integrations: a list page shows cards, each card links to a per-source edit page.
 
@@ -378,7 +378,7 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 
 ---
 
-## 6e. Team Screen (custom Livewire, `/admin/settings/team`)
+## 9. Team Screen (custom Livewire, `/admin/settings/team`)
 
 `app/Livewire/Settings/TeamPage.php` — admin-only screen for managing operators and their roles.
 
@@ -417,29 +417,29 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 
 ---
 
-## 7. Forbidden Behaviors
+## 10. Forbidden Behaviors
 
 - ❌ Calling `SendReplyAction::execute()` synchronously from a Livewire component without `Queue::fake()` in tests
 - ❌ Sending messages directly from Livewire components — must go through `SendReplyAction`
 - ❌ Changing the Livewire polling interval without load analysis
 - ❌ Saving manager replies without recording them to the `messages` table first
-- ❌ Making `AdminPanelInterface` dispatch `TopicCreateJob` — this is `telegram_group` mode only
-- ❌ Reading the DI-bound `ManagerInterfaceContract` implementation at runtime to check the current mode — use `SettingsService::get('app.manager_interface')` or `config('app.manager_interface')` instead
-- ❌ Routing the `ManagerInterfaceContract` DI binding through `SettingsService` at boot — this would add a DB dependency to the container boot cycle, breaking environments where the DB is not yet available
+- ❌ Re-introducing `ManagerInterfaceContract`, `AdminPanelInterface`, or `TelegramGroupInterface` — these have been removed; the always-both model requires no mode abstraction
+- ❌ Gating any behavior on `config('app.manager_interface')` or `MANAGER_INTERFACE` — this config key no longer exists
 - ❌ Using `ConversationPage` with a `botUserId` route param — the workspace is self-contained; dialog selection is done via `selectChat(int $botUserId)`
 - ❌ Using `withMax('messages', 'created_at')` on `BotUser` for ordering — the `messages()` relation has swapped FK args; use raw correlated subquery per BR-021
 - ❌ Re-introducing Filament resources for conversations/bot users/feedback/external sources — these were removed; navigation lives in `AdminPanelProvider::navigationItems()` and screens are custom Livewire pages
+- ❌ Creating a `messages` row inside `MirrorAdminReplyToGroupJob` — the mirror job is informational only and must NEVER save to the messages table or re-deliver to the user
 
 ---
 
 ## Checklist
 
-- [ ] `BR-001` through `BR-028` read and understood
-- [ ] `shouldShowReplyForm()` returns `true` in both modes (reply form always available)
+- [ ] `BR-001` through `BR-033` read and understood
+- [ ] `shouldShowReplyForm()` returns `true` always (reply form always available)
 - [ ] `SendReplyAction` uses queue jobs, not synchronous API calls
-- [ ] New Filament resources have feature tests in `tests/Feature/Admin/`
+- [ ] `SendReplyAction::maybeMirrorToGroup()` dispatches `MirrorAdminReplyToGroupJob` (does NOT create messages row)
+- [ ] No code reads `config('app.manager_interface')` — this config key was removed
 - [ ] Polling interval not changed without load analysis
-- [ ] DI binding tested in `tests/Feature/Admin/ManagerInterfaceCompatibilityTest.php`
 - [ ] New custom settings Livewire page has feature test in `tests/Feature/Settings/` and unit test in `tests/Unit/Livewire/Settings/` (or `tests/Unit/Modules/Admin/Services/` for service classes)
 - [ ] When adding form fields to GeneralSettingsPage or IntegrationChannelPage, add the key to `SettingKeyRegistry` first
 - [ ] New custom Livewire routes registered in `AdminServiceProvider::boot()` under `admin/settings/` prefix

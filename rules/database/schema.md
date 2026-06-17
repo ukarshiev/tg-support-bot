@@ -105,6 +105,7 @@ erDiagram
         bigint id PK
         bigint bot_user_id FK
         string message_id
+        string status
         text text_manager
         text text_ai
         timestamps
@@ -342,7 +343,8 @@ Stores AI-generated draft responses before manager review.
 |---|---|---|---|---|
 | `id` | `bigint` | No | auto | Primary key |
 | `bot_user_id` | `bigint` | No | — | FK → `bot_users.id` (cascade delete) |
-| `message_id` | `string` | No | — | Telegram message ID of the AI draft in the group |
+| `message_id` | `string` | Yes | NULL | Telegram message ID of the AI draft in the group; NULL when created in admin_panel mode |
+| `status` | `string` | No | `pending` | Lifecycle status: `pending` (awaiting review), `accepted` (sent to user), `cancelled` (discarded) |
 | `text_manager` | `text` | Yes | NULL | Instructions provided by the manager to AI |
 | `text_ai` | `text` | Yes | NULL | AI-generated response text |
 | `created_at` | `timestamp` | Yes | NULL | Creation time |
@@ -351,6 +353,9 @@ Stores AI-generated draft responses before manager review.
 **Indexes:**
 - PRIMARY on `id`
 - FOREIGN KEY `bot_user_id` → `bot_users.id` ON DELETE CASCADE
+
+**Migrations:**
+- `database/migrations/2026_06_16_000001_add_status_to_ai_messages_table.php` — adds `status` column (default `pending`) and makes `message_id` nullable
 
 ---
 
@@ -404,6 +409,20 @@ Persistent key-value store for runtime-editable application configuration. Creat
 **Reading priority:** `SettingsService::get($key)` reads: DB row → `config()`/`.env` default (defined in `SettingKeyRegistry`) → `null`.
 
 **Known keys and types** are declared in `app/Services/Settings/SettingKeyRegistry.php`. Unknown keys are accepted but default to `type=string`, no config fallback, `is_secret=false`.
+
+**Widget channel keys** (`widget.*`) — all non-secret, `config => null` (DB-only):
+
+| Key | Type | Description |
+|---|---|---|
+| `widget.enabled` | `bool` | Whether the widget is active (shown on the site) |
+| `widget.site_key` | `string` | Public embed key included in the `<script>` snippet |
+| `widget.allowed_domains` | `json` | JSON array of domains allowed to load the widget; empty = no restriction |
+| `widget.title` | `string` | Widget header title |
+| `widget.greeting` | `string` | Greeting message shown to new visitors |
+| `widget.color` | `string` | Accent hex colour (e.g. `#4F46E5`) |
+| `widget.position` | `string` | Button corner position: `bottom-right` or `bottom-left` |
+
+These keys are managed from `/admin/settings/integrations/widget` (`IntegrationChannelPage`, `channel=widget`). No new DB table — all values go into the `settings` table. Runtime widget delivery (endpoint, JS embed) is a separate future task.
 
 **Encryption:** `SettingsService` calls `Crypt::encrypt()` before writing and `Crypt::decrypt()` after reading for keys where `is_secret=true`. The `value` column stores the raw encrypted string — do not read it directly; always go through `SettingsService`.
 
