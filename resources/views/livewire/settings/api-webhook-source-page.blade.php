@@ -56,6 +56,65 @@
 
             <div class="my-6 h-px bg-border-light"></div>
 
+            {{-- ── URL вебхука ───────────────────────────────────────────────── --}}
+            <div class="space-y-5">
+
+                <x-admin.form-field
+                    label="URL вебхука"
+                    for="webhook_url"
+                    hint="URL для получения событий"
+                    :error="$webhookError"
+                >
+                    <input
+                        id="webhook_url"
+                        type="url"
+                        wire:model="webhookUrl"
+                        placeholder="https://example.com/webhook"
+                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                            @if ($webhookError) border-red-400 @endif"
+                    />
+                </x-admin.form-field>
+
+                {{-- Разрешённые IP — allowlist of sources permitted to call the API --}}
+                <x-admin.form-field
+                    label="Разрешённые IP-адреса"
+                    for="allowed_ips"
+                    hint="Источники, с которых разрешены запросы. По одному IP в строке. Пусто — без ограничений."
+                    :error="$allowedIpsError"
+                >
+                    <textarea
+                        id="allowed_ips"
+                        wire:model="allowedIps"
+                        rows="4"
+                        placeholder="203.0.113.10&#10;198.51.100.0&#10;2001:db8::1"
+                        class="block w-full resize-y rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 font-mono text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                            @if ($allowedIpsError) border-red-400 @endif"
+                    ></textarea>
+                </x-admin.form-field>
+
+            </div>
+
+            {{-- Actions row — right-aligned «Сохранить» --}}
+            <div class="mt-6 flex items-center justify-end gap-3">
+                <x-admin.button-primary type="button" wire:click="saveWebhookUrl" wire:loading.attr="disabled" wire:target="saveWebhookUrl">
+                    <span wire:loading.remove wire:target="saveWebhookUrl">Сохранить</span>
+                    <span wire:loading wire:target="saveWebhookUrl">Сохранение...</span>
+                </x-admin.button-primary>
+            </div>
+
+            {{-- Webhook save result notice --}}
+            @if ($saved)
+                <div class="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
+                         fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    URL вебхука сохранён.
+                </div>
+            @endif
+
+            <div class="my-6 h-px bg-border-light"></div>
+
             {{-- ── API-ключ block ────────────────────────────────────────────── --}}
             <div class="space-y-4">
 
@@ -129,65 +188,6 @@
                     </x-admin.button-primary>
                 </div>
             </div>
-
-            <div class="my-6 h-px bg-border-light"></div>
-
-            {{-- ── URL вебхука ───────────────────────────────────────────────── --}}
-            <div class="space-y-5">
-
-                <x-admin.form-field
-                    label="URL вебхука"
-                    for="webhook_url"
-                    hint="URL для получения событий"
-                    :error="$webhookError"
-                >
-                    <input
-                        id="webhook_url"
-                        type="url"
-                        wire:model="webhookUrl"
-                        placeholder="https://example.com/webhook"
-                        class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
-                            @if ($webhookError) border-red-400 @endif"
-                    />
-                </x-admin.form-field>
-
-                {{-- Разрешённые IP — allowlist of sources permitted to call the API --}}
-                <x-admin.form-field
-                    label="Разрешённые IP-адреса"
-                    for="allowed_ips"
-                    hint="Источники, с которых разрешены запросы. По одному IP в строке. Пусто — без ограничений."
-                    :error="$allowedIpsError"
-                >
-                    <textarea
-                        id="allowed_ips"
-                        wire:model="allowedIps"
-                        rows="4"
-                        placeholder="203.0.113.10&#10;198.51.100.0&#10;2001:db8::1"
-                        class="block w-full resize-y rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 font-mono text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
-                            @if ($allowedIpsError) border-red-400 @endif"
-                    ></textarea>
-                </x-admin.form-field>
-
-            </div>
-
-            {{-- Actions row — right-aligned «Сохранить» --}}
-            <div class="mt-6 flex items-center justify-end gap-3">
-                <x-admin.button-primary type="button" wire:click="saveWebhookUrl" wire:loading.attr="disabled" wire:target="saveWebhookUrl">
-                    <span wire:loading.remove wire:target="saveWebhookUrl">Сохранить</span>
-                    <span wire:loading wire:target="saveWebhookUrl">Сохранение...</span>
-                </x-admin.button-primary>
-            </div>
-
-            {{-- Webhook save result notice --}}
-            @if ($saved)
-                <div class="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
-                         fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    URL вебхука сохранён.
-                </div>
-            @endif
 
         </div>
 
