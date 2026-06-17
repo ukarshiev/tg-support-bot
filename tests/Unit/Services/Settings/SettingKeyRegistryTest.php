@@ -11,11 +11,11 @@ class SettingKeyRegistryTest extends TestCase
 
     public function test_meta_returns_metadata_for_a_known_key(): void
     {
-        $meta = SettingKeyRegistry::meta('app.manager_interface');
+        $meta = SettingKeyRegistry::meta('telegram.token');
 
         $this->assertSame('string', $meta['type']);
-        $this->assertSame('app.manager_interface', $meta['config']);
-        $this->assertFalse($meta['is_secret']);
+        $this->assertNull($meta['config']);
+        $this->assertTrue($meta['is_secret']);
     }
 
     public function test_meta_marks_secret_keys_as_secret(): void
@@ -55,10 +55,6 @@ class SettingKeyRegistryTest extends TestCase
         $this->assertNull(SettingKeyRegistry::meta('ai.enabled')['config']);
         $this->assertNull(SettingKeyRegistry::meta('ai.default_provider')['config']);
         $this->assertNull(SettingKeyRegistry::meta('ai.confidence_threshold')['config']);
-        $this->assertNull(SettingKeyRegistry::meta('ai.rate_limit.requests_per_minute')['config']);
-
-        // Infrastructure keys that still have a config fallback
-        $this->assertSame('app.manager_interface', SettingKeyRegistry::meta('app.manager_interface')['config']);
     }
 
     // ── meta() for unknown keys ──────────────────────────────────────────────
@@ -78,18 +74,17 @@ class SettingKeyRegistryTest extends TestCase
     {
         $keys = SettingKeyRegistry::keys();
 
-        $this->assertContains('app.manager_interface', $keys);
+        $this->assertNotContains('app.manager_interface', $keys);
         $this->assertContains('telegram.token', $keys);
         $this->assertContains('vk.confirm_code', $keys);
         $this->assertContains('max.secret_key', $keys);
         $this->assertContains('ai.default_provider', $keys);
-        // New keys added for issues-163
         $this->assertContains('ai.confidence_threshold', $keys);
-        $this->assertContains('ai.rate_limit.requests_per_minute', $keys);
-        $this->assertContains('ai.rate_limit.requests_per_hour', $keys);
-        $this->assertContains('ai.disable_timeout', $keys);
         $this->assertContains('ai.auto_escalation', $keys);
         $this->assertContains('ai.enable_logging', $keys);
+        $this->assertNotContains('ai.rate_limit.requests_per_minute', $keys);
+        $this->assertNotContains('ai.rate_limit.requests_per_hour', $keys);
+        $this->assertNotContains('ai.disable_timeout', $keys);
     }
 
     public function test_keys_returns_a_list_of_unique_strings(): void
@@ -103,9 +98,14 @@ class SettingKeyRegistryTest extends TestCase
 
     // ── registered() ──────────────────────────────────────────────────────────
 
+    public function test_registered_is_false_for_removed_manager_interface_key(): void
+    {
+        $this->assertFalse(SettingKeyRegistry::registered('app.manager_interface'));
+    }
+
     public function test_registered_is_true_for_a_known_key(): void
     {
-        $this->assertTrue(SettingKeyRegistry::registered('app.manager_interface'));
+        $this->assertTrue(SettingKeyRegistry::registered('telegram.token'));
     }
 
     public function test_registered_is_false_for_an_unknown_key(): void

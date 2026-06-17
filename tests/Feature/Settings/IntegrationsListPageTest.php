@@ -111,7 +111,7 @@ class IntegrationsListPageTest extends TestCase
             ->assertSee('Подключено');
     }
 
-    public function test_channel_statuses_property_has_all_four_keys(): void
+    public function test_channel_statuses_property_has_all_five_keys(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
@@ -123,6 +123,7 @@ class IntegrationsListPageTest extends TestCase
         $this->assertArrayHasKey('telegram_ai', $statuses);
         $this->assertArrayHasKey('vk', $statuses);
         $this->assertArrayHasKey('max', $statuses);
+        $this->assertArrayHasKey('widget', $statuses);
     }
 
     public function test_renders_telegram_ai_card_with_link_to_channel_page(): void
@@ -144,14 +145,50 @@ class IntegrationsListPageTest extends TestCase
             ->assertSee('Отдельный бот ИИ-помощника');
     }
 
-    public function test_renders_widget_placeholder(): void
+    public function test_renders_widget_card_as_clickable_link(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         Livewire::test(IntegrationsListPage::class)
             ->assertSee('Виджет для сайта')
-            ->assertSee('Скоро');
+            ->assertSee(route('admin.settings.integrations.channel', ['channel' => 'widget']))
+            ->assertDontSee('Скоро');
+    }
+
+    public function test_renders_widget_card_not_connected_status_when_not_configured(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Виджет для сайта')
+            ->assertSee('Не подключён');
+    }
+
+    public function test_renders_widget_card_connected_when_site_key_set(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var \App\Services\Settings\SettingsService $settings */
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('widget.site_key', 'abc123testkey456789012345678901');
+        \Illuminate\Support\Facades\Cache::flush();
+
+        Livewire::test(IntegrationsListPage::class)
+            ->assertSee('Подключено');
+    }
+
+    public function test_channel_statuses_property_has_widget_key(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(IntegrationsListPage::class);
+
+        $statuses = $component->get('channelStatuses');
+        $this->assertArrayHasKey('widget', $statuses);
     }
 
     public function test_renders_channel_description_texts(): void

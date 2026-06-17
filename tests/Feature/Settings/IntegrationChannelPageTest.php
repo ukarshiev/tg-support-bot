@@ -55,20 +55,22 @@ class IntegrationChannelPageTest extends TestCase
 
     public function test_mount_loads_telegram_fields_from_settings_service(): void
     {
+        // telegram.group_id is no longer a field on this page — it moved to GeneralSettingsPage.
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         /** @var SettingsService $settings */
         $settings = app(SettingsService::class);
-        $settings->set('telegram.group_id', '-1009999');
+        $settings->set('telegram.token', 'tok123');
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
             ->assertSet('channel', 'telegram')
-            ->assertSet('telegram_group_id', '-1009999');
+            ->assertSet('telegram_token', 'tok123');
     }
 
     public function test_mount_sets_channel_connected_when_telegram_configured(): void
     {
+        // Connected requires only token + secret_key — group_id is no longer part of the check.
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
@@ -76,7 +78,6 @@ class IntegrationChannelPageTest extends TestCase
         $settings = app(SettingsService::class);
         $settings->set('telegram.token', 'tok');
         $settings->set('telegram.secret_key', 'sec');
-        $settings->set('telegram.group_id', '-100123');
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
             ->assertSet('channelConnected', true);
@@ -107,7 +108,8 @@ class IntegrationChannelPageTest extends TestCase
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
             ->assertSee('Токен бота')
             ->assertSee('Секретный ключ Webhook')
-            ->assertSee('ID группы')
+            // ID группы was moved to the «Основные» general settings page.
+            ->assertDontSee('ID группы')
             ->assertDontSee('ID бота')
             ->assertDontSee('Telegram AI-бот')
             ->assertSee('Сохранить');
@@ -205,18 +207,20 @@ class IntegrationChannelPageTest extends TestCase
 
     // ── Save — valid inputs ───────────────────────────────────────────────────
 
-    public function test_save_telegram_persists_group_id(): void
+    public function test_save_telegram_persists_token(): void
     {
+        // telegram.group_id is no longer managed on this page — it moved to GeneralSettingsPage.
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', '-1001234567890')
+            ->set('telegram_token', 'newtok123')
+            ->set('telegram_secret_key', 'newsec123')
             ->call('save')
             ->assertSet('saved', true)
             ->assertSet('formErrors', []);
 
-        $this->assertDatabaseHas('settings', ['key' => 'telegram.group_id', 'value' => '-1001234567890']);
+        $this->assertDatabaseHas('settings', ['key' => 'telegram.token']);
     }
 
     public function test_save_telegram_does_not_overwrite_token_when_field_empty(): void
@@ -231,7 +235,6 @@ class IntegrationChannelPageTest extends TestCase
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
             ->set('telegram_token', '')       // blank — should NOT overwrite
-            ->set('telegram_group_id', '-100123')
             ->call('save')
             ->assertSet('saved', true);
 
@@ -327,30 +330,14 @@ class IntegrationChannelPageTest extends TestCase
         $this->assertDatabaseHas('settings', ['key' => 'max.secret_key']);
     }
 
-    // ── Save — invalid inputs ─────────────────────────────────────────────────
-
-    public function test_save_telegram_rejects_group_id_exceeding_50_chars(): void
-    {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-
-        Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', str_repeat('1', 51))
-            ->call('save')
-            ->assertSet('saved', false);
-
-        $component = Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', str_repeat('1', 51))
-            ->call('save');
-
-        $this->assertNotEmpty($component->get('formErrors'));
-    }
+    // ── Save — no required-field validation errors remain for telegram on this page ──
 
     // ── Connect (save + webhook) ──────────────────────────────────────────────
 
     public function test_connect_saves_and_registers_webhook_for_telegram(): void
     {
         // Both getMe (verify) and setWebhook (register) return ok=true.
+        // telegram.group_id is no longer part of verify — only token is checked.
         Http::fake([
             'https://api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['id' => 1, 'is_bot' => true]], 200),
         ]);
@@ -359,7 +346,6 @@ class IntegrationChannelPageTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', '-100123')
             ->set('telegram_token', 'bot123:validtoken')
             ->set('telegram_secret_key', 'secret')
             ->call('connect')
@@ -369,15 +355,22 @@ class IntegrationChannelPageTest extends TestCase
 
     public function test_connect_does_not_register_webhook_when_save_fails(): void
     {
+        // Validation fails when both required fields are blank.
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
 
+        // Ensure no stored token fallback exists.
+        $settings = app(SettingsService::class);
+        $settings->forget('telegram.token');
+        $settings->forget('telegram.secret_key');
+        \Illuminate\Support\Facades\Cache::flush();
+
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', str_repeat('x', 51))  // too long — save will fail
+            ->set('telegram_token', '')
+            ->set('telegram_secret_key', '')
             ->call('connect')
             ->assertSet('saved', false)
-            ->assertSet('webhookSuccess', false)
-            ->assertSet('webhookMessage', null);
+            ->assertSet('webhookSuccess', false);
     }
 
     public function test_connect_does_not_save_when_token_verification_fails(): void
@@ -394,10 +387,10 @@ class IntegrationChannelPageTest extends TestCase
         $settings = app(SettingsService::class);
         // Store a sentinel value that must remain unchanged after the failed connect.
         $settings->set('telegram.token', 'original_token');
+        $settings->set('telegram.secret_key', 'sec');
         \Illuminate\Support\Facades\Cache::flush();
 
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', '-100123')
             ->set('telegram_token', 'bad_token')  // different value — must NOT be saved
             ->call('connect')
             ->assertSet('saved', false)
@@ -475,8 +468,8 @@ class IntegrationChannelPageTest extends TestCase
         \Illuminate\Support\Facades\Cache::flush();
 
         // Leave telegram_token blank — should fall back to stored token for verification.
+        // telegram_group_id is no longer a field on this page.
         Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', '-100123')
             ->call('connect')
             ->assertSet('saved', true)
             ->assertSet('webhookSuccess', true);
@@ -493,7 +486,6 @@ class IntegrationChannelPageTest extends TestCase
         \Illuminate\Support\Facades\Cache::flush();
 
         $component = Livewire::test(IntegrationChannelPage::class, ['channel' => 'telegram'])
-            ->set('telegram_group_id', '-100123')
             ->set('telegram_token', '')
             ->call('connect')
             ->assertSet('saved', false)
@@ -501,6 +493,116 @@ class IntegrationChannelPageTest extends TestCase
 
         // Required-field validation blocks the save before verification.
         $this->assertArrayHasKey('telegram_token', $component->get('formErrors'));
+    }
+
+    // ── Widget channel ────────────────────────────────────────────────────────
+
+    public function test_authenticated_admin_can_render_widget_channel_page(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'widget'])
+            ->assertSuccessful();
+    }
+
+    public function test_renders_widget_form_fields(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'widget'])
+            ->assertSee('API ключ')
+            ->assertSee('Разрешённые домены')
+            ->assertSee('Приветственное сообщение')
+            ->assertSee('Сохранить')
+            // Removed fields must not be present.
+            ->assertDontSee('Виджет активен')
+            ->assertDontSee('Заголовок виджета')
+            ->assertDontSee('Акцентный цвет')
+            ->assertDontSee('Позиция кнопки')
+            ->assertDontSee('Сгенерировать');
+    }
+
+    public function test_renders_widget_instruction_panel(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'widget'])
+            ->assertSee('Инструкция')
+            ->assertSee('API и вебхуки')
+            ->assertSee('Подробнее в документации');
+    }
+
+    public function test_save_widget_persists_settings_to_database(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'widget'])
+            ->set('widgetSiteKey', 'testkey1234567890123456789012ab')
+            ->set('widgetGreeting', 'Привет, чем помочь?')
+            ->set('widgetAllowedDomains', '')
+            ->call('save')
+            ->assertSet('saved', true)
+            ->assertSet('formErrors', []);
+
+        $this->assertDatabaseHas('settings', ['key' => 'widget.site_key', 'value' => 'testkey1234567890123456789012ab']);
+        $this->assertDatabaseHas('settings', ['key' => 'widget.greeting', 'value' => 'Привет, чем помочь?']);
+    }
+
+    public function test_save_widget_stores_allowed_domains_as_json(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'widget'])
+            ->set('widgetSiteKey', '')
+            ->set('widgetAllowedDomains', "example.com\nshop.example.com")
+            ->call('save')
+            ->assertSet('saved', true);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        $domains = $settings->get('widget.allowed_domains');
+        $this->assertIsArray($domains);
+        $this->assertContains('example.com', $domains);
+        $this->assertContains('shop.example.com', $domains);
+    }
+
+    public function test_save_widget_shows_success_notice_after_save(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'widget'])
+            ->set('widgetSiteKey', '')
+            ->set('widgetAllowedDomains', '')
+            ->set('widgetGreeting', '')
+            ->call('save')
+            ->assertSet('saved', true)
+            ->assertSee('Настройки виджета сохранены');
+    }
+
+    public function test_mount_loads_widget_settings_from_settings_service(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        /** @var SettingsService $settings */
+        $settings = app(SettingsService::class);
+        $settings->set('widget.site_key', 'preloaded_key_1234567890123456');
+        $settings->set('widget.greeting', 'Привет, добро пожаловать!');
+
+        Livewire::test(IntegrationChannelPage::class, ['channel' => 'widget'])
+            ->assertSet('widgetSiteKey', 'preloaded_key_1234567890123456')
+            ->assertSet('widgetGreeting', 'Привет, добро пожаловать!');
+    }
+
+    public function test_widget_channel_route_is_accessible(): void
+    {
+        $this->assertTrue(\Illuminate\Support\Facades\Route::has('admin.settings.integrations.channel'));
     }
 
     // ── Webhook registration (standalone, backward-compat) ────────────────────

@@ -37,6 +37,14 @@
                             <path d="M15.684 0H8.316C1.592 0 0 1.592 0 8.316v7.368C0 22.408 1.592 24 8.316 24h7.368C22.408 24 24 22.408 24 15.684V8.316C24 1.592 22.391 0 15.684 0zm3.692 17.123h-1.744c-.66 0-.862-.523-2.049-1.713-1.033-1.01-1.49-1.135-1.744-1.135-.356 0-.458.102-.458.593v1.575c0 .424-.135.678-1.253.678-1.846 0-3.896-1.118-5.335-3.202C4.624 10.857 4.03 8.57 4.03 8.096c0-.254.102-.491.593-.491h1.744c.44 0 .61.203.779.678.864 2.49 2.303 4.675 2.896 4.675.22 0 .322-.102.322-.66V9.721c-.068-1.186-.695-1.287-.695-1.71 0-.203.17-.407.44-.407h2.744c.373 0 .508.203.508.643v3.473c0 .372.169.508.271.508.22 0 .407-.136.813-.542 1.253-1.406 2.151-3.574 2.151-3.574.119-.254.322-.491.763-.491h1.744c.525 0 .644.27.525.643-.22 1.017-2.354 4.031-2.354 4.031-.186.305-.254.44 0 .78.186.254.796.779 1.203 1.253.745.847 1.32 1.558 1.473 2.05.17.491-.085.745-.576.745z" />
                         </svg>
                     </div>
+                @elseif ($channel === 'widget')
+                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl" style="background:#EEF2FF">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none"
+                             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+                        </svg>
+                    </div>
                 @else
                     <div class="h-12 w-12 shrink-0 overflow-hidden rounded-xl">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-full w-full" viewBox="0 0 1000 1000">
@@ -57,6 +65,7 @@
                         @if ($channel === 'telegram') Подключить Telegram
                         @elseif ($channel === 'telegram_ai') Бот AI помощника
                         @elseif ($channel === 'vk') Подключить ВКонтакте
+                        @elseif ($channel === 'widget') Виджет для сайта
                         @else Подключить MAX
                         @endif
                     </h2>
@@ -64,6 +73,7 @@
                         @if ($channel === 'telegram') Настройте бота для приёма обращений
                         @elseif ($channel === 'telegram_ai') Отдельный бот ИИ-помощника для черновиков и автоответов
                         @elseif ($channel === 'vk') Настройте сообщество для приёма обращений
+                        @elseif ($channel === 'widget') Чат-виджет для встраивания на сайт
                         @else Настройте бота для приёма обращений из MAX
                         @endif
                     </p>
@@ -72,31 +82,12 @@
 
             <div class="my-6 h-px bg-border-light"></div>
 
-            <form wire:submit="connect" novalidate>
+            <form wire:submit="{{ $channel === 'widget' ? 'save' : 'connect' }}" novalidate>
                 @csrf
 
                 @if ($channel === 'telegram')
 
                     <div class="space-y-5">
-
-                        {{-- ID группы --}}
-                        <x-admin.form-field
-                            label="ID группы"
-                            for="telegram_group_id"
-                            hint="ID Telegram-группы для приёма обращений"
-                            :required="true"
-                            :error="$formErrors['telegram_group_id'] ?? null"
-                        >
-                            <input
-                                id="telegram_group_id"
-                                type="text"
-                                required
-                                wire:model="telegram_group_id"
-                                placeholder="-100XXXXXXXXXX"
-                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
-                                    @if (!empty($formErrors['telegram_group_id'])) border-red-400 @endif"
-                            />
-                        </x-admin.form-field>
 
                         {{-- Токен бота --}}
                         <x-admin.form-field
@@ -249,6 +240,83 @@
 
                     </div>
 
+                @elseif ($channel === 'widget')
+
+                    <div class="space-y-5">
+
+                        {{-- API ключ --}}
+                        <x-admin.form-field
+                            label="API ключ"
+                            for="widget_site_key"
+                            hint="Ключ генерируется в разделе «API и вебхуки»"
+                            :error="$formErrors['widgetSiteKey'] ?? null"
+                        >
+                            <input
+                                id="widget_site_key"
+                                type="text"
+                                wire:model="widgetSiteKey"
+                                placeholder="Вставьте ключ из раздела «API и вебхуки»"
+                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
+                                    @if (!empty($formErrors['widgetSiteKey'])) border-red-400 @endif"
+                            />
+                        </x-admin.form-field>
+
+                        {{-- Разрешённые домены --}}
+                        <x-admin.form-field
+                            label="Разрешённые домены"
+                            for="widget_allowed_domains"
+                            hint="Список доменов, которым разрешено загружать виджет — по одному на строку. Оставьте пустым для доступа со всех доменов."
+                        >
+                            <textarea
+                                id="widget_allowed_domains"
+                                wire:model="widgetAllowedDomains"
+                                rows="4"
+                                placeholder="example.com&#10;shop.example.com"
+                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                            ></textarea>
+                        </x-admin.form-field>
+
+                        {{-- Приветствие --}}
+                        <x-admin.form-field
+                            label="Приветственное сообщение"
+                            for="widget_greeting"
+                            hint="Первое сообщение, которое видит посетитель при открытии виджета"
+                        >
+                            <input
+                                id="widget_greeting"
+                                type="text"
+                                wire:model="widgetGreeting"
+                                placeholder="Здравствуйте! Чем могу помочь?"
+                                class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                            />
+                        </x-admin.form-field>
+
+                        {{-- Сниппет для вставки (read-only) --}}
+                        @php
+                            $widgetSnippet = '<script src="' . rtrim(config('app.url'), '/') . '/widget.js?key=' . ($widgetSiteKey ?: 'SITE_KEY') . '" async></script>';
+                        @endphp
+                        <div x-data="{ copied: false, snippet: {{ Js::from($widgetSnippet) }} }">
+                            <label class="mb-1.5 block text-sm font-medium text-text-primary">Код для вставки на сайт</label>
+                            <p class="mb-2 text-xs text-text-secondary">Вставьте этот код перед закрывающим тегом <code class="rounded bg-bg-secondary px-1 py-0.5 font-mono text-xs">&lt;/body&gt;</code> на вашем сайте.</p>
+                            <div class="relative">
+                                <pre class="overflow-x-auto rounded-lg border border-border-light bg-bg-secondary px-4 py-3 text-xs text-text-secondary"><code>{{ $widgetSnippet }}</code></pre>
+                                <button
+                                    type="button"
+                                    x-on:click="navigator.clipboard.writeText(snippet).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+                                    class="absolute right-2 top-2 rounded px-2 py-1 text-xs font-medium transition"
+                                    :class="copied ? 'bg-green-100 text-green-700' : 'bg-bg-primary text-text-secondary hover:text-accent'"
+                                >
+                                    <span x-show="!copied">Скопировать</span>
+                                    <span x-show="copied">Скопировано</span>
+                                </button>
+                            </div>
+                            <p class="mt-2 text-xs text-text-secondary">
+                                Рантайм виджета (<code class="rounded bg-bg-secondary px-1 py-0.5 font-mono text-xs">widget.js</code>) будет доступен в следующей задаче.
+                            </p>
+                        </div>
+
+                    </div>
+
                 @else {{-- max --}}
 
                     <div class="space-y-5">
@@ -297,14 +365,32 @@
 
                 {{-- Actions row — right-aligned primary action --}}
                 <div class="mt-6 flex items-center justify-end gap-3">
-                    <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="connect">
-                        <span wire:loading.remove wire:target="connect">Сохранить</span>
-                        <span wire:loading wire:target="connect">Проверка...</span>
-                    </x-admin.button-primary>
+                    @if ($channel === 'widget')
+                        <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="save">
+                            <span wire:loading.remove wire:target="save">Сохранить</span>
+                            <span wire:loading wire:target="save">Сохранение...</span>
+                        </x-admin.button-primary>
+                    @else
+                        <x-admin.button-primary type="submit" wire:loading.attr="disabled" wire:target="connect">
+                            <span wire:loading.remove wire:target="connect">Сохранить</span>
+                            <span wire:loading wire:target="connect">Проверка...</span>
+                        </x-admin.button-primary>
+                    @endif
                 </div>
 
-                {{-- Webhook result notice --}}
-                @if ($webhookMessage)
+                {{-- Widget save success notice --}}
+                @if ($channel === 'widget' && $saved)
+                    <div class="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Настройки виджета сохранены.
+                    </div>
+                @endif
+
+                {{-- Webhook result notice (for non-widget channels) --}}
+                @if ($channel !== 'widget' && $webhookMessage)
                     <div class="mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm
                         @if ($webhookSuccess) border-green-200 bg-green-50 text-green-800
                         @else border-red-200 bg-red-50 text-red-800 @endif">
@@ -364,6 +450,13 @@
                                 'Укажите "Секретный ключ"',
                                 'Нажмите "Подтвердить"',
                             ],
+                            'widget' => [
+                                'Сгенерируйте ключ в разделе «API и вебхуки»',
+                                'Скопируйте ключ и вставьте его в поле «API ключ» на этой странице',
+                                'При необходимости укажите разрешённые домены (по одному на строку)',
+                                'Добавьте приветственное сообщение и нажмите «Сохранить»',
+                                'Скопируйте код сниппета и вставьте перед </body> на каждой странице сайта',
+                            ],
                             default => [
                                 'Создайте бота в платформе MAX',
                                 'Скопируйте токен из настроек бота',
@@ -376,6 +469,7 @@
                             'telegram_ai' => 'https://docs.tg-support-bot.ru/docs/ai-bot.html',
                             'vk' => 'https://docs.tg-support-bot.ru/docs/vk-group.html',
                             'max' => 'https://docs.tg-support-bot.ru/docs/max-bot.html',
+                            'widget' => 'https://docs.tg-support-bot.ru/docs/widget.html',
                             default => 'https://docs.tg-support-bot.ru/',
                         };
                     @endphp
