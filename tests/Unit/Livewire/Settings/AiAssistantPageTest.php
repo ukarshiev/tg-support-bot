@@ -34,9 +34,6 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.enabled')->andReturn(true);
         $mock->shouldReceive('get')->with('ai.default_provider')->andReturn('deepseek');
         $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(true);
-        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(30);
-        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(500);
-        $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn('3600');
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn('Be helpful');
         $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
         // deepseek has access configured → it stays the active stored provider.
@@ -62,9 +59,6 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('get')->with('ai.enabled')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.default_provider')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.auto_reply')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_minute')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.rate_limit.requests_per_hour')->andReturn(null);
-        $mock->shouldReceive('get')->with('ai.disable_timeout')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.system_prompt')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.openai_api_key')->andReturn(null);
         $mock->shouldReceive('get')->with('ai.deepseek_client_secret')->andReturn(null);
@@ -93,9 +87,6 @@ class AiAssistantPageTest extends TestCase
         $mock->shouldReceive('set')->with('ai.enabled', false)->once();
         $mock->shouldReceive('set')->with('ai.default_provider', 'gigachat')->once();
         $mock->shouldReceive('set')->with('ai.auto_reply', true)->once();
-        $mock->shouldReceive('set')->with('ai.rate_limit.requests_per_minute', 60)->once();
-        $mock->shouldReceive('set')->with('ai.rate_limit.requests_per_hour', 1000)->once();
-        $mock->shouldReceive('set')->with('ai.disable_timeout', '')->once();
         $mock->shouldReceive('set')->with('ai.system_prompt', 'Be concise')->once();
 
         $component = new AiAssistantPage();
@@ -233,21 +224,22 @@ class AiAssistantPageTest extends TestCase
         $component->updatedAiEnabled(false);
     }
 
-    public function test_updated_ai_enabled_blocked_when_ai_bot_not_connected(): void
+    public function test_updated_ai_enabled_allowed_without_ai_bot_connected(): void
     {
         /** @var \Mockery\MockInterface&SettingsService $mock */
         $mock = Mockery::mock(SettingsService::class);
-        // Must NOT persist when the AI bot integration is not configured.
-        $mock->shouldNotReceive('set');
+        // AI can always be enabled regardless of AI bot integration status.
+        $mock->shouldReceive('set')->with('ai.enabled', true)->once();
 
         $this->app->instance(SettingsService::class, $mock);
 
         $component = new AiAssistantPage();
-        $component->aiBotConnected = false; // AI bot integration missing
+        $component->aiBotConnected = false; // AI bot integration not configured
+        $component->ai_enabled = true;
         $component->updatedAiEnabled(true);
 
-        // Toggle reverts to off; nothing persisted.
-        $this->assertFalse($component->ai_enabled);
+        // Should NOT revert — AI works without the AI bot (drafts appear in admin panel only).
+        $this->assertTrue($component->ai_enabled);
     }
 
     // ── auto-reply confirm flow ───────────────────────────────────────────────────

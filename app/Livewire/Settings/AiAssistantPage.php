@@ -33,15 +33,6 @@ class AiAssistantPage extends Component
     /** @var bool Auto-reply mode (true = auto, false = draft) */
     public bool $auto_reply = false;
 
-    /** @var int Rate limit: requests per minute */
-    public int $rate_limit_per_minute = 60;
-
-    /** @var int Rate limit: requests per hour */
-    public int $rate_limit_per_hour = 1000;
-
-    /** @var string AI timeout setting (seconds or false) */
-    public string $disable_timeout = '';
-
     /** @var string System prompt text */
     public string $system_prompt = '';
 
@@ -80,21 +71,14 @@ class AiAssistantPage extends Component
      * The «Включить AI помощника» switch persists immediately — it does not
      * wait for the «Сохранить» button. All other fields still require save.
      *
-     * Guard: the assistant cannot be enabled until the «Бот AI помощника»
-     * integration (telegram_ai.token) is configured — otherwise AI replies
-     * cannot be posted to the supergroup. Disabling is always allowed.
+     * AI can be enabled even without the AI bot configured. Without it, drafts
+     * are only shown in the admin panel and not duplicated to the supergroup.
+     * Disabling is always allowed.
      *
      * @param bool $value New toggle state
      */
     public function updatedAiEnabled(bool $value): void
     {
-        if ($value && ! $this->aiBotConnected) {
-            // Revert — the AI bot integration must be set up first.
-            $this->ai_enabled = false;
-
-            return;
-        }
-
         app(SettingsService::class)->set('ai.enabled', $value);
     }
 
@@ -152,14 +136,6 @@ class AiAssistantPage extends Component
             } elseif (! $this->providerHasAccess($settings, $this->default_provider)) {
                 $this->formErrors['default_provider'] = 'У выбранного провайдера не указаны доступы.';
             }
-
-            if ($this->rate_limit_per_minute < 1) {
-                $this->formErrors['rate_limit_per_minute'] = 'Лимит запросов в минуту должен быть положительным числом.';
-            }
-
-            if ($this->rate_limit_per_hour < 1) {
-                $this->formErrors['rate_limit_per_hour'] = 'Лимит запросов в час должен быть положительным числом.';
-            }
         }
 
         if (! empty($this->formErrors)) {
@@ -169,9 +145,6 @@ class AiAssistantPage extends Component
         $settings->set('ai.enabled', $this->ai_enabled);
         $settings->set('ai.default_provider', $this->default_provider);
         $settings->set('ai.auto_reply', $this->auto_reply);
-        $settings->set('ai.rate_limit.requests_per_minute', $this->rate_limit_per_minute);
-        $settings->set('ai.rate_limit.requests_per_hour', $this->rate_limit_per_hour);
-        $settings->set('ai.disable_timeout', $this->disable_timeout);
         $settings->set('ai.system_prompt', $this->system_prompt);
 
         $this->saved = true;
@@ -196,9 +169,6 @@ class AiAssistantPage extends Component
     {
         $this->ai_enabled = (bool) ($settings->get('ai.enabled') ?? false);
         $this->auto_reply = (bool) ($settings->get('ai.auto_reply') ?? false);
-        $this->rate_limit_per_minute = (int) ($settings->get('ai.rate_limit.requests_per_minute') ?? 60);
-        $this->rate_limit_per_hour = (int) ($settings->get('ai.rate_limit.requests_per_hour') ?? 1000);
-        $this->disable_timeout = (string) ($settings->get('ai.disable_timeout') ?? '');
         $this->system_prompt = (string) ($settings->get('ai.system_prompt') ?? '');
 
         $this->providerConfigured = [
@@ -222,8 +192,8 @@ class AiAssistantPage extends Component
             'gigachat' => (string) ($settings->get('ai.gigachat_model') ?? ''),
         ];
 
-        // The assistant cannot run without a working AI bot (telegram_ai.token):
-        // its replies are posted to the supergroup as the AI bot.
+        // Informational — when the AI bot is not configured, drafts only appear
+        // in the admin panel workspace and are not posted to the supergroup.
         $this->aiBotConnected = app(ChannelStatusService::class)->telegramAi()['connected'];
     }
 
