@@ -64,6 +64,44 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `DELETE` | `/api/external/{external_id}/messages` | `ApiQuery` | Delete a message |
 | `POST` | `/api/external/{external_id}/files` | `ApiQuery` | Upload a file |
 
+### Widget Gateway
+
+> Auth: `X-Widget-Key: <public_key>` header (no Bearer token). Protected by `WidgetGate` middleware (`app/Modules/External/Middleware/WidgetGate.php`).
+
+| Method | Path | Middleware | Description |
+|---|---|---|---|
+| `POST` | `/api/widget/{external_id}/messages` | `WidgetGate` | Send a text message from the widget user |
+| `POST` | `/api/widget/{external_id}/files` | `WidgetGate` | Send a file from the widget user (multipart, field: `uploaded_file`) |
+| `GET` | `/api/widget/{external_id}/messages` | `WidgetGate` | Fetch message history; optional `?after={id}` for incremental polling |
+| `OPTIONS` | `/api/widget/{external_id}/{any}` | `WidgetGate` | CORS preflight — returns 204 with CORS headers, no business logic |
+
+#### Request / Response details
+
+**POST /api/widget/{external_id}/messages**
+- Body: `{ "text": "string, max 4000 chars" }`
+- Response 200: `{ "success": true, "message_id": <int> }`
+- Response 422: validation error
+
+**POST /api/widget/{external_id}/files**
+- Multipart field: `uploaded_file` (max 20 MB)
+- Response 200: `{ "success": true }`
+- Response 422: validation error
+
+**GET /api/widget/{external_id}/messages**
+- Query: `?after=<int>` (optional — returns only messages with `id > after`; omit for full history)
+- Response 200: `{ "messages": [ { "id": int, "text": string|null, "direction": "in"|"out", "created_at": string, "attachments": [] } ] }`
+
+**Error responses**
+- 401 — missing or unknown `X-Widget-Key`
+- 403 — Origin/IP not in allowlist
+- 429 — rate limit exceeded (30/min for send routes, 120/min for polling)
+
+> Widget routes call `ExternalTrafficService` / `ExternalMessageService` / `ExternalFileService` directly — no HTTP loop.
+> Widget assets (`public/widget/widget.js`, `style.css`, `manager.png`) are served statically by the web server (no Laravel route).
+> Embed: `<script src="https://stand/widget/widget.js" data-domain="https://stand" data-key="pub_xxx" defer></script>`
+
+---
+
 ### Files
 
 | Method | Path | Middleware | Description |
@@ -147,6 +185,14 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 - Validates `Authorization: Bearer {token}` against `external_source_access_tokens` table
 - Only `active = true` tokens are accepted
 - Rejects with `401` if token is missing or invalid
+
+### WidgetGate
+- Reads `X-Widget-Key` header; resolves to an `ExternalSource` by `public_key`; rejects with `401` if not found
+- Calls `$source->isRequestAllowed($request)` (IP + Origin/Referer host check against `allowed_ips`); rejects with `403` if denied
+- Rate limits: 30/min for POST (send) routes, 120/min for GET (poll) routes, keyed by `{public_key}:{client_ip}`
+- Sets `Access-Control-Allow-Origin = request Origin` (+ methods/headers) CORS headers on every response
+- Handles OPTIONS preflight → 204 (no business logic)
+- Attaches resolved `ExternalSource` to `$request->attributes->get('widget_source')`
 
 ---
 

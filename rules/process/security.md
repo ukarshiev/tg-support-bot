@@ -255,6 +255,35 @@ return response()->json([
 
 ---
 
+## 11. TrustProxies
+
+`bootstrap/app.php` sets `->trustProxies(at: '*')`. This means `$request->ip()` returns the value from the `X-Forwarded-For` header rather than the raw socket IP.
+
+**Trade-off:** trusting all proxies means a client could spoof `X-Forwarded-For` in a direct connection (bypassing IP allowlists). This is acceptable because the server is always deployed behind a trusted reverse proxy (nginx). If the deployment changes to direct public exposure, switch `at: '*'` to an explicit proxy IP list.
+
+**Impact on widget gateway:** `WidgetGate` uses `$request->ip()` for the rate-limit key and IP allowlist checks. As long as the nginx proxy is in front, the resolved IP is reliable. Do not remove `->trustProxies()` without auditing every place that calls `$request->ip()`.
+
+---
+
+## 12. Widget Public Key
+
+The `public_key` on `ExternalSource` is **intentionally public** — it appears in browser-embedded `<script>` tags. It identifies the source but does NOT grant admin or management access.
+
+- Do not encrypt or treat as a secret (no `is_secret` flag needed)
+- Never log it (same policy as all tokens, to prevent cross-referencing)
+- Rate limiting (30/min send, 120/min poll) and origin/IP allowlist checking in `WidgetGate` are the primary abuse-prevention controls
+- Rotating the key immediately invalidates all active widget sessions for that source; rotation is a deliberate admin action
+
+---
+
+## 13. Widget externalId (v1 risk)
+
+Widget `externalId` is client-generated (stored in `localStorage`) and is **not HMAC-signed in v1**. A client who discovers another client's `externalId` could read or write to their conversation thread.
+
+**Accepted v1 risk.** Mitigation in place: rate limiting and origin allowlist in `WidgetGate` reduce casual abuse. HMAC-signed session tokens are planned for v2. Do not reference this as a security guarantee in user-facing docs.
+
+---
+
 ## Forbidden Behaviors
 
 - ❌ Unprotected webhook endpoints

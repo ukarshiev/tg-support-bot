@@ -83,6 +83,7 @@ erDiagram
         bigint id PK
         string name UK
         string webhook_url
+        string public_key UK "nullable"
         timestamps
     }
 
@@ -288,12 +289,14 @@ Registry of all external integrations. Each source has a unique name and optiona
 | `name` | `string` | No | — | Unique source identifier |
 | `webhook_url` | `string` | Yes | NULL | URL to call when the support team sends a reply |
 | `allowed_ips` | `json` | Yes | NULL | Allowlist of IPs the API accepts requests from; NULL/empty = no restriction (enforced by `ApiQuery` middleware) |
+| `public_key` | `varchar` | Yes | NULL | Low-privilege public key for the widget gateway. Separate from bearer tokens in `external_source_access_tokens`. Generated via `ExternalSourceTokensService::generatePublicKey()` (`pub_` prefix + 36 random chars). Rotatable from the API Webhooks admin page. NULL means no widget key has been assigned yet. |
 | `created_at` | `timestamp` | Yes | NULL | Creation time |
 | `updated_at` | `timestamp` | Yes | NULL | Last update time |
 
 **Indexes:**
 - PRIMARY on `id`
 - UNIQUE on `name` — prevents duplicate source names
+- UNIQUE on `public_key` — enforces one key per source; nullable to allow sources without a widget key
 
 ---
 
