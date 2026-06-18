@@ -72,7 +72,7 @@ class ApiWebhookSourcePageTest extends TestCase
             ->assertSee('My Integration')
             ->assertSee('Ключ API')
             ->assertSee('URL вебхука')
-            ->assertSee('Разрешённые IP-адреса')
+            ->assertSee('Разрешённые IP/домены')
             ->assertSee('REST API')
             ->assertSee('Swagger')
             // Removed sections must no longer render.
