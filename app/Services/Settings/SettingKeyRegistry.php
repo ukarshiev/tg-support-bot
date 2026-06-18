@@ -175,23 +175,6 @@ class SettingKeyRegistry
             'is_secret' => true,
         ],
 
-        // ── Widget (site chat widget) ────────────────────────────────────────────
-        'widget.site_key' => [
-            'type' => 'string',
-            'config' => null,
-            'is_secret' => false,
-        ],
-        'widget.allowed_domains' => [
-            'type' => 'json',
-            'config' => null,
-            'is_secret' => false,
-        ],
-        'widget.greeting' => [
-            'type' => 'string',
-            'config' => null,
-            'is_secret' => false,
-        ],
-
         // ── AI system prompt ─────────────────────────────────────────────────
         'ai.system_prompt' => [
             'type' => 'string',

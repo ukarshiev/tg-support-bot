@@ -119,21 +119,6 @@ services:
             - 8.8.8.8
             - 1.1.1.1
 
-    node:
-        build: ./docker/node
-        container_name: node_server
-        restart: always
-        volumes:
-            - ./docker/node/server.js:/usr/src/app/server.js
-        depends_on:
-            - redis
-        env_file:
-            - .env
-        ports:
-            - "3001:3000"
-        networks:
-            - pet
-
 volumes:
     pgdata:
 networks:

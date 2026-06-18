@@ -36,8 +36,8 @@ The Admin Panel domain provides the web management interface for the support tea
 | Admin Design System | Tailwind v4 tokens in `resources/css/app.css @theme` (accent, sidebar, input, text colours; Inter font). Shared Blade components: `<x-admin.sidebar>`, `<x-admin.nav-item>`, `<x-admin.card>`, `<x-admin.form-field>`, `<x-admin.button-primary>`, `<x-admin.button-secondary>`, `<x-admin.toggle>` |
 | `admin-settings` layout | Full-page layout at `resources/views/layouts/admin-settings.blade.php` — dark sidebar (280px) + main content area. Used by all custom Livewire settings screens |
 | Logout control | «Выйти» posts to `route('filament.admin.auth.logout')` (`POST /admin/logout`, Filament). Rendered in two spots: a row at the bottom of `<x-admin.sidebar>` (settings screens) and an icon button next to the settings gear in the `ConversationPage` left panel header (chat workspace). Both are `<form method="POST">` with `@csrf` |
-| `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX/Widget channel cards with connection status badges. Reads statuses via `ChannelStatusService`. All cards are clickable links (widget card is no longer a disabled «Скоро» placeholder — see BR-029) |
-| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max\|widget). Per-channel config form (read/write via `SettingsService`). Primary action button is **«Сохранить»** — for telegram/vk/max/telegram_ai runs a **verify-before-save** flow; for widget saves directly with no external verification (BR-031). Widget form fields: `widget.site_key` (plain text input, key generated in «API и вебхуки»), `widget.allowed_domains` (textarea), `widget.greeting`. |
+| `IntegrationsListPage` | Custom Livewire full-page component at `/admin/settings/integrations`. Shows Telegram/VK/MAX channel cards and the AI assistant bot card with connection status badges. Reads statuses via `ChannelStatusService`. All cards are clickable links |
+| `IntegrationChannelPage` | Custom Livewire full-page component at `/admin/settings/integrations/{channel}` (channel ∈ telegram\|telegram_ai\|vk\|max). Per-channel config form (read/write via `SettingsService`). Primary action button is **«Сохранить»** — runs a **verify-before-save** flow (verify credentials, then persist + register webhook). For `telegram_ai` no webhook registration step (artisan only). |
 | `ChannelStatusService` | `app/Modules/Admin/Services/ChannelStatusService.php`. Computes `connected/label` per channel based on whether required `SettingsService` keys are non-empty. Supergroup is "connected" when `telegram.token` AND `telegram.secret_key` are set. Shared by list and per-channel pages |
 | `WebhookRegistrationService` | `app/Modules/Admin/Services/WebhookRegistrationService.php`. Provides **verify** methods (`verifyTelegram`, `verifyVk`, `verifyMax`) that accept an explicit token and call the platform API to confirm validity before any data is persisted (returns `{success: bool, message: string}`), and **register** methods (`registerTelegram`, `registerVk`, `registerMax`) that read tokens from `SettingsService` and perform the actual webhook registration. Never logs tokens |
 
@@ -124,23 +124,6 @@ _Enforced in:_ `IntegrationChannelPage::validateFields()` (max branch); `resourc
 
 **BR-015** — Saving a secret field (token, key) with an empty string does NOT overwrite the existing secret in the DB. This prevents accidentally blanking credentials when only non-secret fields are edited.
 _Enforced in:_ `IntegrationChannelPage::saveTelegram/Vk/Max()` — `if ($field !== '') { $settings->set(...) }`
-
-**BR-016** — ~~The «Виджет для сайта» card on the Integrations list is a disabled placeholder («Скоро»).~~ **Superseded by BR-029.** The widget card is now a clickable `<a>` link identical in style to the other channel cards.
-
-**BR-029** — The «Виджет для сайта» (`channel=widget`) is a full settings channel registered under `/admin/settings/integrations/widget`. Its card on the Integrations list page is a clickable `<a href="{{ route('admin.settings.integrations.channel', ['channel' => 'widget']) }}">` — not a disabled placeholder. Status is computed by `ChannelStatusService::widget()`: connected = `widget.site_key` non-empty (no `widget.enabled` toggle — the toggle was removed). The route constraint for `integrations.channel` includes `widget` (i.e. `telegram|telegram_ai|vk|max|widget`).
-_Enforced in:_ `AdminServiceProvider::boot()` (route constraint); `resources/views/livewire/settings/integrations-list-page.blade.php`
-
-**BR-030** — The widget channel integration page (`/admin/settings/integrations/widget`) renders a form with: public site key (`widget.site_key`) as a plain text input (the operator types or pastes the key; it is generated in the «API и вебхуки» section — hint: «Ключ генерируется в разделе «API и вебхуки»»), allowed-domains textarea (one per line; stored as `widget.allowed_domains` JSON array), greeting message (`widget.greeting`), and a read-only embed snippet (`<script src=".../widget.js?key={SITE_KEY}" async></script>`) with an Alpine `navigator.clipboard` copy button. The snippet reflects the typed key in real-time. Removed fields (no longer present): enabled toggle, «Сгенерировать» button, title (`widget.title`), accent colour (`widget.color`), position select (`widget.position`).
-_Enforced in:_ `IntegrationChannelPage` (widget branch); `resources/views/livewire/settings/integration-channel-page.blade.php` (widget block)
-
-**BR-031** — The widget channel has NO verify-before-save step. Widget has no external API. The «Сохранить» button calls `save()` directly (not `connect()`). Inside `save()`, `saveWidget()` runs `validateFields()` inline (no widget-specific validation rules remain), then persists `widget.site_key` (when non-empty), `widget.allowed_domains` (json), and `widget.greeting` (when non-empty) via `SettingsService`. The `connect()` method for `widget` delegates immediately to `save()` so both call paths converge on the same save logic.
-_Enforced in:_ `IntegrationChannelPage::connect()` (widget shortcut → `save()`); `IntegrationChannelPage::saveWidget()`
-
-**BR-032** — Widget validation rules: the `widgetSiteKey` field is non-secret and public (it appears in the embed snippet on the site). Blank `widgetSiteKey` does not overwrite an existing stored key (skip the `set()` call when empty). There are no other widget-specific validation constraints — the enabled-requires-site-key and position-must-be-valid rules were removed along with those fields.
-_Enforced in:_ `IntegrationChannelPage::validateFields()` (widget branch — no widget rules); `IntegrationChannelPage::saveWidget()`
-
-**BR-033** — The registered `widget.*` settings keys in `SettingKeyRegistry` are: `widget.site_key` (string, non-secret), `widget.allowed_domains` (json, non-secret), `widget.greeting` (string, non-secret). All have `config => null` (DB-only, no `.env`/`config()` fallback). Removed keys: `widget.enabled`, `widget.title`, `widget.color`, `widget.position`. See `rules/database/schema.md` (widget channel keys table).
-_Enforced in:_ `app/Services/Settings/SettingKeyRegistry.php` (widget.* entries)
 
 **BR-017** — AI assistant settings (master toggle, provider, auto-reply, context limit, system prompt) are managed at `/admin/settings/ai` via `AiAssistantPage`. Values are persisted via `SettingsService`. The `ИИ-ассистент` sidebar item must link to `admin.settings.ai` and be marked active on both `admin.settings.ai` and `admin.settings.ai.provider` routes.
 _Enforced in:_ `resources/views/layouts/admin-settings.blade.php @ nav-item ИИ-ассистент`; `AdminServiceProvider::boot()` route `admin.settings.ai`
@@ -252,7 +235,7 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 
 ### IntegrationsListPage (`GET /admin/settings/integrations`)
 
-`app/Livewire/Settings/IntegrationsListPage.php` — shows Telegram, VK, MAX, and Widget (disabled) channel cards with connection status.
+`app/Livewire/Settings/IntegrationsListPage.php` — shows Telegram, VK, MAX channel cards and the AI assistant bot card with connection status.
 
 **Channel status**: computed by `ChannelStatusService::all()` on `mount()`. A channel is «Подключён» when all required keys are non-empty; otherwise «Не настроен».
 
@@ -263,7 +246,6 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 | Telegram AI bot | `telegram_ai.token` |
 | VK | `vk.token`, `vk.secret_key`, `vk.confirm_code` |
 | MAX | `max.token`, `max.secret_key` |
-| Widget | `widget.site_key` (non-empty) |
 
 (Note: `telegram.group_id` was removed from the Telegram connection check. It is now configured and validated on the «Основные» General Settings screen — BR-009.)
 
@@ -271,7 +253,7 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 
 ### IntegrationChannelPage (`GET /admin/settings/integrations/{channel}`)
 
-`app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max|widget`.
+`app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`.
 
 **Form fields**:
 | Channel | Fields |
@@ -280,11 +262,10 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 | Telegram AI bot | `telegram_ai.token`(secret), `telegram_ai.secret`(secret); `telegram_ai.id`(int) + `telegram_ai.username`(string) auto-captured from getMe |
 | VK | `vk.token`(secret), `vk.secret_key`(secret), `vk.confirm_code`(secret) |
 | MAX | `max.token`(secret), `max.secret_key`(secret) |
-| Widget | `widget.site_key` (plain text input — key generated in «API и вебхуки»), `widget.allowed_domains` (textarea→JSON), `widget.greeting` |
 
 (Note: `telegram.group_id` was removed from the Telegram channel page. Configure it on the «Основные» General Settings screen instead.)
 
-**Channel set**: `telegram` (main Telegram bot), `telegram_ai` (AI assistant bot — separate bot account), `vk`, `max`, `widget`. The `telegram_ai` channel saves settings only; webhook registration for the AI bot is done via artisan: `php artisan ai-bot:set-webhook`.
+**Channel set**: `telegram` (main Telegram bot), `telegram_ai` (AI assistant bot — separate bot account), `vk`, `max`. The `telegram_ai` channel saves settings only; webhook registration for the AI bot is done via artisan: `php artisan ai-bot:set-webhook`.
 
 **Secret fields** rendered as `type="password"` inputs with `autocomplete="new-password"`. Blank submission does not overwrite existing stored value (BR-015).
 

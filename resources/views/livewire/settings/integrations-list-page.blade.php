@@ -7,7 +7,7 @@
         <p class="mt-0.5 text-sm text-text-secondary">Управление каналами поддержки</p>
     </div>
 
-    {{-- ── Channel cards — grouped: messengers vs widget & AI ─────────────── --}}
+    {{-- ── Channel cards — grouped: messengers and AI assistant ──────────── --}}
     <div class="space-y-6">
 
         {{-- ══ Группа 1: Мессенджеры ══════════════════════════════════════════ --}}
@@ -126,45 +126,10 @@
             </div>
         </div>
 
-        {{-- ══ Группа 2: Виджет и ИИ-ассистент ════════════════════════════════ --}}
+        {{-- ══ Группа 2: ИИ-ассистент ════════════════════════════════════════ --}}
         <div>
-            <h2 class="mb-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">Виджет и ИИ-ассистент</h2>
+            <h2 class="mb-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">ИИ-ассистент</h2>
             <div class="space-y-3">
-
-                {{-- Виджет для сайта --}}
-                <a href="{{ route('admin.settings.integrations.channel', ['channel' => 'widget']) }}"
-                   class="block rounded-xl border border-border-light bg-bg-primary p-4 transition hover:border-accent hover:shadow-sm">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style="background:#EEF2FF">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-accent" fill="none"
-                                     viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                          d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
-                                </svg>
-                            </div>
-                            <div>
-                                <p class="text-sm font-semibold text-text-primary">Виджет для сайта</p>
-                                @if ($channelStatuses['widget']['connected'])
-                                    <span class="inline-flex items-center gap-1 text-xs font-medium" style="color:#34C759">
-                                        <span class="inline-block h-1.5 w-1.5 rounded-full" style="background:#34C759"></span>
-                                        Подключено
-                                    </span>
-                                @else
-                                    <span class="text-xs text-text-secondary">Не подключён</span>
-                                @endif
-                            </div>
-                        </div>
-                        @if (! $channelStatuses['widget']['connected'])
-                            <span class="inline-flex items-center justify-center rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-white">
-                                Подключить
-                            </span>
-                        @endif
-                    </div>
-                    <p class="mt-3 text-[13px] leading-relaxed text-text-secondary">
-                        Виджет для онлайн-чата на сайте. Установите код на страницу.
-                    </p>
-                </a>
 
                 {{-- Telegram AI bot --}}
                 <a href="{{ route('admin.settings.integrations.channel', ['channel' => 'telegram_ai']) }}"
