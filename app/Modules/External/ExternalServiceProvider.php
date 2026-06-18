@@ -17,5 +17,9 @@ class ExternalServiceProvider extends ServiceProvider
         Route::middleware('api')
             ->prefix('api')
             ->group(__DIR__ . '/routes.php');
+
+        Route::middleware('api')
+            ->prefix('api')
+            ->group(__DIR__ . '/widget-routes.php');
     }
 }
