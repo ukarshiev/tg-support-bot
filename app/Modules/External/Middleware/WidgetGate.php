@@ -31,26 +31,29 @@ class WidgetGate
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // CORS preflight: the browser sends OPTIONS WITHOUT the X-Widget-Key
+        // header (and without credentials), so it must be answered before any
+        // auth/allowlist check — otherwise the preflight is rejected and the
+        // real request never runs.
+        if ($request->isMethod('OPTIONS')) {
+            return $this->corsResponse($request, response('', 204));
+        }
+
         $key = (string) $request->header('X-Widget-Key', '');
 
         if ($key === '') {
-            return $this->deny(401, 'Widget key required.');
+            return $this->corsResponse($request, $this->deny(401, 'Widget key required.'));
         }
 
         /** @var ExternalSource|null $source */
         $source = ExternalSource::where('public_key', $key)->first();
 
         if (! $source) {
-            return $this->deny(401, 'Invalid widget key.');
+            return $this->corsResponse($request, $this->deny(401, 'Invalid widget key.'));
         }
 
         if (! $source->isRequestAllowed($request)) {
-            return $this->deny(403, 'Origin or IP not allowed.');
-        }
-
-        // OPTIONS preflight: return early with CORS headers, no further processing
-        if ($request->isMethod('OPTIONS')) {
-            return $this->corsResponse($request, response('', 204));
+            return $this->corsResponse($request, $this->deny(403, 'Origin or IP not allowed.'));
         }
 
         // Rate limiting: POST = send, GET = poll
@@ -100,6 +103,7 @@ class WidgetGate
 
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         $response->headers->set('Access-Control-Allow-Headers', 'X-Widget-Key, Content-Type');
+        $response->headers->set('Access-Control-Max-Age', '86400');
         $response->headers->set('Vary', 'Origin');
 
         return $response;

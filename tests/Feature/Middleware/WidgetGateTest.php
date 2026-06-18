@@ -190,6 +190,42 @@ class WidgetGateTest extends TestCase
         $this->assertNotEmpty($response->headers->get('Access-Control-Allow-Origin'));
     }
 
+    public function test_options_preflight_without_widget_key_still_returns_204_with_cors(): void
+    {
+        // Browsers never send X-Widget-Key on the CORS preflight, so the gate
+        // must answer OPTIONS before the key check — otherwise the preflight is
+        // rejected (401, no CORS) and the real request is blocked by the browser.
+        $request = $this->makeRequest(
+            key: '',
+            origin: 'https://example.com',
+            method: 'OPTIONS'
+        );
+
+        $nextCalled = false;
+        $response = (new WidgetGate())->handle($request, function () use (&$nextCalled) {
+            $nextCalled = true;
+
+            return response('ok');
+        });
+
+        $this->assertSame(204, $response->getStatusCode());
+        $this->assertFalse($nextCalled);
+        $this->assertSame('https://example.com', $response->headers->get('Access-Control-Allow-Origin'));
+        $this->assertNotEmpty($response->headers->get('Access-Control-Allow-Headers'));
+    }
+
+    public function test_denied_responses_carry_cors_headers(): void
+    {
+        // 401/403 must include CORS headers, otherwise the browser masks the
+        // real status as a generic "CORS error".
+        $request = $this->makeRequest(key: 'pub_unknown', origin: 'https://example.com');
+
+        $response = (new WidgetGate())->handle($request, fn () => response('ok'));
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertSame('https://example.com', $response->headers->get('Access-Control-Allow-Origin'));
+    }
+
     // ── Rate limiting ────────────────────────────────────────────────────────
 
     public function test_returns_429_when_rate_limit_exceeded(): void
