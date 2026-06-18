@@ -1,7 +1,7 @@
 // vite.app.config.js
 // Standard Laravel asset build (app.css / app.js) -> public/build with manifest.
-// The live-chat widget has its own build in vite.config.js (outDir public/live_chat/dist).
-// `npm run build` runs both; `npm run dev` serves app assets via the dev server.
+// The live-chat widget (public/widget/widget.js) is plain JS served as-is — it
+// needs no build step. `npm run build` builds the app; `npm run dev` serves it.
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
