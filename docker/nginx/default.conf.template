@@ -16,23 +16,18 @@ server {
     root /var/www/public;
     index index.php index.html;
 
-    # API (incl. the /api/widget gateway): CORS is owned by Laravel
-    # (config/cors.php + WidgetGate). nginx must NOT short-circuit OPTIONS here,
-    # otherwise the preflight never reaches PHP and the browser receives a 204
-    # without Access-Control-Allow-Origin → CORS error.
-    location ^~ /api/ {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
     location / {
         add_header 'Access-Control-Allow-Origin' '*' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Widget-Key' always;
 
+        # Preflight: answer OPTIONS with the CORS headers. nginx does NOT inherit
+        # the outer add_header directives inside this `if`, so they are repeated
+        # here — and must include X-Widget-Key, which the chat widget sends.
         if ($request_method = OPTIONS) {
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Widget-Key' always;
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
