@@ -43,7 +43,7 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 
 **Key integrations:**
 - AI providers: OpenAI, DeepSeek, GigaChat (draft responses for manager review)
-- Monitoring: Laravel Telescope (requests/logs/queries/jobs/exceptions debug dashboard) + Sentry (error tracking)
+- Monitoring: Laravel Telescope (requests/logs/queries/jobs/exceptions debug dashboard)
 - Live chat: Node.js server (port 3001)
 
 ---
@@ -62,7 +62,6 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 | Code Formatting | Laravel Pint (PSR-12 + Laravel) |
 | Testing | PHPUnit 11 + Mockery |
 | Admin Panel | Filament 3 |
-| Error Tracking | Sentry |
 | Logs | Rotating files (`storage/logs/`), viewed via `php artisan pail` or Telescope |
 | Debug / Monitoring | Laravel Telescope (`/telescope`) |
 | Telegram Logging | prog-time/tg-logger |
