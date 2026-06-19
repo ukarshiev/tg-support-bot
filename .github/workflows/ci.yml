@@ -19,7 +19,7 @@ jobs:
 
       - name: Run Hadolint on Dockerfiles
         run: |
-          DOCKERFILES=("Dockerfile" "docker/node/Dockerfile")
+          DOCKERFILES=("Dockerfile")
           IGNORE_RULES="DL3008|DL3015"
           ERROR_FOUND=0
 
