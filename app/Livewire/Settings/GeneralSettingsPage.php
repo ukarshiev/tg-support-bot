@@ -6,6 +6,7 @@ namespace App\Livewire\Settings;
 
 use App\Modules\Admin\Services\WebhookRegistrationService;
 use App\Services\Settings\SettingsService;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -17,7 +18,9 @@ use Livewire\Component;
  *   - telegram.group_id            — Telegram supergroup ID for receiving messages
  *
  * Reads and writes via SettingsService (DB → config() fallback, cache-backed).
- * Access: authenticated admin only (enforced in route middleware + mount()).
+ * Access: admins see and edit the «Обращения» config card; managers may open
+ * this screen too but only see the «Оповещения о новых сообщениях» card —
+ * the config form is hidden in the view and save() refuses non-admins.
  * Layout: custom dark-sidebar admin layout (layouts.admin-settings).
  */
 #[Layout('layouts.admin-settings')]
@@ -49,6 +52,12 @@ class GeneralSettingsPage extends Component
      */
     public function save(SettingsService $settings): void
     {
+        // The «Обращения» config form is admin-only; managers only see the
+        // notifications card. Refuse a crafted save from a non-admin.
+        if (! Auth::user()?->isAdmin()) {
+            return;
+        }
+
         $this->formErrors = [];
         $this->saved = false;
 

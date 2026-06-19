@@ -6,7 +6,8 @@
         <p class="mt-1 text-sm text-text-secondary">Общие настройки бота и параметры работы</p>
     </div>
 
-    {{-- Card: Conversation settings --}}
+    {{-- Card: Conversation settings — admin only (managers see notifications only) --}}
+    @if (auth()->user()?->isAdmin())
     <x-admin.card title="Обращения">
         <form wire:submit="save" novalidate>
             @csrf
@@ -69,6 +70,7 @@
 
         </form>
     </x-admin.card>
+    @endif
 
     {{-- Card: Notifications & sound — browser-level preferences (no DB) --}}
     <x-admin.card title="Оповещения о новых сообщениях" class="mt-6">
