@@ -10,7 +10,7 @@ use Spatie\LaravelData\Data;
  *
  * @property string      $methodQuery
  * @property string|null $typeSource
- * @property int         $chat_id
+ * @property int|string  $chat_id
  * @property int|null    $message_id
  * @property int|null    $message_thread_id
  * @property string|null $text
@@ -35,7 +35,7 @@ class TGTextMessageDto extends Data
         public string         $methodQuery,
         public ?string        $token,
         public ?string        $typeSource,
-        public int            $chat_id,
+        public int|string     $chat_id,
         public ?int           $message_id,
         public ?int           $message_thread_id,
         public ?string        $text,

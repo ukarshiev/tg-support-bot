@@ -47,6 +47,15 @@ class ExternalMessageService extends ExternalService
      */
     protected function sendMessage(): void
     {
+        // Always-both: without a Telegram group the admin workspace is the only
+        // destination, so persist the incoming message directly. With a group
+        // configured, the existing job both forwards and persists (unchanged).
+        if (! $this->groupConfigured()) {
+            $this->persistIncoming($this->update->text);
+
+            return;
+        }
+
         $this->messageParamsDTO->text = $this->update->text;
 
         SendExternalTelegramMessageJob::dispatch(

@@ -286,10 +286,17 @@ class BotUser extends Model
                 throw new Exception('External user not found!');
             }
 
-            return BotUser::firstOrCreate([
-                'chat_id' => $this->externalUser->id,
-                'platform' => $this->externalUser->source,
-            ]);
+            return BotUser::firstOrCreate(
+                [
+                    'chat_id' => $this->externalUser->id,
+                    'platform' => $this->externalUser->source,
+                ],
+                [
+                    // External users are anonymous — give the admin card a readable
+                    // label instead of the raw internal chat_id (e.g. «-1»).
+                    'display_name' => 'Посетитель сайта',
+                ],
+            );
         } catch (\Throwable $e) {
             return null;
         }
