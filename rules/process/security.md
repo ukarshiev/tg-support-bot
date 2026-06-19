@@ -176,6 +176,7 @@ return response()->json(['url' => 'storage/uploads/user_file.jpg']);
 - Every protected route must go through appropriate middleware (`TelegramQuery`, `VkQuery`, `ApiQuery`)
 - The External API uses token-based authorization (`ApiQuery` middleware)
 - Admin routes (if any) must require authenticated session
+- **Settings role gate:** `/admin/settings/*` is restricted by role via `EnsureSettingsAccess` middleware (`app/Modules/Admin/Middleware/`), applied to the settings route group after Filament `Authenticate`. Admins (`UserRole::Admin`) reach every settings screen; managers (`UserRole::Manager`) may open only «Основные» (`admin.settings.general`) and are redirected there from any other settings route. The «Основные» config form additionally hides its admin-only card in the view and `GeneralSettingsPage::save()` refuses non-admins (defence against crafted Livewire calls). See `rules/domain/admin-panel.md` BR-008 / BR-029.
 - The **Telescope dashboard** (`GET /telescope`) is gated by `App\Http\Middleware\TelescopeBasicAuth` (in `config/telescope.php` `middleware`) and requires **both**: `APP_DEBUG=true` (else **404** — hidden, in every environment) **and** HTTP Basic auth matching the env credentials `TELESCOPE_AUTH_USER` / `TELESCOPE_AUTH_PASSWORD` (`config('telescope.basic_auth.*')`). Credentials not configured → **403** (fail closed); wrong/missing → **401**. Compared with `hash_equals()`, never logged. Access is **not** tied to an admin login (the former `viewTelescope` gate was removed). See `process/observability.md` for the full notes.
 - Never implement authorization logic inside Services or Models — use middleware and policies
 
@@ -252,6 +253,35 @@ return response()->json([
 - Never add packages without explicit justification
 - Prefer packages with active maintenance history
 - Do not upgrade packages without testing
+
+---
+
+## 11. TrustProxies
+
+`bootstrap/app.php` sets `->trustProxies(at: '*')`. This means `$request->ip()` returns the value from the `X-Forwarded-For` header rather than the raw socket IP.
+
+**Trade-off:** trusting all proxies means a client could spoof `X-Forwarded-For` in a direct connection (bypassing IP allowlists). This is acceptable because the server is always deployed behind a trusted reverse proxy (nginx). If the deployment changes to direct public exposure, switch `at: '*'` to an explicit proxy IP list.
+
+**Impact on widget gateway:** `WidgetGate` uses `$request->ip()` for the rate-limit key and IP allowlist checks. As long as the nginx proxy is in front, the resolved IP is reliable. Do not remove `->trustProxies()` without auditing every place that calls `$request->ip()`.
+
+---
+
+## 12. Widget Public Key
+
+The `public_key` on `ExternalSource` is **intentionally public** — it appears in browser-embedded `<script>` tags. It identifies the source but does NOT grant admin or management access.
+
+- Do not encrypt or treat as a secret (no `is_secret` flag needed)
+- Never log it (same policy as all tokens, to prevent cross-referencing)
+- Rate limiting (30/min send, 120/min poll) and origin/IP allowlist checking in `WidgetGate` are the primary abuse-prevention controls
+- Rotating the key immediately invalidates all active widget sessions for that source; rotation is a deliberate admin action
+
+---
+
+## 13. Widget externalId (v1 risk)
+
+Widget `externalId` is client-generated (stored in `localStorage`) and is **not HMAC-signed in v1**. A client who discovers another client's `externalId` could read or write to their conversation thread.
+
+**Accepted v1 risk.** Mitigation in place: rate limiting and origin allowlist in `WidgetGate` reduce casual abuse. HMAC-signed session tokens are planned for v2. Do not reference this as a security guarantee in user-facing docs.
 
 ---
 

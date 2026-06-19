@@ -85,7 +85,7 @@ _Enforced in:_ `app/Modules/Telegram/Controllers/TelegramBotController.php @ not
 **BR-007** — Telegram forum topics are created lazily. When a message arrives for a user without a `topic_id` and the supergroup is configured, `TopicCreateJob` is dispatched. When the supergroup is not configured, no topic is created and the conversation is handled through the admin workspace only.
 _Enforced in:_ `app/Modules/Telegram/Controllers/TelegramBotController.php @ notifyIncomingMessage()`; `app/Modules/Telegram/Jobs/TopicCreateJob.php`
 
-**BR-008** — The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) requires an authenticated user. Unauthenticated visitors are redirected to `/admin/login` by Filament's `Authenticate` middleware applied in `AdminServiceProvider::boot()`. The route does not add a separate admin-role guard at the middleware layer — access is open to any authenticated user; role enforcement can be added to `mount()` if needed in future.
+**BR-008** — The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) requires an authenticated user (Filament's `Authenticate` redirects guests to `/admin/login`). Role access: **admins** see and edit the «Обращения» config card (`telegram.group_id`, `telegram.template_topic_name`); **managers** may open the screen but see only the «Оповещения о новых сообщениях» card — the config card is hidden in the view (`@if (auth()->user()?->isAdmin())`) and `save()` returns early for non-admins. Per-route role enforcement is described in BR-029.
 _Enforced in:_ `AdminServiceProvider::boot()` — `Route::middleware(['web', Authenticate::class])->prefix('admin/settings')...`
 
 **BR-009** — The General Settings screen manages two settings, both persisted via `SettingsService::set()` to the `settings` DB table. On read, DB rows take priority over `.env`/`config()` defaults.
@@ -163,6 +163,9 @@ _Enforced in:_ `App\Modules\Admin\Actions\InviteOperator::execute()`; `App\Livew
 
 **BR-028** — An admin cannot delete their own account from the Team screen (self-lockout protection). `deleteMember()` checks `Auth::id() === $confirmDeleteId` before calling `delete()`. If the check fails, a user-visible error is set and the action is aborted. The delete button for the current user's own row is hidden in the view (not rendered) as an additional UX guard. The delete requires a two-step confirmation: `confirmDelete(userId)` sets `$confirmDeleteId`, and only then `deleteMember()` executes the deletion.
 _Enforced in:_ `TeamPage::deleteMember()`
+
+**BR-029** — Access to `/admin/settings/*` is role-gated by the `EnsureSettingsAccess` middleware (`app/Modules/Admin/Middleware/`), applied to the settings route group in `AdminServiceProvider::boot()` immediately after `Authenticate`. **Admins** reach every settings screen. **Managers** may open only «Основные» (`admin.settings.general`); every other settings route (Интеграции, ИИ, API и вебхуки, Команда, Автоответы — including their sub-pages) redirects them to `admin.settings.general`. The settings sidebar (`layouts/admin-settings.blade.php`) hides every entry except «Основные» for managers. The `/admin/chats` workspace and its support routes (avatars, attachments, PWA) stay available to managers. This middleware is the primary guard; the per-`mount()` `isAdmin()` redirects in `TeamPage`/`ApiWebhooksPage` are now redundant but kept as defence-in-depth.
+_Enforced in:_ `App\Modules\Admin\Middleware\EnsureSettingsAccess`, `AdminServiceProvider::boot()`
 
 ---
 
@@ -415,7 +418,7 @@ The API и вебхуки section follows the same two-page pattern as Integrati
 
 ## Checklist
 
-- [ ] `BR-001` through `BR-033` read and understood
+- [ ] `BR-001` through `BR-029` read and understood
 - [ ] `shouldShowReplyForm()` returns `true` always (reply form always available)
 - [ ] `SendReplyAction` uses queue jobs, not synchronous API calls
 - [ ] `SendReplyAction::maybeMirrorToGroup()` dispatches `MirrorAdminReplyToGroupJob` (does NOT create messages row)

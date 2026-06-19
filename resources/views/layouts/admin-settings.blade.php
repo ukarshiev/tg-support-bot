@@ -98,6 +98,8 @@
                     Основные
                 </x-admin.nav-item>
 
+                {{-- Settings below «Основные» are admin-only; managers see notifications only. --}}
+                @if (auth()->user()?->isAdmin())
                 <x-admin.nav-item
                     href="{{ route('admin.settings.integrations') }}"
                     :active="request()->routeIs('admin.settings.integrations') || request()->routeIs('admin.settings.integrations.channel')"
@@ -157,6 +159,7 @@
                     </x-slot>
                     Автоответы
                 </x-admin.nav-item>
+                @endif
             </x-admin.sidebar>
 
             {{-- Mobile close — placed after the sidebar so it paints above the full-width panel --}}

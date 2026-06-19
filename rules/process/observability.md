@@ -26,10 +26,9 @@ This project uses the following observability tools:
 |---|---|---|
 | **Rotating log files** | Application logs on disk (`storage/logs/laravel-*.log`, `storage/logs/app-*.log`) | `php artisan pail` / `tail` |
 | **Laravel Telescope** | Debug/inspection dashboard: requests, exceptions, **logs**, queries, jobs, cache, redis, events | `GET /telescope` — `APP_DEBUG=true` + HTTP Basic auth (`TELESCOPE_AUTH_USER` / `TELESCOPE_AUTH_PASSWORD`) |
-| **Sentry** | Error tracking, exception capture | `SENTRY_LARAVEL_DSN` |
 | **TG Logger** (`prog-time/tg-logger`) | Send critical alerts to Telegram channel | `TG_LOGGER_TOKEN`, `TG_LOGGER_CHAT_ID` |
 
-> **Loki + Grafana were removed.** Centralized log aggregation is no longer used — logs live in rotating files (view with `php artisan pail`) and in the **Telescope** Logs tab at `/telescope`; errors aggregate in Sentry. The former `Log::channel('loki')` calls were renamed to `Log::channel('app')`, a daily rotating-file channel (`storage/logs/app-YYYY-MM-DD.log`); the `App\Logging\LokiHandler` class was deleted.
+> **Loki + Grafana were removed.** Centralized log aggregation is no longer used — logs live in rotating files (view with `php artisan pail`) and in the **Telescope** Logs tab at `/telescope`. The former `Log::channel('loki')` calls were renamed to `Log::channel('app')`, a daily rotating-file channel (`storage/logs/app-YYYY-MM-DD.log`); the `App\Logging\LokiHandler` class was deleted.
 >
 > **Telescope notes:** entries are stored in the `telescope_entries` tables and pruned daily by the scheduled `telescope:prune --hours=48` (needs a cron running `schedule:run`). In `local` everything is recorded; in non-local only failures/exceptions/scheduled/monitored entries are kept (`TelescopeServiceProvider::register()`). Dashboard access is gated by `App\Http\Middleware\TelescopeBasicAuth` (registered in `config/telescope.php` `middleware`) and requires **both**: (1) `APP_DEBUG=true` — otherwise the route returns **404** (hidden) in **every** environment, the package's `local` bypass is removed; and (2) **HTTP Basic auth** matching the env credentials `TELESCOPE_AUTH_USER` / `TELESCOPE_AUTH_PASSWORD` (exposed via `config('telescope.basic_auth.*')`) — wrong/missing → **401**, credentials not configured → **403** (fail closed). Access is **no longer tied to an admin login**; there is no `viewTelescope` gate. `TelescopeServiceProvider::authorization()` only mirrors the `APP_DEBUG` check for the package's own `Authorize` middleware. Credentials are compared with `hash_equals()` and never logged.
 
@@ -148,30 +147,7 @@ public function handle(): void
 
 ---
 
-## 7. Sentry Integration Rules
-
-- Sentry DSN is configured via `SENTRY_LARAVEL_DSN`
-- All unhandled exceptions are automatically captured by Sentry
-- Do not log sensitive user data in Sentry context
-- `SENTRY_TRACES_SAMPLE_RATE` controls performance monitoring sampling (default: 0.1 = 10%)
-
-```php
-// ✅ Correct — Sentry captures context for debugging
-\Sentry\configureScope(function (\Sentry\State\Scope $scope) use ($botUser): void {
-    $scope->setUser(['id' => $botUser->id, 'platform' => $botUser->platform]);
-});
-```
-
-```php
-// ❌ Incorrect — logging sensitive data
-\Sentry\configureScope(function (\Sentry\State\Scope $scope) use ($dto): void {
-    $scope->setExtra('raw_data', $dto->rawData);  // may contain user tokens/messages
-});
-```
-
----
-
-## 8. Health Check Rules
+## 7. Health Check Rules
 
 The application must remain operable when checked by Docker/orchestration.
 
@@ -183,7 +159,7 @@ The application must remain operable when checked by Docker/orchestration.
 
 ---
 
-## 9. Sensitive Data Rules
+## 8. Sensitive Data Rules
 
 Never expose private information in logs or error messages.
 
@@ -204,14 +180,13 @@ Log::info('Webhook sent', ['url' => $webhookUrl, 'token' => '***']);
 
 ---
 
-## 10. Definition of Done for Observability
+## 9. Definition of Done for Observability
 
 A feature is not complete unless:
 
 - Logs added for main flows (start, success, failure)
 - Errors logged at correct level with context
 - No silent catch blocks
-- Sentry will capture unhandled exceptions automatically
 - Sensitive data is not present in any log output
 
 Observability is part of implementation, not an afterthought.
@@ -235,7 +210,6 @@ Observability is part of implementation, not an afterthought.
 - [ ] Proper log levels applied
 - [ ] Job start/success/failure logged
 - [ ] Telegram API errors logged with context
-- [ ] Sentry DSN configured
 - [ ] No sensitive data in logs
 - [ ] No silent failures
 - [ ] New flows observable in production

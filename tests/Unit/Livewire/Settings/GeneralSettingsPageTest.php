@@ -2,7 +2,9 @@
 
 namespace Tests\Unit\Livewire\Settings;
 
+use App\Enums\UserRole;
 use App\Livewire\Settings\GeneralSettingsPage;
+use App\Models\User;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -21,6 +23,14 @@ use Tests\TestCase;
 class GeneralSettingsPageTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // save() is admin-only; these tests exercise the admin save path.
+        $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    }
 
     protected function tearDown(): void
     {

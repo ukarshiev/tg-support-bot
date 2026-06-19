@@ -22,6 +22,7 @@ This domain does not own: message routing to Telegram (see `domain/messaging.md`
 |---|---|
 | External Source | A registered third-party system that integrates with the support bot via REST API |
 | Access Token | A bearer token (64 chars) that authenticates requests from an External Source |
+| Public Key | A low-privilege widget key (`pub_` prefix + 36 random chars) stored in `external_sources.public_key`; identifies the source in browser-embedded widget scripts; NOT a secret |
 | external_id | The user's ID within the external system (not the same as Telegram/VK chat_id) |
 | source | The name of the External Source (matches `external_sources.name`) |
 | webhook_url | URL called when the support team sends a reply to an external user |
@@ -34,8 +35,15 @@ This domain does not own: message routing to Telegram (see `domain/messaging.md`
 **BR-001** — Every request from an External Source must be authenticated with a valid, active bearer token from `external_source_access_tokens`.
 _Enforced in:_ `app/Http/Middleware/ApiQuery.php`
 
-**BR-001a** — An External Source may restrict which IP addresses are allowed to call the API via `external_sources.allowed_ips` (a JSON list of IPs, managed from `/admin/settings/api-webhooks/{source}`). When the list is non-empty, `ApiQuery` rejects (403) any request whose IP is not an exact match; an empty/NULL list means no restriction.
-_Enforced in:_ `App\Modules\External\Middleware\ApiQuery` (calls `ExternalSource::isIpAllowed($request->ip())`)
+**BR-001a** — An External Source may restrict which IP addresses and/or domains are allowed to call the API via `external_sources.allowed_ips` (a JSON array, managed from `/admin/settings/api-webhooks/{source}`; the UI labels it "Разрешённые IP/домены"). Each entry is matched against the request using the following rules:
+- **IP address** — matched against `$request->ip()` (exact match)
+- **Domain string** — matched against the host extracted from the `Origin` header (fallback: `Referer` header host); case-insensitive exact match
+- **Wildcard domain** `*.example.com` — matches exactly one subdomain level (e.g. `shop.example.com`), case-insensitive
+- **OR semantics** — any single entry matching allows the request
+- **Empty/NULL list** — no restriction (allow all origins and IPs)
+
+The bearer-token API enforces this via `ApiQuery` → `ExternalSource::isIpAllowed()` (legacy name; wraps `isRequestAllowed()`). The widget gateway enforces it via `WidgetGate` → `ExternalSource::isRequestAllowed($request)`.
+_Enforced in:_ `App\Modules\External\Middleware\ApiQuery`, `App\Modules\External\Middleware\WidgetGate`
 
 **BR-002** — An External Source must be registered in `external_sources` before it can send or receive messages.
 _Enforced in:_ `app/Models/ExternalSource.php`, `app/Services/External/ExternalTrafficService.php`
@@ -129,14 +137,64 @@ $token = 'my-secret-token-123';
 
 ---
 
-## 8. Forbidden Behaviors
+## 8. Widget Gateway
 
-- ❌ Accepting requests without a valid active bearer token
+The widget gateway is a browser-friendly entry point for external sources that embeds a support chat widget into third-party websites. It is a distinct authentication surface from the bearer-token REST API.
+
+### Public key
+
+- Each `ExternalSource` has an optional `public_key` column (`varchar`, nullable, unique).
+- Generated and rotated from the API Webhooks admin page via `ExternalSourceTokensService::generatePublicKey()` (`pub_` prefix + 36 random chars).
+- NULL means no widget key has been assigned yet — the source cannot use the widget gateway until a key is generated.
+- The public key is **intentionally not a secret**: it appears in browser-embedded `<script>` tags. It identifies the source but does NOT grant admin or management access.
+- Rate limiting and origin/IP checking in `WidgetGate` are the primary abuse-prevention controls.
+- Never log the public key (same policy as all tokens).
+
+### WidgetGate middleware (`app/Modules/External/Middleware/WidgetGate.php`)
+
+- Reads `X-Widget-Key` header; looks up the `ExternalSource` by `public_key`; returns 401 if not found.
+- Calls `$source->isRequestAllowed($request)`; returns 403 if denied.
+- Rate limits: 30/min for POST (send) routes, 120/min for GET (poll) routes, keyed by `{public_key}:{client_ip}`. Returns 429 on limit exceeded.
+- Sets CORS headers (`Access-Control-Allow-Origin = request Origin`, methods, headers) on every response.
+- Handles OPTIONS preflight — returns 204 with CORS headers, no business logic.
+- Attaches the resolved `ExternalSource` to `$request->attributes->get('widget_source')` for downstream use.
+
+### Widget routes
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/widget/{external_id}/messages` | Send a text message from the widget user |
+| `POST` | `/api/widget/{external_id}/files` | Send a file (multipart, field: `uploaded_file`, max 20 MB) |
+| `GET` | `/api/widget/{external_id}/messages` | Fetch history; `?after={id}` for incremental polling |
+| `OPTIONS` | `/api/widget/{external_id}/{any}` | CORS preflight (204) |
+
+Widget routes call `ExternalTrafficService` / `ExternalMessageService` / `ExternalFileService` directly — no internal HTTP loop.
+
+### Widget assets
+
+`public/widget/widget.js`, `public/widget/style.css`, `public/widget/manager.png` are served statically by the web server — no Laravel route is needed.
+
+Embed:
+```html
+<script src="https://stand/widget/widget.js" data-domain="https://stand" data-key="pub_xxx" defer></script>
+```
+
+### externalId security note (v1)
+
+Widget `externalId` is client-generated and stored in `localStorage`. It is not HMAC-signed in v1. A client who knows another client's `externalId` could read their conversation. This is an accepted v1 risk; HMAC-signed sessions are planned for v2.
+
+---
+
+## 9. Forbidden Behaviors
+
+- ❌ Accepting requests without a valid active bearer token (bearer API) or valid public key (widget gateway)
 - ❌ Creating `ExternalUser` without corresponding `BotUser`
 - ❌ Skipping webhook dispatch when `webhook_url` is set
-- ❌ Logging token values in any log output
+- ❌ Logging token values or public key values in any log output
 - ❌ Using the same token for multiple External Sources
 - ❌ Allowing `active = false` tokens to authenticate
+- ❌ Treating the public key as a secret (it is intentionally embedded in browser scripts)
+- ❌ Skipping origin/IP allowlist check in `WidgetGate`
 
 ---
 

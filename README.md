@@ -111,9 +111,7 @@
 ### Управление и мониторинг
 - **Laravel Telescope**: Дашборд отладки (`/telescope`) — запросы, исключения, логи, SQL, очереди, кэш
 - **Логи**: Ротируемые файлы в `storage/logs/`, просмотр через `php artisan pail` или во вкладке Logs Telescope
-- **PgAdmin**: Управление базой данных
 - **RedisInsight**: Мониторинг Redis
-- Интеграция с Sentry для отслеживания ошибок
 
 ### Модерация
 - Блокировка пользователей
@@ -149,7 +147,6 @@
 **Monitoring & Logging:**
 - Laravel Telescope (дашборд отладки: запросы, логи, SQL, очереди, исключения)
 - Ротируемые лог-файлы (`storage/logs/`, `php artisan pail`)
-- Sentry (error tracking)
 
 **Development:**
 - PHPUnit (тестирование)
@@ -379,31 +376,11 @@ docker exec -it pet php artisan pail
 tail -f storage/logs/laravel-$(date +%F).log
 ```
 
-Ошибки также агрегируются в Sentry.
-
-### PgAdmin
-
-Веб-интерфейс для управления PostgreSQL.
-
-**URL:** `https://pgadmin.yourdomain.com`
-
-Логин: `PGADMIN_EMAIL`
-Пароль: `PGADMIN_PASSWORD`
-
 ### RedisInsight
 
 Мониторинг Redis.
 
 **URL:** `http://redis:8001`
-
-### Sentry (опционально)
-
-Для отслеживания ошибок в production настройте:
-
-```env
-SENTRY_LARAVEL_DSN=https://...@sentry.io/...
-SENTRY_TRACES_SAMPLE_RATE=0.1
-```
 
 ---
 
@@ -560,7 +537,7 @@ SENTRY_TRACES_SAMPLE_RATE=0.1
 
 **Nginx**: Веб-сервер, reverse proxy, SSL termination
 
-**Monitoring Stack**: Laravel Telescope (отладка: запросы/логи/SQL/очереди) + Sentry (ошибки)
+**Monitoring Stack**: Laravel Telescope (отладка: запросы/логи/SQL/очереди)
 
 ---
 

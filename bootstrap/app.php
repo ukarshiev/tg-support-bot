@@ -5,7 +5,6 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Sentry\Laravel\Integration;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 
@@ -17,11 +16,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // Trust all proxies so that $request->ip() returns the real client IP
+        // when the app runs behind a reverse proxy (nginx / Docker / cloud LB).
+        // Security trade-off: trusting all proxies means a client with direct
+        // access could spoof X-Forwarded-For. This is acceptable because all
+        // production traffic is routed through a trusted nginx reverse proxy and
+        // direct external access to the application container is blocked.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        Integration::handles($exceptions);
-
         $exceptions->render(function (RouteNotFoundException $e, Request $request) {
             return response()->json([
                 'message' => 'Route not found.',

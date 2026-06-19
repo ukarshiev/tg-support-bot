@@ -2,9 +2,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build --config vite.app.config.js && vite build",
+        "build": "vite build --config vite.app.config.js",
         "build:app": "vite build --config vite.app.config.js",
-        "build:widget": "vite build",
         "dev": "vite --config vite.app.config.js"
     },
     "devDependencies": {

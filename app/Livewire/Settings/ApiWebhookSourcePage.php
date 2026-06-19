@@ -10,6 +10,7 @@ use App\Modules\External\Services\Source\ExternalSourceTokensService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Throwable;
 
 /**
  * Per-source External Source configuration page.
@@ -64,6 +65,15 @@ class ApiWebhookSourcePage extends Component
     /** @var bool Webhook URL was saved successfully in this request */
     public bool $saved = false;
 
+    /** @var string|null Current public key for widget gateway (last 8 chars visible, rest masked) */
+    public ?string $publicKey = null;
+
+    /** @var string|null One-time reveal: raw new public key after generation */
+    public ?string $newPublicKey = null;
+
+    /** @var string|null Error message for public key operations */
+    public ?string $publicKeyError = null;
+
     /**
      * Mount the component with the source ID from the route.
      *
@@ -92,6 +102,7 @@ class ApiWebhookSourcePage extends Component
         $this->sourceName = $externalSource->name;
         $this->webhookUrl = (string) ($externalSource->webhook_url ?? '');
         $this->allowedIps = implode("\n", $externalSource->allowed_ips ?? []);
+        $this->publicKey = $externalSource->public_key;
 
         $this->loadToken();
     }
@@ -195,10 +206,11 @@ class ApiWebhookSourcePage extends Component
     }
 
     /**
-     * Parse and validate the allowed-IPs textarea.
+     * Parse and validate the allowed-IPs/domains textarea.
      *
-     * Returns a deduplicated list of valid IPs, or null when a line is not a
-     * valid IP (in which case $allowedIpsError is set).
+     * Accepts IP addresses and domain entries (exact or wildcard *.example.com).
+     * Returns a deduplicated list, or null when a line is invalid (in which case
+     * $allowedIpsError is set).
      *
      * @return array<int, string>|null
      */
@@ -206,25 +218,72 @@ class ApiWebhookSourcePage extends Component
     {
         $lines = preg_split('/[\r\n,]+/', $this->allowedIps) ?: [];
 
-        $ips = [];
+        $entries = [];
 
         foreach ($lines as $line) {
-            $ip = trim($line);
+            $entry = trim($line);
 
-            if ($ip === '') {
+            if ($entry === '') {
                 continue;
             }
 
-            if (! filter_var($ip, FILTER_VALIDATE_IP)) {
-                $this->allowedIpsError = "Некорректный IP-адрес: {$ip}";
+            if (filter_var($entry, FILTER_VALIDATE_IP)) {
+                // Valid IP address
+                $entries[] = $entry;
+                continue;
+            }
+
+            // Allow wildcard domains: *.example.com
+            $check = str_starts_with($entry, '*.') ? substr($entry, 2) : $entry;
+
+            // Validate as a hostname: letters, digits, hyphens, dots; no leading/trailing dots
+            if (! preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)+$/', $check)) {
+                $this->allowedIpsError = "Некорректный IP-адрес или домен: {$entry}";
 
                 return null;
             }
 
-            $ips[] = $ip;
+            $entries[] = $entry;
         }
 
-        return array_values(array_unique($ips));
+        return array_values(array_unique($entries));
+    }
+
+    /**
+     * Generate (or rotate) the public key for widget gateway access.
+     *
+     * The raw key is stored in $newPublicKey for a one-time reveal only.
+     * It is never logged.
+     *
+     * @param ExternalSourceTokensService $svc
+     */
+    public function generatePublicKey(ExternalSourceTokensService $svc): void
+    {
+        $this->publicKeyError = null;
+        $this->newPublicKey = null;
+
+        $externalSource = ExternalSource::find($this->sourceId);
+
+        if (! $externalSource) {
+            $this->publicKeyError = 'Источник не найден.';
+
+            return;
+        }
+
+        try {
+            $this->newPublicKey = $svc->rotatePublicKey($externalSource);
+            $this->publicKey = $externalSource->fresh()?->public_key;
+        } catch (Throwable $e) {
+            $this->publicKeyError = $e->getMessage();
+        }
+    }
+
+    /**
+     * Dismiss the one-time public key reveal banner.
+     */
+    public function dismissPublicKey(): void
+    {
+        $this->newPublicKey = null;
     }
 
     /**

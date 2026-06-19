@@ -82,6 +82,35 @@ class ExternalSourceTokensService
     }
 
     /**
+     * Generate a new public key for widget gateway access and persist it on the source.
+     *
+     * The previous public_key value is replaced. The raw key is returned so the caller
+     * can surface a one-time reveal in the UI — it is never logged.
+     *
+     * @param ExternalSource $source
+     *
+     * @return string The new raw public key (one-time reveal only — never log this value).
+     */
+    public function rotatePublicKey(ExternalSource $source): string
+    {
+        $key = $this->generatePublicKey();
+
+        $source->update(['public_key' => $key]);
+
+        return $key;
+    }
+
+    /**
+     * Generate a cryptographically random public key (~40 chars) for widget gateway use.
+     *
+     * @return string
+     */
+    public function generatePublicKey(): string
+    {
+        return 'pub_' . Str::random(36);
+    }
+
+    /**
      * Generate a cryptographically random 64-character token.
      *
      * @return string

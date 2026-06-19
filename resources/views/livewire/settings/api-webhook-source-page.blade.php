@@ -75,18 +75,18 @@
                     />
                 </x-admin.form-field>
 
-                {{-- Разрешённые IP — allowlist of sources permitted to call the API --}}
+                {{-- Разрешённые IP/домены — allowlist for bearer token and widget key requests --}}
                 <x-admin.form-field
-                    label="Разрешённые IP-адреса"
+                    label="Разрешённые IP/домены"
                     for="allowed_ips"
-                    hint="Источники, с которых разрешены запросы. По одному IP в строке. Пусто — без ограничений."
+                    hint="По одной записи в строке. Допустимы IP-адреса и домены (например: example.com, *.example.com для поддоменов). Пусто — без ограничений."
                     :error="$allowedIpsError"
                 >
                     <textarea
                         id="allowed_ips"
                         wire:model="allowedIps"
                         rows="4"
-                        placeholder="203.0.113.10&#10;198.51.100.0&#10;2001:db8::1"
+                        placeholder="203.0.113.10&#10;example.com&#10;*.example.com"
                         class="block w-full resize-y rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 font-mono text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20
                             @if ($allowedIpsError) border-red-400 @endif"
                     ></textarea>
@@ -188,6 +188,84 @@
                     </x-admin.button-primary>
                 </div>
             </div>
+
+        {{-- ── Публичный ключ виджета ──────────────────────────────────────── --}}
+        <div class="mt-8">
+
+            <div class="my-6 h-px bg-border-light"></div>
+
+            {{-- Public key error --}}
+            @if ($publicKeyError)
+                <div class="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500"
+                         fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M12 9v2m0 4h.01M6.938 19h10.124A2 2 0 0019 16.27L13.938 7A2 2 0 0010.062 7L5 16.27A2 2 0 006.938 19z" />
+                    </svg>
+                    {{ $publicKeyError }}
+                </div>
+            @endif
+
+            <div class="space-y-4">
+
+                <div class="flex flex-col gap-1.5">
+                    <span class="text-[13px] font-medium text-text-primary">Публичный ключ виджета</span>
+                    <div class="flex items-center rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5">
+                        <span class="flex-1 truncate font-mono text-sm text-text-primary">
+                            @if ($publicKey)
+                                ••••••••••••••••••••••••••••••••<span class="text-text-secondary">{{ substr($publicKey, -8) }}</span>
+                            @else
+                                <span class="italic text-text-secondary">ключ не сгенерирован</span>
+                            @endif
+                        </span>
+                    </div>
+                    <span class="text-xs text-text-secondary">Используйте в JS-виджете через заголовок X-Widget-Key</span>
+                </div>
+
+                {{-- One-time reveal banner for new public key --}}
+                @if ($newPublicKey)
+                    <div class="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <div class="min-w-0 flex-1">
+                            <p class="mb-1 text-xs font-semibold text-green-800">Новый публичный ключ сгенерирован. Скопируйте его — он больше не будет показан.</p>
+                            <code class="block break-all rounded bg-green-100 px-2 py-1 font-mono text-xs text-green-900 select-all">{{ $newPublicKey }}</code>
+                        </div>
+                        <button type="button"
+                                wire:click="dismissPublicKey"
+                                class="shrink-0 text-green-500 transition hover:text-green-700"
+                                aria-label="Закрыть">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                                 stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                @endif
+
+                {{-- Generate key button --}}
+                <div class="flex flex-wrap items-center gap-3">
+                    <x-admin.button-primary
+                        type="button"
+                        wire:click="generatePublicKey"
+                        wire:loading.attr="disabled"
+                        wire:target="generatePublicKey"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="mr-1.5 h-4 w-4" fill="none"
+                             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span wire:loading.remove wire:target="generatePublicKey">Сгенерировать ключ</span>
+                        <span wire:loading wire:target="generatePublicKey">Генерация...</span>
+                    </x-admin.button-primary>
+                </div>
+
+            </div>
+
+        </div>{{-- /public key block --}}
 
         </div>
 
