@@ -139,7 +139,7 @@ return [
         // Application event/error channel used across the codebase via
         // Log::channel('app'). Previously shipped to Loki/Grafana; now a plain
         // rotating file (storage/logs/app-YYYY-MM-DD.log) — tail it with
-        // `php artisan pail`, browse in Telescope's Logs tab, or view in Sentry.
+        // `php artisan pail` or browse in Telescope's Logs tab.
         'app' => [
             'driver' => 'daily',
             'path' => storage_path('logs/app.log'),
