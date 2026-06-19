@@ -19,6 +19,7 @@ use App\Modules\Admin\Controllers\BotUserAvatarController;
 use App\Modules\Admin\Controllers\ChatAttachmentController;
 use App\Modules\Admin\Controllers\PwaController;
 use App\Modules\Admin\Controllers\UserAvatarController;
+use App\Modules\Admin\Middleware\EnsureSettingsAccess;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -74,7 +75,7 @@ class AdminServiceProvider extends ServiceProvider
         // Prefix: /admin/settings — verified not claimed by Filament's panel.
         // Middleware: 'web' session stack + Filament's Authenticate guard so
         // unauthenticated visitors are redirected to /admin/login.
-        Route::middleware(['web', Authenticate::class])
+        Route::middleware(['web', Authenticate::class, EnsureSettingsAccess::class])
             ->prefix('admin/settings')
             ->name('admin.settings.')
             ->group(function (): void {
