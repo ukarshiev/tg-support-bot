@@ -88,8 +88,8 @@ _Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php::shouldGenerateForUser
 **BR-014** — `generateReply()` and `processMessage()` share the same DB-backed history pipeline through `AiChatHistoryService::buildForBotUser($userId, $userMessage)`. The current incoming user message is passed as `$excludeLastUserText` so it is dropped from the assembled history when `SendTelegramMessageJob` has already inserted it (race-safe in both directions: when the row exists the duplicate is dropped, when it does not nothing happens).
 _Enforced in:_ `app/Modules/Ai/Services/AiAssistantService.php`, `app/Modules/Ai/Services/AiChatHistoryService.php`
 
-**BR-015** — The AI system prompt is rendered from the Blade template at `resources/ai/system-prompt.blade.php` with variables `botName`, `platform`, `today`. The template MUST NOT contain Blade logic directives (`@if`, `@foreach`, `@include`, `@php`) — only variable substitutions. Path is configurable via `config('ai.system_prompt_path')`. The loader (`AiSystemPromptLoader`) is bound as a singleton and memoizes rendered output for the request lifetime.
-_Enforced in:_ `app/Modules/Ai/Services/AiSystemPromptLoader.php`; `app/Modules/Ai/AiServiceProvider.php` (singleton binding); `resources/ai/system-prompt.blade.php`
+**BR-015** — The AI system prompt is stored **only in the DB** (`ai.system_prompt` via `SettingsService`), used **verbatim** — no templating or variable substitution. There is no prompt file and no default: when unset the prompt is empty (an empty value sends no system message). The loader (`AiSystemPromptLoader`, singleton) exposes `render()` — it reads the DB value (memoized for the request) and providers send it as the `system` message.
+_Enforced in:_ `app/Modules/Ai/Services/AiSystemPromptLoader.php`; `app/Modules/Ai/AiServiceProvider.php` (singleton binding)
 
 **BR-016** — Only messages that were actually delivered to the user may appear in the AI's assistant-history. The invariant: AI drafts (`SendAiDraftJob`, `SendAiReplyJob`) write **only** to `ai_messages`, never to `messages`. A row in `messages` (regardless of `message_type=outgoing` reason — Accept, manual manager reply, etc.) appears only when `AbstractSendMessageJob::handle()` actually sends the message. Cancel never creates a `messages` row. Any future AI-flow change that violates this is a regression.
 _Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/SendAiReplyJob.php`, `app/Jobs/SendMessage/AbstractSendMessageJob.php`
@@ -116,13 +116,13 @@ The AI assistant settings are managed via custom Livewire/Blade pages at `/admin
 
 `app/Livewire/Settings/AiAssistantPage.php` — main AI settings screen.
 
-**Fields** (all persisted via `SettingsService`):
-| Field | Setting key | Type | Validation |
+**Fields**:
+| Field | Storage | Type | Validation |
 |---|---|---|---|
-| ИИ-ассистент (master toggle) | `ai.enabled` | bool | — (persists instantly, no save) |
-| Провайдер по умолчанию | `ai.default_provider` | string | in:openai,deepseek,gigachat |
-| Автоответ (toggle) | `ai.auto_reply` | bool | confirm dialog required |
-| Системный промпт | `ai.system_prompt` | string | — |
+| ИИ-ассистент (master toggle) | `ai.enabled` (SettingsService) | bool | — (persists instantly, no save) |
+| Провайдер по умолчанию | `ai.default_provider` (SettingsService) | string | in:openai,deepseek,gigachat |
+| Автоответ (toggle) | `ai.auto_reply` (SettingsService) | bool | confirm dialog required |
+| Системный промпт | `ai.system_prompt` (SettingsService / DB) | string | stored as-is; blank → no system prompt |
 
 The «Запросов в минуту» (`ai.rate_limit.requests_per_minute`), «Запросов в час» (`ai.rate_limit.requests_per_hour`), and «Таймаут отключения» (`ai.disable_timeout`) fields have been **removed** — from the UI, from `SettingKeyRegistry`, and from the internal rate-limit logic in `BaseAiProvider` (`checkRateLimit`/`getRateLimitStatus`). Provider throttling is now left entirely to the external provider's own 429 responses.
 
@@ -154,9 +154,9 @@ _Enforced in:_ `app/Livewire/Settings/AiAssistantPage.php` (`updatedAiEnabled()`
 
 **Verify-before-save**: the primary «Проверить и сохранить» button calls `connect()`, which mirrors the channel-integration flow (admin-panel.md BR-013): (1) validate fields; (2) resolve the secret to verify — entered value, else the stored one (blank-secret guard); (3) call `App\Modules\Ai\Services\AiProviderVerificationService::verifyOpenai/verifyDeepseek/verifyGigachat()` — on failure show the error notice (`$verifyError`) and persist **nothing**; (4) on success persist via the settings-only `save()` path. Verification probes the real provider API: OpenAI/DeepSeek do a minimal chat-completion (`max_tokens=1`) against `{base_url}`; GigaChat performs the OAuth token request (Basic secret + the uploaded/stored trusted-root certificate). All calls use a 10 s timeout, never log secrets, and convert transport errors into a failed result. `save()` (settings-only, no probe) is retained for programmatic/test use.
 
-**System prompt storage**: the system prompt is stored in `SettingsService` under key `ai.system_prompt` (non-secret, plain text). The Blade template `resources/ai/system-prompt.blade.php` is NOT overwritten — that file is the production fallback.
+**System prompt storage**: the system prompt is stored **only in the DB** under `ai.system_prompt` (registry key, `config => null`, non-secret) via `SettingsService`. There is no prompt file and no default. The «Системный промпт» field on `/admin/settings/ai` is loaded from that key and «Сохранить» persists it with `SettingsService::set('ai.system_prompt', …)`. Because nothing is written to disk, there is **no filesystem-permission failure mode**. The prompt save is **independent of provider validation**: in `AiAssistantPage::save()` the prompt is persisted first and unconditionally, so an unconfigured AI provider (which blocks persisting the toggle/provider settings) never prevents saving the prompt text. A blank field stores `''` — providers then receive an empty system prompt.
 
-**Routes**: registered in `AdminServiceProvider::boot()` under `admin/settings/` prefix, names `admin.settings.ai` and `admin.settings.ai.provider`. Middleware: `['web', Filament\Http\Middleware\Authenticate::class]`.
+**Routes**: registered in `AdminServiceProvider::boot()` under `admin/settings/` prefix, names `admin.settings.ai` and `admin.settings.ai.provider`. Middleware: `['web', 'auth', EnsureSettingsAccess::class]`.
 
 **Sidebar**: `ИИ-ассистент` nav item in `resources/views/layouts/admin-settings.blade.php` is active/linked to `admin.settings.ai`; marked active on both `admin.settings.ai` and `admin.settings.ai.provider` routes.
 

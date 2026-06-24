@@ -29,7 +29,7 @@ flowchart TD
     B --> C[Business Logic Layer\nServices + Actions]
     C --> MI[ManagerInterfaceContract]
     MI --> TGI[TelegramGroupInterface\nTelegram forum topics]
-    MI --> API[AdminPanelInterface\nFilament web panel]
+    MI --> API[AdminPanelInterface\nLivewire web panel]
     C --> D[Integration Layer\nModules/Telegram/Api/ + Modules/Vk/Api/]
     C --> E[Queue Layer\nModules/*/Jobs/ — async operations]
     E --> D
@@ -48,7 +48,7 @@ The `ManagerInterfaceContract` decouples the business logic layer from the manag
 | DTO | `app/DTOs/`, `app/Modules/*/DTOs/` | Parse and type incoming data, pass between layers |
 | Business Logic | `app/Services/`, `app/Modules/*/Services/`, `app/Modules/*/Actions/` | Business rules, routing, state management |
 | Manager Interface | `app/Modules/Telegram/Services/TelegramGroupInterface.php`, `app/Modules/Admin/Services/AdminPanelInterface.php` | Notify managers of incoming messages; create conversations |
-| Admin UI | `app/Modules/Admin/Filament/` | Filament resources, Livewire pages, reply form |
+| Admin UI | `app/Livewire/` + `app/Modules/Admin/` | Custom Livewire screens (login, chat workspace, settings), reply form |
 | Integration | `app/Modules/Telegram/Api/`, `app/Modules/Vk/Api/` | Direct API calls to Telegram and VK |
 | Queue | `app/Modules/*/Jobs/` | Async message sending, retries, webhook dispatch |
 | Data | `app/Models/` | Eloquent ORM, database queries only |
