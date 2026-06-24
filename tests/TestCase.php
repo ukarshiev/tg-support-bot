@@ -18,6 +18,13 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        // Admin Blade layouts use @vite(...), which requires a built
+        // public/build/manifest.json. CI runs the PHP test suite without
+        // building front-end assets, so disable Vite for tests — @vite
+        // directives resolve to empty strings instead of throwing
+        // ViteManifestNotFoundException.
+        $this->withoutVite();
+
         $this->botToken = '123:ABC';
 
         // Seed common settings into the DB-backed SettingsService.
