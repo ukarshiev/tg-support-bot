@@ -117,6 +117,7 @@ The AI assistant settings are managed via custom Livewire/Blade pages at `/admin
 `app/Livewire/Settings/AiAssistantPage.php` — main AI settings screen.
 
 **Fields**:
+
 | Field | Storage | Type | Validation |
 |---|---|---|---|
 | ИИ-ассистент (master toggle) | `ai.enabled` (SettingsService) | bool | — (persists instantly, no save) |
@@ -144,6 +145,7 @@ _Enforced in:_ `app/Livewire/Settings/AiAssistantPage.php` (`updatedAiEnabled()`
 `app/Livewire/Settings/AiProviderAccessPage.php` — per-provider credentials screen. Route constraint: `provider` ∈ `openai|deepseek|gigachat`.
 
 **Fields by provider** (all persisted via `SettingsService`):
+
 | Provider | Fields |
 |---|---|
 | OpenAI | `ai.openai_api_key`(secret), `ai.openai_base_url`, `ai.openai_model`, `ai.openai_max_tokens`, `ai.openai_temperature` |
@@ -339,6 +341,7 @@ _Enforced in:_ `app/Modules/Ai/Actions/AiAcceptMessage.php`
 _Enforced in:_ `app/Modules/Ai/Actions/AiCancelMessage.php`
 
 **Review surface summary:**
+
 | AI bot configured? | Draft review location |
 |---|---|
 | Yes | Telegram supergroup (inline buttons) + `/admin/chats` workspace |
