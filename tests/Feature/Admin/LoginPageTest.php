@@ -32,9 +32,9 @@ class LoginPageTest extends TestCase
             'role' => UserRole::Admin,
         ]);
 
-        \Livewire\Livewire::test(\App\Modules\Admin\Filament\Pages\Auth\Login::class)
-            ->set('data.email', 'admin@example.com')
-            ->set('data.password', 'secret123')
+        \Livewire\Livewire::test(\App\Livewire\Auth\LoginPage::class)
+            ->set('email', 'admin@example.com')
+            ->set('password', 'secret123')
             ->call('authenticate');
 
         $this->assertAuthenticatedAs($user);
