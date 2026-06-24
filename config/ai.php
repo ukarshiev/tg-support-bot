@@ -11,13 +11,8 @@ return [
     | exclusively via App\Services\Settings\SettingsService.
     |
     | Only infrastructure / deployment values that cannot be managed via the
-    | admin UI remain here.
+    | admin UI remain here. (The system prompt is stored in the DB under
+    | `ai.system_prompt`, so there is nothing left to configure here.)
     |
     */
-
-    /*
-     * Path to the Blade system-prompt template.
-     * This is a local filesystem path (infrastructure config) — stays in config.
-     */
-    'system_prompt_path' => resource_path('ai/system-prompt.blade.php'),
 ];

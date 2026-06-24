@@ -134,12 +134,12 @@ abstract class BaseAiProvider implements AiProviderInterface
     }
 
     /**
-     * Build the rendered system prompt for the given request.
+     * Build the system prompt for the given request.
      *
-     * Delegates to {@see AiSystemPromptLoader::render()} with the minimum
-     * set of variables exposed to the Blade template: `botName`, `platform`,
-     * `today`. The loader is resolved through the container so its
-     * per-request memoization is shared across providers.
+     * Delegates to {@see AiSystemPromptLoader::render()}, which reads the
+     * plain-text prompt file verbatim (no templating). The loader is resolved
+     * through the container so its per-request memoization is shared across
+     * providers.
      *
      * @param AiRequestDto $request
      *
@@ -147,10 +147,6 @@ abstract class BaseAiProvider implements AiProviderInterface
      */
     protected function buildSystemPrompt(AiRequestDto $request): string
     {
-        return app(AiSystemPromptLoader::class)->render([
-            'botName' => (string) config('app.name', 'AI Bot'),
-            'platform' => $request->platform,
-            'today' => now()->toDateString(),
-        ]);
+        return app(AiSystemPromptLoader::class)->render();
     }
 }
