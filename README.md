@@ -15,13 +15,39 @@
 
 ## Демонстрация
 
-**Документация:** [https://docs.tg-support-bot.ru/](https://docs.tg-support-bot.ru/)
+**Документация:** [https://docs.tg-support-bot.ru/](https://docs.tg-support-bot.ru/docs/getting-started.html)
 
 **Презентация работы бота:** [https://youtu.be/hIpYreHOxIk](https://youtu.be/hIpYreHOxIk)
 
 **Инструкция по установке через Docker Compose:** [https://youtu.be/ZAtP9qJ5q9M](https://youtu.be/ZAtP9qJ5q9M)
 
 **Telegram-группа поддержки:** [https://t.me/pt_tg_support](https://t.me/pt_tg_support)
+
+### Тестовая площадка
+
+Для новых пользователей я сделал тестовую площадку, где можно посмотреть, как всё устроено внутри:
+— как выглядит проект
+— как работает административная панель
+— как происходит отправка сообщений и многое другое
+
+🔹 Тестовая группа для сообщений:
+https://t.me/tg_support_bot_test
+
+🔹 Доступ к админке:
+https://support.iliya-code.ru/admin/
+Логин: manager@mail.ru
+Пароль: manager_123
+
+🔹 Сообщество ВКонтакте:
+https://vk.com/club217903474
+
+🔹 MAX:
+https://vk.com/club217903474
+
+🔹 Telegram-бот:
+https://t.me/TgSupportTest1Bot
+
+Буду рад вашей обратной связи! 🚀
 
 ---
 
@@ -30,7 +56,6 @@
 - [Как это работает](#-как-это-работает)
 - [Основные возможности](#-основные-возможности)
 - [Технологический стек](#-технологический-стек)
-- [Быстрый старт](#-быстрый-старт)
 - [Установка и настройка](#-установка-и-настройка)
 - [AI помощник](#-ai-помощник)
 - [Живой чат для сайта](#-живой-чат-для-сайта)
@@ -39,7 +64,6 @@
 - [Поддерживаемые типы сообщений](#-поддерживаемые-типы-сообщений)
 - [Интерактивные клавиатуры](#-интерактивные-клавиатуры)
 - [Архитектура](#-архитектура)
-- [Развертывание](#-развертывание)
 - [Документация](#-документация)
 - [Вклад в проект](#-вклад-в-проект)
 - [Лицензия](#-лицензия)
@@ -103,15 +127,20 @@
 - Настраиваемые шаблоны имен топиков
 
 ### Автоматизация
-- **AI помощник**: Интеграция с OpenAI, DeepSeek, GigaChat для автоматических ответов
+- **AI помощник**: Интеграция с OpenAI, DeepSeek, GigaChat для генерации ответов (черновик на проверку менеджеру или авто-ответ)
 - Очереди сообщений с Laravel Queue
 - Webhook обработка в реальном времени
-- WebSocket поддержка через Socket.io
+- Виджет сайта на fetch-polling (без отдельного WebSocket сервера)
+
+### Админ-панель
+- **Рабочее место менеджера** (`/admin/chats`): полноэкранный чат-воркспейс на Livewire со списком диалогов, историей, отправкой ответов
+- **Настройки** (`/admin/settings/*`): интеграции каналов, AI-помощник, API/вебхуки, команда операторов — всё хранится в БД (таблица `settings`), без правки `.env`
+- **Роли**: админ видит все экраны настроек; менеджер — только «Общие». Удаление чата доступно только админу
+- **Два режима работы менеджеров** (`MANAGER_INTERFACE`): через Telegram-супергруппу (топики) или через админ-панель
 
 ### Управление и мониторинг
 - **Laravel Telescope**: Дашборд отладки (`/telescope`) — запросы, исключения, логи, SQL, очереди, кэш
 - **Логи**: Ротируемые файлы в `storage/logs/`, просмотр через `php artisan pail` или во вкладке Logs Telescope
-- **RedisInsight**: Мониторинг Redis
 
 ### Модерация
 - Блокировка пользователей
@@ -124,118 +153,54 @@
 ## Технологический стек
 
 **Backend:**
-- Laravel 12.0+ (PHP 8.2+)
+- Laravel 12 (PHP 8.2+)
 - PostgreSQL (база данных)
 - Redis (кэш и очереди)
 - Laravel Queue (обработка фоновых задач)
+- spatie/laravel-data (DTO)
 
-**Frontend & Real-time:**
-- Node.js + Socket.io (WebSocket сервер)
-- JavaScript (виджет чата)
+**Admin & Frontend:**
+- Livewire 3 + Blade (вся админка: вход `/admin/login`, рабочее место чата `/admin/chats`, настройки `/admin/settings/*`)
+- Стандартная Laravel-аутентификация (guard `web`); Filament не используется
+- Tailwind CSS v4 (дизайн-система админки)
+- Виджет живого чата — vanilla JS на fetch-polling (без отдельного Node.js/WebSocket сервера)
 
-**External APIs:**
+**Интеграции:**
 - Telegram Bot API
 - VK API
-- Max Bot API
-- OpenAI API / DeepSeek / GigaChat (AI)
+- Max Bot API (prog-time/max-php-sdk)
+- AI: OpenAI / DeepSeek / GigaChat
+
+**API & документация:**
+- REST API + L5-Swagger (`/api/documentation`)
 
 **DevOps:**
-- Docker + Docker Compose
-- Nginx (веб-сервер)
-- Certbot (SSL сертификаты)
+- Docker + Docker Compose (сервисы: `pet`, `pgdb`, `nginx`, `redis`, `laravel_queue`, `laravel_scheduler`)
+- Nginx (reverse proxy, SSL)
 
-**Monitoring & Logging:**
+**Мониторинг и логирование:**
 - Laravel Telescope (дашборд отладки: запросы, логи, SQL, очереди, исключения)
 - Ротируемые лог-файлы (`storage/logs/`, `php artisan pail`)
+- prog-time/tg-logger (логирование в Telegram)
 
-**Development:**
-- PHPUnit (тестирование)
-- PHPStan (статический анализ)
-- Laravel Pint (code style)
-
----
-
-## Быстрый старт
-
-### Требования
-
-- Docker 20.10+
-- Docker Compose 2.0+
-- Git
+**Качество кода:**
+- PHPUnit 11 (тесты)
+- PHPStan level 6 / larastan (статический анализ)
+- Laravel Pint (форматирование, PSR-12 + Laravel)
 
 ---
 
 ## Установка и настройка
 
-### Подготовка
+Пошаговые инструкции по установке и настройке вынесены в документацию и Wiki:
 
-**Создайте Telegram бота:**
-1. Напишите [@BotFather](https://t.me/BotFather)
-2. Отправьте `/newbot`
-3. Следуйте инструкциям и получите `TELEGRAM_TOKEN`
-4. Отключите Privacy Mode: `/setprivacy` → Disable
+- 📘 **С чего начать:** [docs.tg-support-bot.ru](https://docs.tg-support-bot.ru/docs/getting-started.html)
+- 🚀 **Установка через Docker Compose:** [инструкция](https://docs.tg-support-bot.ru/docs/installation-on-docker-compose.html)
+- 🖥 **Установка на хостинг:** [инструкция](https://docs.tg-support-bot.ru/docs/installation-on-hosting.html)
+- 🧩 **Несколько ботов на одном сервере:** [инструкция](https://docs.tg-support-bot.ru/docs/multi-instance-deployment.html)
+- 🎬 **Видео-инструкция (Docker Compose):** [YouTube](https://youtu.be/ZAtP9qJ5q9M)
 
-**Создайте Telegram группу:**
-1. Создайте новую группу
-2. Добавьте в неё созданного бота как администратора
-3. Включите Topics (темы) в настройках группы
-4. Получите `TELEGRAM_GROUP_ID` (можно через бота [@getidsbot](https://t.me/getidsbot))
-
-**Для ВКонтакте (опционально):**
-1. Создайте сообщество ВКонтакте
-2. Настройте API: Настройки → API → Создать ключ
-3. Получите `VK_TOKEN`, `VK_CONFIRM_CODE`, `VK_SECRET_CODE`
-
-**Для Max (опционально):**
-1. Напишите боту `@metabot` в мессенджере Max
-2. Отправьте `/newbot` и следуйте инструкциям
-3. Получите токен бота → `MAX_TOKEN`
-4. Придумайте произвольный секретный ключ → `MAX_SECRET_KEY`
-5. Зарегистрируйте вебхук: `docker exec -it pet php artisan max-bot:set-webhook`
-
-### Конфигурация .env
-
-```env
-# Основные настройки
-APP_NAME="TG Support Bot"
-APP_URL=https://yourdomain.com
-MAIN_DOMAIN=yourdomain.com
-
-# Telegram Bot
-TELEGRAM_TOKEN="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-TELEGRAM_GROUP_ID="-1001234567890"
-TELEGRAM_SECRET_KEY="your_random_secret_key"
-
-# VK (опционально)
-VK_TOKEN="your_vk_token"
-VK_CONFIRM_CODE="12345678"
-VK_SECRET_CODE="your_vk_secret"
-
-# Max (опционально)
-MAX_TOKEN="your_max_bot_token"
-MAX_SECRET_KEY="your_max_secret_key"
-
-# База данных
-DB_CONNECTION=pgsql
-DB_HOST=pgdb
-DB_PORT=5432
-DB_DATABASE=support_bot
-DB_USERNAME=postgres
-DB_PASSWORD=secure_password
-
-# Redis
-REDIS_HOST=redis
-REDIS_PASSWORD=secure_redis_password
-
-# Шаблон имени топика
-TEMPLATE_TOPIC_NAME="{first_name} {last_name} {platform}"
-```
-
-### Выберите одну из 2 инструкций
-
-Установка на хостинг - https://github.com/prog-time/tg-support-bot/wiki/Инструкция-по-установке-бота-на-хостинг
-
-Установка через Docker Compose - https://github.com/prog-time/tg-support-bot/wiki/Установка-через-Docker-Compose
+> После запуска войдите в админ-панель `/admin/login` и настройте каналы и AI на странице **Настройки** (`/admin/settings/*`). Все токены и ключи хранятся в БД в зашифрованном виде — править `.env` для этого не нужно.
 
 ---
 
@@ -251,34 +216,18 @@ TEMPLATE_TOPIC_NAME="{first_name} {last_name} {platform}"
 
 ### Настройка
 
-```env
-# Включить AI
-AI_ENABLED=true
-AI_AUTO_REPLY=false  # true для автоматических ответов
+AI настраивается **полностью через админ-панель** (хранится в БД, в `.env` ключей AI нет): учётные данные провайдера (`/admin/settings/ai/{provider}`, проверка ключа перед сохранением), отдельный Telegram-бот для публикации AI-ответов (`/admin/settings/integrations/telegram_ai`) и поведение — главный переключатель, авто-ответ (черновик на проверку менеджеру либо прямая отправка) и системный промпт (`/admin/settings/ai`).
 
-# Выбор провайдера
-AI_DEFAULT_PROVIDER=openai  # или deepseek, gigachat
+Подробные пошаговые инструкции — в документации:
 
-# OpenAI
-OPENAI_API_KEY=sk-proj-...
-OPENAI_MODEL=gpt-4
-OPENAI_MAX_TOKENS=1000
-OPENAI_TEMPERATURE=0.7
-
-# DeepSeek
-DEEPSEEK_CLIENT_SECRET=sk-...
-DEEPSEEK_MODEL=deepseek-chat
-
-# GigaChat
-GIGACHAT_CLIENT_SECRET=your_secret
-GIGACHAT_MODEL=GigaChat-2-Max
-```
+- 📘 **Подключение AI-помощника:** [инструкция](https://docs.tg-support-bot.ru/docs/ai-integration.html)
+- 🤖 **OpenAI:** [инструкция](https://docs.tg-support-bot.ru/docs/ai-openai.html)
+- 🤖 **DeepSeek:** [инструкция](https://docs.tg-support-bot.ru/docs/ai-deepseek.html)
+- 🤖 **GigaChat:** [инструкция](https://docs.tg-support-bot.ru/docs/ai-gigachat.html)
 
 ### Управление AI
 
-AI помощник активируется через команды бота или автоматически при включении `AI_AUTO_REPLY=true`.
-
-Бот может генерировать ответы на основе истории диалога и контекста.
+AI работает на всех платформах пользователей (Telegram, VK, Max) и только при `MANAGER_INTERFACE=telegram_group`. Ответы генерируются на основе истории диалога из таблицы `messages` (ограничение по токенам — `ai.max_context_tokens`, по умолчанию 3000). Триггер — только текстовые сообщения; вложения AI не запускают.
 
 ---
 
@@ -292,24 +241,27 @@ AI помощник активируется через команды бота 
 
 ### Установка виджета
 
-Подробная инструкция доступна в [разделе Wiki](https://github.com/prog-time/tg-support-bot/wiki/).
+Виджет — это самодостаточный скрипт (`public/widget/widget.js`) на vanilla JS, который общается с бэкендом через REST-эндпоинты с fetch-polling (отдельный Node.js/WebSocket сервер больше не нужен).
 
 **Краткая инструкция:**
 
-1. Скопируйте код виджета из `public/chat-widget.js`
-2. Вставьте перед закрывающим тегом `</body>` на вашем сайте:
+1. Создайте источник и **публичный ключ** виджета в админ-панели на странице API/вебхуков: `/admin/settings/api-webhooks/{source}`
+2. Вставьте перед закрывающим тегом `</body>` на вашем сайте один тег `<script>`:
 
 ```html
-<script src="https://yourdomain.com/chat-widget.js"></script>
-<script>
-  ChatWidget.init({
-    apiUrl: 'https://yourdomain.com',
-    source: 'website'
-  });
-</script>
+<script
+  src="https://yourdomain.com/widget/widget.js"
+  data-domain="https://yourdomain.com"
+  data-key="pub_xxxxxxxx"
+  data-greeting="Напишите нам, мы онлайн!"
+  data-manager="Поддержка"
+  defer
+></script>
 ```
 
-3. Все сообщения из виджета будут поступать в Telegram группу
+3. Виджет аутентифицируется заголовком `X-Widget-Key` и отправляет сообщения через `/api/widget/{external_id}/messages`; все сообщения поступают в Telegram-группу.
+
+📘 Подробнее — в документации: [Виджет живого чата](https://docs.tg-support-bot.ru/docs/live-chat-widget.html)
 
 ---
 
@@ -317,42 +269,39 @@ AI помощник активируется через команды бота 
 
 ### REST API для сторонних источников
 
-Бот предоставляет REST API для подключения внешних систем.
+Бот предоставляет REST API для подключения внешних систем. Запросы аутентифицируются bearer-токеном из таблицы `external_source_access_tokens` (управление — `/admin/settings/api-webhooks`); неактивные токены и IP вне allowlist отклоняются middleware `ApiQuery`.
 
-**Endpoint:** `POST /api/external/message`
+**Основные эндпоинты** (`{external_id}` — ID пользователя в вашей системе):
+
+| Метод | Путь | Описание |
+|---|---|---|
+| `GET` | `/api/external/{external_id}/messages` | Список сообщений |
+| `GET` | `/api/external/{external_id}/messages/{id_message}` | Одно сообщение |
+| `POST` | `/api/external/{external_id}/messages` | Отправить сообщение |
+| `PUT` | `/api/external/{external_id}/messages` | Редактировать сообщение |
+| `DELETE` | `/api/external/{external_id}/messages` | Удалить сообщение |
+| `POST` | `/api/external/{external_id}/files` | Загрузить файл |
 
 **Пример запроса:**
 
 ```bash
-curl -X POST https://yourdomain.com/api/external/message \
+curl -X POST https://yourdomain.com/api/external/user_12345/messages \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "source": "crm-system",
-    "external_user_id": "user_12345",
-    "first_name": "Иван",
-    "last_name": "Петров",
-    "message": "Здравствуйте, у меня вопрос по заказу",
-    "message_type": "text"
+    "external_id": "user_12345",
+    "text": "Здравствуйте, у меня вопрос по заказу"
   }'
 ```
 
 **Параметры:**
-- `source` — идентификатор внешнего источника
-- `external_user_id` — ID пользователя в вашей системе
-- `first_name`, `last_name` — имя и фамилия
-- `message` — текст сообщения
-- `message_type` — тип сообщения (`text`, `photo`, `document`, и т.д.)
+- `source` — идентификатор внешнего источника (обязательный)
+- `external_id` — ID пользователя в вашей системе (обязательный)
+- `text` — текст сообщения
+- `attachment` — массив вложений (опционально)
 
-**Ответ:**
-
-```json
-{
-  "success": true,
-  "message_id": 12345,
-  "topic_id": 67890
-}
-```
+Когда команда отвечает внешнему пользователю, на `external_sources.webhook_url` отправляется webhook.
 
 Подробная документация API доступна через Swagger: `https://yourdomain.com/api/documentation`
 
@@ -362,7 +311,9 @@ curl -X POST https://yourdomain.com/api/external/message \
 
 ### Laravel Telescope
 
-**URL:** `https://yourdomain.com/telescope` (доступ только при `APP_DEBUG=true` и роли админа — gate `viewTelescope`, во всех окружениях)
+**URL:** `https://yourdomain.com/telescope`
+
+Доступ защищён **сессионной авторизацией админки**: middleware-стек `['web', 'auth', App\Http\Middleware\TelescopeAccess::class]` — гость перенаправляется на `/admin/login` (302), не-админ получает **403**, админ открывает дашборд. HTTP Basic auth не используется (его `401`-челлендж вырезается edge-прокси перед доменом). Не зависит от `APP_DEBUG`; чтобы выключить дашборд полностью — `TELESCOPE_ENABLED=false`.
 
 Дашборд отладки: запросы, исключения, логи (`Log::channel('app')`), SQL-запросы, очереди/джобы, кэш, redis, события. Записи хранятся в таблицах `telescope_entries` (PostgreSQL) и обрезаются ежедневно (`telescope:prune --hours=48`). В окружении `local` пишется всё; в остальных — только сбои/исключения/расписание.
 
@@ -375,12 +326,6 @@ docker exec -it pet php artisan pail
 # или
 tail -f storage/logs/laravel-$(date +%F).log
 ```
-
-### RedisInsight
-
-Мониторинг Redis.
-
-**URL:** `http://redis:8001`
 
 ---
 
@@ -502,62 +447,49 @@ tail -f storage/logs/laravel-$(date +%F).log
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Nginx (Reverse Proxy)                   │
-│                      SSL, Load Balancing                        │
-└────────────┬───────────────────────────────────┬────────────────┘
-             │                                   │
-    ┌────────▼────────┐                 ┌───────▼────────┐
-    │  Laravel App    │                 │  Node.js       │
-    │  (PHP-FPM)      │◀───────────────▶│  Socket.io     │
-    │                 │     Redis       │                │
-    └────────┬────────┘                 └────────────────┘
-             │
-    ┌────────▼──────────────────────────────────────────┐
-    │              Laravel Queue Worker                 │
-    │         (Background job processing)               │
-    └────────┬──────────────────────────────────────────┘
-             │
-    ┌────────▼────────┬──────────────┬──────────────────┐
-    │   PostgreSQL    │    Redis     │   File Storage   │
-    │   (Database)    │  (Cache/Queue│   (Public Files) │
-    └─────────────────┴──────────────┴──────────────────┘
+│                       Nginx (Reverse Proxy)                       │
+│                          SSL termination                          │
+└───────────────────────────────┬──────────────────────────────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │  Laravel App    │   (pet, PHP-FPM)
+                        │  HTTP + Webhooks│   + админ-панель /admin/*
+                        └────────┬────────┘
+                                 │
+            ┌────────────────────┼────────────────────┐
+            │                    │                     │
+   ┌────────▼────────┐  ┌────────▼────────┐   ┌────────▼────────┐
+   │ Queue Worker    │  │ Scheduler       │   │  File Storage   │
+   │ (laravel_queue) │  │(laravel_scheduler)  │ (Public Files)  │
+   └────────┬────────┘  └─────────────────┘   └─────────────────┘
+            │
+   ┌────────▼────────┬──────────────────┐
+   │   PostgreSQL    │      Redis        │
+   │     (pgdb)      │ (cache / queue)   │
+   └─────────────────┴──────────────────┘
 ```
 
 ### Основные компоненты
 
-**App Service**: Laravel приложение, обрабатывает HTTP запросы, webhook'и от Telegram/VK
+**App Service** (`pet`): Laravel приложение — HTTP-запросы, webhook'и от Telegram/VK/Max, REST API, виджет, админ-панель (`/admin/*`)
 
-**Queue Worker**: Обработка фоновых задач (отправка сообщений, AI обработка)
+**Queue Worker** (`laravel_queue`): Обработка фоновых задач (отправка сообщений, AI обработка)
 
-**Node.js Server**: WebSocket сервер для виджета живого чата
+**Scheduler** (`laravel_scheduler`): Планировщик задач (в т.ч. `telescope:prune`)
 
-**PostgreSQL**: Основная база данных (пользователи, сообщения, топики)
+**PostgreSQL** (`pgdb`): Основная база данных (пользователи, сообщения, топики, настройки)
 
-**Redis**: Кэш, очереди, pub/sub для real-time обновлений
+**Redis**: Кэш, очереди, кэш настроек
 
 **Nginx**: Веб-сервер, reverse proxy, SSL termination
 
-**Monitoring Stack**: Laravel Telescope (отладка: запросы/логи/SQL/очереди)
-
----
-
-## Развертывание
-
-### SSL/HTTPS
-
-```bash
-# Установить certbot в контейнер nginx
-docker exec -it nginx certbot --nginx -d yourdomain.com
-
-# Автоматическое продление
-docker exec -it nginx certbot renew --dry-run
-```
+**Monitoring**: Laravel Telescope (отладка: запросы/логи/SQL/очереди)
 
 ---
 
 ## Документация
 
-**Wiki**: [https://github.com/prog-time/tg-support-bot/wiki/](https://github.com/prog-time/tg-support-bot/wiki/)
+**Документация**: [https://docs.tg-support-bot.ru/](https://docs.tg-support-bot.ru/docs/getting-started.html)
 
 **API Documentation**: `https://yourdomain.com/api/documentation` (Swagger)
 
