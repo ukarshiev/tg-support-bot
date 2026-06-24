@@ -23,6 +23,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // production traffic is routed through a trusted nginx reverse proxy and
         // direct external access to the application container is blocked.
         $middleware->trustProxies(at: '*');
+
+        // Auth redirects for the admin area (replaces Filament's panel routing):
+        // - unauthenticated visitors → the login screen;
+        // - already-authenticated visitors hitting guest-only routes → chat workspace.
+        $middleware->redirectGuestsTo(fn () => route('login'));
+        $middleware->redirectUsersTo(fn () => route('admin.chats'));
     })
     ->withExceptions(function (Exceptions $exceptions) {
         $exceptions->render(function (RouteNotFoundException $e, Request $request) {
