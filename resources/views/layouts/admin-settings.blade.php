@@ -184,6 +184,8 @@
 
 </div>{{-- /Alpine scope wrapper --}}
 
+    @include('partials.notification-sounds')
+
     @livewireScripts
 </body>
 </html>

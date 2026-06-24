@@ -20,7 +20,6 @@
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
-    @filamentStyles
 
     <style>[x-cloak]{display:none !important;}</style>
 </head>
@@ -28,7 +27,33 @@
 
     {{ $slot }}
 
+    {{-- Transient toasts — listens for the `admin-toast` Livewire event
+         (replaces the former Filament notifications). --}}
+    <div
+        x-data="{ toasts: [] }"
+        x-on:admin-toast.window="
+            const id = Date.now() + Math.random();
+            toasts.push({ id, message: $event.detail.message, type: $event.detail.type || 'success' });
+            setTimeout(() => { toasts = toasts.filter(t => t.id !== id); }, 3500);
+        "
+        class="fixed top-4 right-4 z-[100] flex flex-col gap-2"
+        style="pointer-events:none;"
+        aria-live="polite"
+    >
+        <template x-for="toast in toasts" :key="toast.id">
+            <div
+                x-transition.opacity.duration.200ms
+                class="flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg"
+                :class="toast.type === 'danger' ? 'bg-red-600' : 'bg-emerald-600'"
+                style="min-width:220px;"
+            >
+                <span x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    @include('partials.notification-sounds')
+
     @livewireScripts
-    @filamentScripts
 </body>
 </html>
