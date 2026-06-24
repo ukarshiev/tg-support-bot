@@ -15,7 +15,8 @@ use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
-use App\Modules\Vk\Api\VkMethods;
+use App\Modules\Vk\Actions\GetMessagesUploadServerVk;
+use App\Modules\Vk\Actions\SaveFileVk;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
 use App\Services\Settings\SettingsService;
@@ -63,7 +64,7 @@ class SendReplyAction
 
         match (true) {
             $botUser->platform === 'telegram' => self::sendTelegramReply($botUser, $text, $file, $message),
-            $botUser->platform === 'vk' => self::sendVkReply($botUser, $text, $file),
+            $botUser->platform === 'vk' => self::sendVkReply($botUser, $text, $file, $message),
             $botUser->platform === 'max' => self::sendMaxReply($botUser, $text, $file, $message),
             default => self::sendExternalReply($botUser, $text),
         };
@@ -306,15 +307,26 @@ class SendReplyAction
     /**
      * Send reply via VK (text or document).
      *
+     * On a successful document upload the file is also recorded on the local
+     * Message (via recordOutgoingAttachment) so the admin chat workspace can
+     * render it — without this the bubble shows only the «Вложение» placeholder.
+     *
      * @param BotUser           $botUser
      * @param string            $text
      * @param UploadedFile|null $file
+     * @param Message           $message
      *
      * @return void
      */
-    private static function sendVkReply(BotUser $botUser, string $text, ?UploadedFile $file): void
+    private static function sendVkReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): void
     {
         $attachment = $file !== null ? self::uploadVkDocument($botUser, $file) : null;
+
+        // Record the attachment locally so the admin thread can show it (VK doc
+        // URLs are not re-served here; we serve our own stored copy).
+        if ($file !== null && $attachment !== null) {
+            self::recordOutgoingAttachment($message, $file);
+        }
 
         SendVkSimpleMessageJob::dispatch(
             VkTextMessageDto::from([
@@ -328,7 +340,12 @@ class SendReplyAction
 
     /**
      * Upload a document to VK and return the attachment string (e.g. "doc123_456").
-     * Returns null on any error so the message is still sent without a file.
+     *
+     * Reuses the proven VK upload pipeline (GetMessagesUploadServerVk /
+     * SaveFileVk) and uploads the raw file contents — the same mechanism used
+     * for Telegram→VK media forwarding. Returns null on any error so the message
+     * is still sent without a file; every failure is logged (token excluded) so
+     * the previously-silent failures are now diagnosable.
      *
      * @param BotUser      $botUser
      * @param UploadedFile $file
@@ -337,48 +354,61 @@ class SendReplyAction
      */
     private static function uploadVkDocument(BotUser $botUser, UploadedFile $file): ?string
     {
-        // Step 1: get upload server URL
-        $serverDto = VkMethods::sendQueryVk('docs.getMessagesUploadServer', [
-            'peer_id' => $botUser->chat_id,
-        ]);
+        // Step 1: get the messages upload server for documents.
+        $serverDto = app(GetMessagesUploadServerVk::class)->execute((int) $botUser->chat_id, 'docs');
 
-        if (!is_array($serverDto->response)) {
-            return null;
-        }
-
-        $uploadUrl = $serverDto->response['upload_url'] ?? null;
+        $uploadUrl = is_array($serverDto->response) ? ($serverDto->response['upload_url'] ?? null) : null;
         if (empty($uploadUrl)) {
+            Log::channel('app')->error('SendReplyAction: VK upload server not obtained', [
+                'bot_user_id' => $botUser->id,
+                'error' => $serverDto->error_message,
+            ]);
+
             return null;
         }
 
-        // Step 2: upload the file to VK's server
+        // Step 2: upload the file to VK's server (field name "file").
         $realPath = $file->getRealPath();
-        if ($realPath === false) {
-            return null;
-        }
-
-        $fileHandle = fopen($realPath, 'rb');
+        $fileHandle = $realPath !== false ? @fopen($realPath, 'rb') : false;
         if ($fileHandle === false) {
+            Log::channel('app')->error('SendReplyAction: VK file read failed', [
+                'bot_user_id' => $botUser->id,
+            ]);
+
             return null;
         }
 
-        $uploadResponse = Http::attach('file', $fileHandle, $file->getClientOriginalName())
-            ->post($uploadUrl);
+        try {
+            $uploadResponse = Http::attach('file', $fileHandle, $file->getClientOriginalName())
+                ->post($uploadUrl);
+        } catch (\Throwable $e) {
+            Log::channel('app')->error('SendReplyAction: VK file upload request failed | ' . $e->getMessage(), [
+                'bot_user_id' => $botUser->id,
+            ]);
+
+            return null;
+        }
 
         $uploadData = $uploadResponse->json();
-        if (empty($uploadData['file'])) {
+        if (!is_array($uploadData) || empty($uploadData['file'])) {
+            Log::channel('app')->error('SendReplyAction: VK upload returned no file token', [
+                'bot_user_id' => $botUser->id,
+                'status' => $uploadResponse->status(),
+            ]);
+
             return null;
         }
 
-        // Step 3: save the document in VK
-        $saveDto = VkMethods::sendQueryVk('docs.save', $uploadData);
+        // Step 3: persist the document in VK.
+        $saveDto = app(SaveFileVk::class)->execute('docs', $uploadData);
 
-        if (!is_array($saveDto->response)) {
-            return null;
-        }
-
-        $doc = $saveDto->response['doc'] ?? null;
+        $doc = is_array($saveDto->response) ? ($saveDto->response['doc'] ?? null) : null;
         if (!is_array($doc) || empty($doc['owner_id']) || empty($doc['id'])) {
+            Log::channel('app')->error('SendReplyAction: VK docs.save failed', [
+                'bot_user_id' => $botUser->id,
+                'error' => $saveDto->error_message,
+            ]);
+
             return null;
         }
 
