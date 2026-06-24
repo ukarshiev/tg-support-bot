@@ -106,6 +106,7 @@ class AiAssistantPageTest extends TestCase
         $settings = app(SettingsService::class);
         $this->assertTrue((bool) $settings->get('ai.enabled'));
         $this->assertSame('gigachat', (string) $settings->get('ai.default_provider'));
+        // The prompt is stored in the DB (single source of truth).
         $this->assertSame('My prompt', (string) $settings->get('ai.system_prompt'));
     }
 

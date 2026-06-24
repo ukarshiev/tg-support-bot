@@ -2,6 +2,7 @@
 
 namespace App\Modules\Admin;
 
+use App\Livewire\Auth\LoginPage;
 use App\Livewire\Chat\ConversationPage;
 use App\Livewire\Settings\AiAssistantPage;
 use App\Livewire\Settings\AiProviderAccessPage;
@@ -20,7 +21,7 @@ use App\Modules\Admin\Controllers\ChatAttachmentController;
 use App\Modules\Admin\Controllers\PwaController;
 use App\Modules\Admin\Controllers\UserAvatarController;
 use App\Modules\Admin\Middleware\EnsureSettingsAccess;
-use Filament\Http\Middleware\Authenticate;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -28,18 +29,40 @@ class AdminServiceProvider extends ServiceProvider
 {
     /**
      * Зарегистрировать Admin-модуль.
-     * Filament-роуты регистрируются через AdminPanelProvider.
-     * Custom Livewire settings routes are registered here to avoid collision
-     * with Filament's own route set (Filament owns /admin/* but does NOT
-     * register /admin/settings/*).
+     *
+     * Все admin-роуты (вход, выход, чаты, настройки) регистрируются здесь на
+     * чистом Livewire + стандартном Laravel-аутентификации (Filament удалён).
      */
     public function boot(): void
     {
+        // ── Auth routes ────────────────────────────────────────────────────────
+        // Login: guest-only full-page Livewire screen. Named `login` so Laravel's
+        // `auth` middleware redirects unauthenticated visitors here automatically.
+        Route::middleware(['web', 'guest'])
+            ->get('/admin/login', LoginPage::class)
+            ->name('login');
+
+        // Logout: POST, clears the session and returns to the login screen.
+        Route::middleware(['web', 'auth'])
+            ->post('/admin/logout', function () {
+                Auth::guard('web')->logout();
+                request()->session()->invalidate();
+                request()->session()->regenerateToken();
+
+                return redirect()->route('login');
+            })
+            ->name('admin.logout');
+
+        // /admin root → chat workspace (former Filament panel home).
+        Route::middleware(['web', 'auth'])
+            ->get('/admin', fn () => redirect()->route('admin.chats'))
+            ->name('admin.home');
+
         // ── Chat workspace route ───────────────────────────────────────────────
         // Full-screen standalone Livewire route at /admin/chats.
         // The admin panel is an always-active manager surface (Telegram group is an optional addition).
-        // Middleware mirrors the settings routes: web session + Filament Authenticate.
-        Route::middleware(['web', Authenticate::class])
+        // Middleware: web session + standard auth guard.
+        Route::middleware(['web', 'auth'])
             ->get('/admin/chats', ConversationPage::class)
             ->name('admin.chats');
 
@@ -54,28 +77,28 @@ class AdminServiceProvider extends ServiceProvider
 
         // Streams locally-stored manager-reply attachments (e.g. MAX files) to the
         // chat thread — auth-gated, no public-disk/symlink dependency.
-        Route::middleware(['web', Authenticate::class])
+        Route::middleware(['web', 'auth'])
             ->get('/admin/chat-attachments/{attachment}', [ChatAttachmentController::class, 'show'])
             ->name('admin.chat-attachment')
             ->where('attachment', '[0-9]+');
 
         // Streams locally-stored bot user avatars — fetched async by EnrichBotUserProfileJob.
-        Route::middleware(['web', Authenticate::class])
+        Route::middleware(['web', 'auth'])
             ->get('/admin/bot-user-avatars/{botUser}', [BotUserAvatarController::class, 'show'])
             ->name('admin.bot-user-avatar')
             ->where('botUser', '[0-9]+');
 
         // Streams locally-stored team member (operator) avatars — uploaded via TeamMemberCreatePage / TeamMemberEditPage.
-        Route::middleware(['web', Authenticate::class])
+        Route::middleware(['web', 'auth'])
             ->get('/admin/team-member-avatars/{user}', [UserAvatarController::class, 'show'])
             ->name('admin.team-member-avatar')
             ->where('user', '[0-9]+');
 
         // Custom Livewire Settings routes.
-        // Prefix: /admin/settings — verified not claimed by Filament's panel.
-        // Middleware: 'web' session stack + Filament's Authenticate guard so
+        // Prefix: /admin/settings.
+        // Middleware: 'web' session stack + standard `auth` guard so
         // unauthenticated visitors are redirected to /admin/login.
-        Route::middleware(['web', Authenticate::class, EnsureSettingsAccess::class])
+        Route::middleware(['web', 'auth', EnsureSettingsAccess::class])
             ->prefix('admin/settings')
             ->name('admin.settings.')
             ->group(function (): void {

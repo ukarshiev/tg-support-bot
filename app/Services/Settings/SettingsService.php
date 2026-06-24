@@ -3,8 +3,10 @@
 namespace App\Services\Settings;
 
 use App\Models\Setting;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Unified settings access layer.
@@ -149,6 +151,13 @@ class SettingsService
 
     /**
      * Decrypt the stored value when the key is marked as a secret.
+     *
+     * If decryption fails (e.g. the value was encrypted with a previous APP_KEY
+     * that has since been rotated), the secret is treated as "not set" — the
+     * method returns null instead of throwing, so a single undecryptable secret
+     * can no longer crash every page that reads settings. The admin can then
+     * re-enter the value via the settings UI, re-encrypting it with the current
+     * key. The failure is logged without the ciphertext or key value.
      */
     private function decryptIfSecret(string $key, ?string $raw): ?string
     {
@@ -157,7 +166,15 @@ class SettingsService
         }
 
         if (SettingKeyRegistry::meta($key)['is_secret']) {
-            return Crypt::decrypt($raw);
+            try {
+                return Crypt::decrypt($raw);
+            } catch (DecryptException $e) {
+                Log::channel('app')->warning(
+                    "Settings: failed to decrypt secret '{$key}' (APP_KEY rotated?). Treating as unset; re-enter it in the admin panel.",
+                );
+
+                return null;
+            }
         }
 
         return $raw;

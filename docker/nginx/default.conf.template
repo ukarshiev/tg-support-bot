@@ -42,6 +42,10 @@ server {
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_param SCRIPT_FILENAME /var/www/public$fastcgi_script_name;
         fastcgi_param PATH_INFO $fastcgi_path_info;
+        # Forward the HTTP Basic-auth header to PHP-FPM. Without this nginx drops
+        # the Authorization header and Telescope's TelescopeBasicAuth always 401s,
+        # even with correct TELESCOPE_AUTH_USER / TELESCOPE_AUTH_PASSWORD.
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization;
     }
 
     location ~ /\.ht {

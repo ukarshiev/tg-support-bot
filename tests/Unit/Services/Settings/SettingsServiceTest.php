@@ -131,6 +131,24 @@ class SettingsServiceTest extends TestCase
         $this->assertSame('super-secret-token', $value);
     }
 
+    public function test_get_returns_null_when_secret_cannot_be_decrypted(): void
+    {
+        // Simulate a secret encrypted with a previous APP_KEY: store ciphertext
+        // that the current key cannot decrypt (garbage that is not valid payload).
+        Setting::create([
+            'key' => 'telegram.token',
+            'value' => 'eyJpdiI6Im5vdC1hLXZhbGlkLW1hYyIsInZhbHVlIjoieHh4IiwibWFjIjoiMDAwMCJ9',
+            'type' => 'string',
+            'is_secret' => true,
+        ]);
+        Cache::flush();
+
+        // Must NOT throw DecryptException — undecryptable secret reads as null.
+        $value = $this->service->get('telegram.token');
+
+        $this->assertNull($value);
+    }
+
     public function test_non_secret_key_is_stored_as_plain_text(): void
     {
         $this->service->set('app.bot_name', 'My Bot');

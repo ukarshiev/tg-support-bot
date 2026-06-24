@@ -42,7 +42,7 @@ class LogoutTest extends TestCase
         // exercise the logout logic itself, so skip the CSRF middleware.
         $this->actingAs($admin)
             ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class)
-            ->post(route('filament.admin.auth.logout'))
+            ->post(route('admin.logout'))
             ->assertRedirect();
 
         $this->assertGuest();

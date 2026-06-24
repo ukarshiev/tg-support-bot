@@ -20,7 +20,7 @@ use Livewire\Component;
  * Route:  GET /admin/settings/team
  * Name:   admin.settings.team
  * Access: authenticated admin only — managers are redirected to general settings.
- *         Guest users are blocked by the route-level Filament Authenticate middleware.
+ *         Guest users are blocked by the route-level `auth` middleware.
  * Layout: layouts.admin-settings (dark sidebar 280px + content area).
  *
  * Online status: v1 stub — no real last_seen_at tracking yet.

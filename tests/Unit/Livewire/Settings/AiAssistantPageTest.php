@@ -74,6 +74,7 @@ class AiAssistantPageTest extends TestCase
         // No provider has access configured → none is pre-selected.
         $this->assertSame('', $component->default_provider);
         $this->assertFalse($component->auto_reply);
+        // No DB value → empty field (there is no default).
         $this->assertSame('', $component->system_prompt);
     }
 
@@ -84,10 +85,10 @@ class AiAssistantPageTest extends TestCase
         /** @var \Mockery\MockInterface&SettingsService $mock */
         $mock = Mockery::mock(SettingsService::class);
         $mock->shouldReceive('get')->andReturn(null);
+        $mock->shouldReceive('set')->with('ai.system_prompt', 'Be concise')->once();
         $mock->shouldReceive('set')->with('ai.enabled', false)->once();
         $mock->shouldReceive('set')->with('ai.default_provider', 'gigachat')->once();
         $mock->shouldReceive('set')->with('ai.auto_reply', true)->once();
-        $mock->shouldReceive('set')->with('ai.system_prompt', 'Be concise')->once();
 
         $component = new AiAssistantPage();
         $component->mount($mock);
@@ -105,12 +106,39 @@ class AiAssistantPageTest extends TestCase
         /** @var \Mockery\MockInterface&SettingsService $mock */
         $mock = Mockery::mock(SettingsService::class);
         $mock->shouldReceive('get')->andReturn(null);
-        $mock->shouldNotReceive('set');
+        // The prompt is saved independently; the toggle settings are NOT.
+        $mock->shouldReceive('set')->with('ai.system_prompt', Mockery::any());
+        $mock->shouldReceive('set')->with('ai.enabled', Mockery::any())->never();
+        $mock->shouldReceive('set')->with('ai.default_provider', Mockery::any())->never();
+        $mock->shouldReceive('set')->with('ai.auto_reply', Mockery::any())->never();
 
         $component = new AiAssistantPage();
         $component->mount($mock);
         $component->ai_enabled = true;
         $component->default_provider = 'anthropic';
+        $component->save($mock);
+
+        $this->assertFalse($component->saved);
+        $this->assertArrayHasKey('default_provider', $component->formErrors);
+    }
+
+    public function test_save_writes_prompt_even_when_provider_validation_fails(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->andReturn(null);
+        // The prompt persists regardless of the provider error...
+        $mock->shouldReceive('set')->with('ai.system_prompt', 'Промпт должен сохраниться')->once();
+        // ...but the toggle settings do not, because validation fails.
+        $mock->shouldReceive('set')->with('ai.enabled', Mockery::any())->never();
+        $mock->shouldReceive('set')->with('ai.default_provider', Mockery::any())->never();
+        $mock->shouldReceive('set')->with('ai.auto_reply', Mockery::any())->never();
+
+        $component = new AiAssistantPage();
+        $component->mount($mock);
+        $component->ai_enabled = true;
+        $component->default_provider = 'anthropic'; // invalid → blocks toggle save
+        $component->system_prompt = 'Промпт должен сохраниться';
         $component->save($mock);
 
         $this->assertFalse($component->saved);
@@ -123,7 +151,11 @@ class AiAssistantPageTest extends TestCase
         $mock = Mockery::mock(SettingsService::class);
         // No credentials for any provider.
         $mock->shouldReceive('get')->andReturn(null);
-        $mock->shouldNotReceive('set');
+        // The prompt still saves; the toggle settings do not.
+        $mock->shouldReceive('set')->with('ai.system_prompt', Mockery::any());
+        $mock->shouldReceive('set')->with('ai.enabled', Mockery::any())->never();
+        $mock->shouldReceive('set')->with('ai.default_provider', Mockery::any())->never();
+        $mock->shouldReceive('set')->with('ai.auto_reply', Mockery::any())->never();
 
         $component = new AiAssistantPage();
         $component->mount($mock);

@@ -15,6 +15,7 @@ use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
@@ -86,6 +87,60 @@ class SendReplyActionTest extends TestCase
         Queue::assertPushed(SendVkSimpleMessageJob::class);
         Queue::assertNotPushed(SendTelegramSimpleQueryJob::class);
         Queue::assertNotPushed(SendWebhookMessage::class);
+    }
+
+    public function test_dispatches_vk_file_job_with_attachment_for_vk_user(): void
+    {
+        Queue::fake();
+
+        Http::fake([
+            'api.vk.com/method/docs.getMessagesUploadServer*' => Http::response([
+                'response' => ['upload_url' => 'https://vk-upload.test/upload'],
+            ]),
+            'vk-upload.test/upload' => Http::response(['file' => 'uploaded-file-data']),
+            'api.vk.com/method/docs.save*' => Http::response([
+                'response' => ['doc' => ['owner_id' => 111, 'id' => 222]],
+            ]),
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 210, 'platform' => 'vk']);
+        $file = UploadedFile::fake()->create('doc.pdf', 10);
+
+        SendReplyAction::execute($botUser, 'caption', $file);
+
+        // The uploaded doc reference is attached to the outgoing VK message.
+        Queue::assertPushed(SendVkSimpleMessageJob::class, function (SendVkSimpleMessageJob $job): bool {
+            return $job->queryParams->attachment === 'doc111_222';
+        });
+    }
+
+    public function test_records_local_attachment_for_vk_file_reply(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        Http::fake([
+            'api.vk.com/method/docs.getMessagesUploadServer*' => Http::response([
+                'response' => ['upload_url' => 'https://vk-upload.test/upload'],
+            ]),
+            'vk-upload.test/upload' => Http::response(['file' => 'uploaded-file-data']),
+            'api.vk.com/method/docs.save*' => Http::response([
+                'response' => ['doc' => ['owner_id' => 111, 'id' => 222]],
+            ]),
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 211, 'platform' => 'vk']);
+        $file = UploadedFile::fake()->create('report.pdf', 10);
+
+        SendReplyAction::execute($botUser, '', $file);
+
+        // Regression: the outgoing file must be stored on the private disk and
+        // recorded by its path so the admin chat workspace can render it instead
+        // of showing only the «Вложение» placeholder.
+        $attachment = \App\Models\MessageAttachment::where('file_name', 'report.pdf')->first();
+        $this->assertNotNull($attachment);
+        $this->assertStringStartsWith('chat-attachments/', (string) $attachment->file_id);
+        Storage::disk('local')->assertExists($attachment->file_id);
     }
 
     public function test_saves_outgoing_message_for_max_user(): void

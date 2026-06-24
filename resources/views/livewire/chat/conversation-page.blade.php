@@ -21,21 +21,9 @@
         lightboxSrc: '',
         lightboxOpen: false,
         infoPanelOpen: false,
-        audioCtx: null,
         originalFavicon: null,
         originalFaviconType: null,
         pendingCount: 0,
-        unlockAudio() {
-            // AudioContext must be created/resumed from a user gesture (autoplay policy).
-            try {
-                if (!this.audioCtx) {
-                    const Ctx = window.AudioContext || window.webkitAudioContext;
-                    if (!Ctx) { return; }
-                    this.audioCtx = new Ctx();
-                }
-                if (this.audioCtx.state === 'suspended') { this.audioCtx.resume(); }
-            } catch (e) {}
-        },
         showNotification(detail) {
             // Preferences are managed in Settings → Основные (browser-level).
             if (typeof Notification === 'undefined' || Notification.permission !== 'granted') { return; }
@@ -50,28 +38,10 @@
             n.onclick = () => { window.focus(); n.close(); };
         },
         playSound() {
-            // Sound on/off lives in localStorage (toggled in Settings → Основные).
+            // Sound on/off lives in localStorage; the chosen preset and the actual
+            // Web Audio engine live in window.tgSupportSound (Settings → Основные).
             if (localStorage.getItem('tg-support-sound') === '0') { return; }
-            try {
-                this.unlockAudio();
-                const ctx = this.audioCtx;
-                if (!ctx) { return; }
-                const now = ctx.currentTime;
-                // Short pleasant two-tone 'ding' (A5 → D6) via oscillators — no asset needed.
-                [880, 1175].forEach((freq, i) => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = freq;
-                    const start = now + i * 0.12;
-                    gain.gain.setValueAtTime(0.0001, start);
-                    gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
-                    osc.connect(gain).connect(ctx.destination);
-                    osc.start(start);
-                    osc.stop(start + 0.2);
-                });
-            } catch (e) {}
+            if (window.tgSupportSound) { window.tgSupportSound.playSelected(); }
         },
         faviconEl() {
             let el = document.querySelector('link[rel~=icon]');
@@ -132,7 +102,7 @@
         originalFaviconType = faviconEl().getAttribute('type');
         document.addEventListener('visibilitychange', () => { if (!document.hidden) restoreFavicon(); });
         window.addEventListener('focus', () => restoreFavicon());
-        ['click','keydown'].forEach(ev => document.addEventListener(ev, () => unlockAudio(), { once: true }));
+        ['click','keydown'].forEach(ev => document.addEventListener(ev, () => { if (window.tgSupportSound) window.tgSupportSound.unlock(); }, { once: true }));
     "
     x-on:open-lightbox.window="lightboxSrc = $event.detail.src; lightboxOpen = true"
     x-on:new-incoming-messages.window="showNotification($event.detail); playSound(); notifyFavicon($event.detail)"
@@ -207,7 +177,7 @@
                     <circle cx="12" cy="12" r="3"/>
                 </svg>
             </a>
-            <form method="POST" action="{{ route('filament.admin.auth.logout') }}">
+            <form method="POST" action="{{ route('admin.logout') }}">
                 @csrf
                 <button
                     type="submit"
@@ -291,6 +261,17 @@
     <main
         class="relative flex flex-1 flex-col bg-bg-primary overflow-hidden
                {{ $activeBotUserId ? 'flex' : 'hidden md:flex' }}"
+        @if($activeBotUser && $this->shouldShowReplyForm() && $this->supportsAttachments())
+            x-data="{ dragging: false, depth: 0 }"
+            x-on:dragenter.prevent="if ($event.dataTransfer?.types?.includes('Files')) { depth++; dragging = true; }"
+            x-on:dragover.prevent
+            x-on:dragleave.prevent="if (--depth <= 0) { depth = 0; dragging = false; }"
+            x-on:drop.prevent="
+                depth = 0; dragging = false;
+                const file = $event.dataTransfer?.files?.[0];
+                if (file) { $wire.upload('attachment', file); }
+            "
+        @endif
     >
         {{-- Preloader — shown while a chat is being opened (selectChat round-trip) --}}
         <div
@@ -305,6 +286,23 @@
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
             </svg>
         </div>
+
+        {{-- Drag-and-drop overlay — shown while a file is dragged over the conversation pane.
+             pointer-events-none lets the drag/drop events pass through to <main> handlers. --}}
+        @if($activeBotUser && $this->shouldShowReplyForm() && $this->supportsAttachments())
+            <div
+                x-show="dragging"
+                x-cloak
+                class="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none"
+                style="margin:12px; border:2px dashed #4F6EF7; border-radius:16px; background:rgba(79,110,247,0.08); gap:10px; color:#4F6EF7;"
+                aria-hidden="true"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>
+                </svg>
+                <p class="text-sm font-semibold">Отпустите файл, чтобы прикрепить</p>
+            </div>
+        @endif
 
         @if($activeBotUser)
 
@@ -448,24 +446,26 @@
                                 Очистить историю
                             </button>
 
-                            {{-- Divider --}}
-                            <div class="my-1 h-px bg-border-light"></div>
+                            @if($this->isAdmin())
+                                {{-- Divider --}}
+                                <div class="my-1 h-px bg-border-light"></div>
 
-                            {{-- Удалить чат (last, red) --}}
-                            <button
-                                type="button"
-                                role="menuitem"
-                                wire:click="deleteChat"
-                                wire:confirm="Удалить чат и все его сообщения? Действие необратимо."
-                                x-on:click="menuOpen = false"
-                                class="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50"
-                                style="cursor:pointer;"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
-                                </svg>
-                                Удалить чат
-                            </button>
+                                {{-- Удалить чат (last, red) — admin only --}}
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    wire:click="deleteChat"
+                                    wire:confirm="Удалить чат и все его сообщения? Действие необратимо."
+                                    x-on:click="menuOpen = false"
+                                    class="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50"
+                                    style="cursor:pointer;"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                                    </svg>
+                                    Удалить чат
+                                </button>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -623,12 +623,22 @@
                         {{-- Incoming: left-aligned with small avatar, bg-primary / bg-input bubble, cornerRadius [16,16,16,4] --}}
                         {{-- Design: node HGFji / Bubble In -- avatar 32×32 ellipse + bubble --}}
                         <div class="flex items-end w-full" style="gap:10px;">
-                            {{-- Small avatar --}}
-                            <div
-                                class="flex shrink-0 items-center justify-center rounded-full text-white font-semibold select-none"
-                                style="width:32px; height:32px; background:{{ $hdrColor }}; font-size:11px;"
-                                aria-hidden="true"
-                            >{{ $hdrInitials }}</div>
+                            {{-- Small avatar — photo or initials (mirrors the header) --}}
+                            @if($activeBotUser->avatar_path)
+                                <img
+                                    src="{{ route('admin.bot-user-avatar', $activeBotUser->id) }}"
+                                    alt="{{ $hdrDisplayName }}"
+                                    class="flex shrink-0 rounded-full object-cover select-none"
+                                    style="width:32px; height:32px;"
+                                    aria-hidden="true"
+                                >
+                            @else
+                                <div
+                                    class="flex shrink-0 items-center justify-center rounded-full text-white font-semibold select-none"
+                                    style="width:32px; height:32px; background:{{ $hdrColor }}; font-size:11px;"
+                                    aria-hidden="true"
+                                >{{ $hdrInitials }}</div>
+                            @endif
                             {{-- Bubble --}}
                             <div class="flex flex-col" style="border-radius:16px 16px 16px 4px; background:#FFFFFF; border:1px solid #E5E7EB; padding:10px 14px; gap:4px; max-width:70%;">
                                 @if($message->attachments->isNotEmpty())
@@ -657,7 +667,12 @@
                 @if($pendingAiDrafts->isNotEmpty())
                     <div class="flex flex-col" style="gap:12px; padding:0 0 8px 0;">
                         @foreach($pendingAiDrafts as $draft)
-                            <div wire:key="ai-draft-{{ $draft->id }}" class="flex flex-col" style="border:2px dashed #4F6EF7; border-radius:14px 14px 0 14px; background:#F5F7FF; padding:14px 16px; gap:10px; margin-top:16px;">
+                            <div
+                                wire:key="ai-draft-{{ $draft->id }}"
+                                wire:loading.class="opacity-60"
+                                wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
+                                class="flex flex-col transition-opacity"
+                                style="border:2px dashed #4F6EF7; border-radius:14px 14px 0 14px; background:#F5F7FF; padding:14px 16px; gap:10px; margin-top:16px;">
                                 {{-- Header --}}
                                 <div class="flex items-center" style="gap:8px;">
                                     <div class="flex items-center justify-center rounded-lg text-white font-bold" style="width:28px; height:28px; background:#4F6EF7; font-size:11px; flex-shrink:0;">ИИ</div>
@@ -668,12 +683,16 @@
                                 <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $draft->text_ai }}</p>
                                 {{-- Actions --}}
                                 <div class="flex items-center" style="gap:8px; flex-wrap:wrap;">
+                                    {{-- All three actions disable each other while any one is
+                                         in flight (target by method name, not id) — the 5 s poll
+                                         can hold the request slot, so without this a click looks
+                                         dead and a second click fires late / out of order. --}}
                                     <button
                                         type="button"
                                         wire:click="acceptAiDraft({{ $draft->id }})"
                                         wire:loading.attr="disabled"
-                                        wire:target="acceptAiDraft({{ $draft->id }})"
-                                        class="flex items-center gap-1.5 rounded-lg text-white text-xs font-semibold transition hover:opacity-90 disabled:opacity-50"
+                                        wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
+                                        class="flex items-center gap-1.5 rounded-lg text-white text-xs font-semibold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-wait"
                                         style="background:#10B981; padding:7px 14px; border:none; cursor:pointer;"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -682,7 +701,9 @@
                                     <button
                                         type="button"
                                         wire:click="editAiDraft({{ $draft->id }})"
-                                        class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80"
+                                        wire:loading.attr="disabled"
+                                        wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
+                                        class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80 disabled:opacity-50 disabled:cursor-wait"
                                         style="background:#EEF2FF; color:#4F6EF7; padding:7px 14px; border:none; cursor:pointer;"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
@@ -692,7 +713,9 @@
                                         type="button"
                                         wire:click="cancelAiDraft({{ $draft->id }})"
                                         wire:confirm="Отменить ИИ-черновик?"
-                                        class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80"
+                                        wire:loading.attr="disabled"
+                                        wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
+                                        class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80 disabled:opacity-50 disabled:cursor-wait"
                                         style="background:#FEE2E2; color:#EF4444; padding:7px 14px; border:none; cursor:pointer;"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -802,7 +825,7 @@
                                 x-data="{ autosize() { this.$el.style.height = 'auto'; this.$el.style.height = Math.min(this.$el.scrollHeight, 160) + 'px'; } }"
                                 x-init="$nextTick(() => autosize()); $wire.$watch('replyText', () => $nextTick(() => autosize()))"
                                 x-on:input="autosize()"
-                                x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); $wire.sendReply(); }"
+                                x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); if (! $el.value.trim()) return; $wire.sendReply(); }"
                                 aria-label="Текст сообщения"
                             ></textarea>
                             @error('replyText')
@@ -814,7 +837,7 @@
                         <button
                             type="submit"
                             wire:loading.attr="disabled"
-                            wire:target="sendReply,attachment"
+                            wire:target="sendReply,attachment,acceptAiDraft,editAiDraft,cancelAiDraft"
                             class="flex shrink-0 items-center justify-center text-white transition hover:opacity-90 disabled:opacity-50"
                             style="width:44px; height:44px; border-radius:12px; background:#4F6EF7; border:none; cursor:pointer;"
                             aria-label="Отправить"
@@ -1127,27 +1150,6 @@
                     <p class="text-text-secondary" style="font-size:13px;">Нет файлов</p>
                 @endif
             </div>
-
-            {{-- Divider --}}
-            <div class="w-full h-px shrink-0" style="background:#E5E7EB;"></div>
-
-            {{-- Удалить чат — destructive: removes the dialog and ALL its messages --}}
-            <button
-                type="button"
-                wire:click="deleteChat"
-                wire:confirm="Удалить чат и все его сообщения? Действие необратимо."
-                wire:loading.attr="disabled"
-                wire:target="deleteChat"
-                class="flex items-center justify-center w-full transition hover:opacity-90 disabled:opacity-50"
-                style="background:#FEE2E2; color:#DC2626; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:600; gap:6px; border:none; cursor:pointer;"
-                aria-label="Удалить чат"
-                title="Удалить чат и все его сообщения"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
-                </svg>
-                Удалить чат
-            </button>
 
             </aside>
         </div>

@@ -117,17 +117,17 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/docs/swagger-v1-json` | OpenAPI JSON |
 | `GET` | `/docs/swagger-v1-ui` | Swagger UI |
 
-### Admin Panel (Filament 3)
+### Admin Panel (Livewire)
 
-> Auth: session-based. Users are stored in the `users` table. Managed by Filament auth.
-> These routes are rendered server-side by Filament/Livewire — no Swagger annotation required.
+> Auth: session-based, standard Laravel `web` guard. Users are stored in the `users` table. No Filament.
+> These routes are custom full-page Livewire/Blade screens — no Swagger annotation required.
+> Login form submits via Livewire (`App\Livewire\Auth\LoginPage::authenticate()`), so there is no plain `POST /admin/login` route.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/admin` | session | Panel root — redirects to `/admin/chats` (no dashboard; `filament.admin.home`) |
-| `GET` | `/admin/login` | — | Login form |
-| `POST` | `/admin/login` | — | Authenticate manager |
-| `POST` | `/admin/logout` | session | Log out |
+| `GET` | `/admin` | session | Panel root — redirects to `/admin/chats` — name `admin.home` |
+| `GET` | `/admin/login` | guest | Login screen (`App\Livewire\Auth\LoginPage`) — name `login` |
+| `POST` | `/admin/logout` | session | Log out — name `admin.logout` |
 | `GET` | `/admin/chats` | session | Chat workspace (`App\Livewire\Chat\ConversationPage`, custom Livewire full-page) — name `admin.chats` |
 | `GET` | `/admin/settings/general` | session | General settings page (`GeneralSettingsPage`, custom Livewire) — name `admin.settings.general` |
 | `GET` | `/admin/settings/integrations` | session | Integration channels list (`IntegrationsListPage`, custom Livewire) — name `admin.settings.integrations` |
@@ -140,7 +140,7 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `GET` | `/admin/bot-user-avatars/{botUser}` | session | Stream locally-stored bot user avatar (fetched by `EnrichBotUserProfileJob`); `avatar_path` must start with `avatars/` — name `admin.bot-user-avatar` |
 | `GET` | `/admin/team-member-avatars/{user}` | session | Stream locally-stored team member (operator) avatar (uploaded via Team admin UI); `avatar_path` must start with `avatars/` and contain no `..` — name `admin.team-member-avatar` |
 
-> The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens. The underlying models, services, and artisan commands are unchanged.
+> The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens, and Filament itself was later removed entirely. The underlying models, services, and artisan commands are unchanged.
 
 ### Monitoring (Laravel Telescope)
 
@@ -149,9 +149,9 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/telescope` | `APP_DEBUG=true` + HTTP Basic auth (env creds) | Telescope dashboard — requests, exceptions, logs, queries, jobs, cache, redis, events, etc. Path configurable via `TELESCOPE_PATH` |
+| `GET` | `/telescope` | session (admin only) | Telescope dashboard — requests, exceptions, logs, queries, jobs, cache, redis, events, etc. Path configurable via `TELESCOPE_PATH` |
 
-> Authorization: gated by `App\Http\Middleware\TelescopeBasicAuth` (in `config/telescope.php` `middleware`). Requires **both** `APP_DEBUG=true` (else **404** — hidden, in every environment; the package's `local` bypass is removed) **and** HTTP Basic auth matching `TELESCOPE_AUTH_USER` / `TELESCOPE_AUTH_PASSWORD` (`config('telescope.basic_auth.*')`): wrong/missing → **401**, not configured → **403** (fail closed). Access is **not** tied to an admin login (the former `viewTelescope` gate was removed). See `process/security.md` §7 and `process/observability.md`.
+> Authorization: gated by the middleware stack `['web', 'auth', App\Http\Middleware\TelescopeAccess::class]` (in `config/telescope.php` `middleware`). Guests are redirected to `/admin/login` (302) by the `auth` middleware; authenticated non-admins get **403**; admins reach the dashboard. HTTP Basic auth was removed — its `401` `WWW-Authenticate` challenge is stripped by the upstream edge proxy in front of the production domain, so the login prompt never reached the browser. Independent of `APP_DEBUG` (set `TELESCOPE_ENABLED=false` to disable entirely). See `process/security.md` §7 and `process/observability.md`.
 
 ### Telegram callback_data prefixes (main bot webhook)
 

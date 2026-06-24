@@ -331,7 +331,7 @@ class ConversationWorkspaceTest extends TestCase
             ->set('replyText', 'Test reply from workspace')
             ->call('sendReply')
             ->assertHasNoErrors()
-            ->assertNotified('Сообщение отправлено');
+            ->assertDispatched('admin-toast', message: 'Сообщение отправлено');
 
         $this->assertDatabaseHas('messages', [
             'bot_user_id' => $botUser->id,
@@ -476,7 +476,7 @@ class ConversationWorkspaceTest extends TestCase
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
             ->call('closeDialog')
-            ->assertNotified('Диалог закрыт');
+            ->assertDispatched('admin-toast', message: 'Диалог закрыт');
 
         $botUser->refresh();
         $this->assertTrue($botUser->isClosed());
@@ -523,7 +523,7 @@ class ConversationWorkspaceTest extends TestCase
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
             ->call('banUser')
-            ->assertNotified('Пользователь заблокирован');
+            ->assertDispatched('admin-toast', message: 'Пользователь заблокирован');
 
         $botUser->refresh();
         $this->assertTrue($botUser->isBanned());
@@ -573,7 +573,7 @@ class ConversationWorkspaceTest extends TestCase
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
             ->call('unbanUser')
-            ->assertNotified('Пользователь разблокирован');
+            ->assertDispatched('admin-toast', message: 'Пользователь разблокирован');
 
         $botUser->refresh();
         $this->assertFalse($botUser->isBanned());

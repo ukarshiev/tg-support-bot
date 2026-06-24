@@ -1,6 +1,6 @@
-{{-- Custom admin login screen — matches the Pencil "Авторизация" design.
-     Self-contained styles (the Filament login layout does not load the
-     app design-system CSS), so colours/sizes are inlined here.
+{{-- Admin login screen — matches the Pencil "Авторизация" design.
+     Self-contained styles (this screen does not rely on the full admin
+     design-system layout), so colours/sizes are inlined here.
 
      NOTE: Livewire 3 requires a SINGLE root element. The style tag and both
      panels must live inside the one root div below — do not add siblings. --}}
@@ -87,11 +87,11 @@
                         type="email"
                         autocomplete="email"
                         autofocus
-                        wire:model="data.email"
+                        wire:model="email"
                         placeholder="admin@example.com"
-                        class="tglogin__input @error('data.email') tglogin__input--error @enderror"
+                        class="tglogin__input @error('email') tglogin__input--error @enderror"
                     />
-                    @error('data.email')
+                    @error('email')
                         <p class="tglogin__error">{{ $message }}</p>
                     @enderror
                 </div>
@@ -102,11 +102,11 @@
                         id="tglogin-password"
                         type="password"
                         autocomplete="current-password"
-                        wire:model="data.password"
+                        wire:model="password"
                         placeholder="••••••••"
-                        class="tglogin__input @error('data.password') tglogin__input--error @enderror"
+                        class="tglogin__input @error('password') tglogin__input--error @enderror"
                     />
-                    @error('data.password')
+                    @error('password')
                         <p class="tglogin__error">{{ $message }}</p>
                     @enderror
                 </div>

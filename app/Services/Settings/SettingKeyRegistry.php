@@ -176,6 +176,8 @@ class SettingKeyRegistry
         ],
 
         // ── AI system prompt ─────────────────────────────────────────────────
+        // Stored only in the DB (no .env/config fallback, no file, no default).
+        // Empty until an admin saves one — see AiSystemPromptLoader.
         'ai.system_prompt' => [
             'type' => 'string',
             'config' => null,

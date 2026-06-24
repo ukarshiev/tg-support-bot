@@ -1,7 +1,6 @@
 <?php
 
 return [
-    App\Modules\Admin\AdminPanelProvider::class,
     App\Modules\Admin\AdminServiceProvider::class,
     App\Modules\Ai\AiServiceProvider::class,
     App\Modules\Api\ApiServiceProvider::class,

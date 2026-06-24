@@ -61,7 +61,7 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 | Static Analysis | PHPStan level 6 (larastan) |
 | Code Formatting | Laravel Pint (PSR-12 + Laravel) |
 | Testing | PHPUnit 11 + Mockery |
-| Admin Panel | Filament 3 |
+| Admin Panel | Livewire 3 + Blade (custom screens; no Filament) |
 | Logs | Rotating files (`storage/logs/`), viewed via `php artisan pail` or Telescope |
 | Debug / Monitoring | Laravel Telescope (`/telescope`) |
 | Telegram Logging | prog-time/tg-logger |
@@ -80,7 +80,7 @@ Business Logic      app/Services/ + app/Modules/*/Services/ + app/Actions/
 Integration         ManagerInterfaceContract
 app/Modules/Telegram/Api/   /          \
 app/Modules/Vk/Api/   TelegramGroupInterface   AdminPanelInterface
-     ↓              (forum topics)         (Filament web panel)
+     ↓              (forum topics)         (Livewire web panel)
 Queue Layer         app/Modules/*/Jobs/
      ↓
 Data Layer          app/Models/ + PostgreSQL
@@ -96,7 +96,7 @@ Data Layer          app/Models/ + PostgreSQL
 | Services | `app/Services/`, `app/Modules/*/Services/` | Reusable business logic |
 | Actions | `app/Actions/`, `app/Modules/*/Actions/` | Single isolated operations (one action = one thing) |
 | Telegram/VK API | `app/Modules/Telegram/Api/`, `app/Modules/Vk/Api/` | Direct API calls only |
-| Admin | `app/Modules/Admin/` | Custom full-page Livewire screens (chat workspace + Settings), Filament panel for authentication only, SendReplyAction, admin design system |
+| Admin | `app/Modules/Admin/` | Custom full-page Livewire screens (login + chat workspace + Settings), standard Laravel auth, SendReplyAction, admin design system |
 | Jobs | `app/Modules/*/Jobs/` | All async operations — message sending, webhooks |
 | Models | `app/Models/` | Data operations only, no business logic, no API calls |
 
@@ -110,7 +110,7 @@ Data Layer          app/Models/ + PostgreSQL
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
 - **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
 - **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → optional `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); all channel/AI keys have `config => null` (DB-only, no .env fallback); known keys registered in `SettingKeyRegistry`
-- **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. All admin content screens (chat workspace + Settings) are custom Livewire/Blade on this design system; Filament chrome remains only on the `/admin/login` page.
+- **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. All admin screens — login, chat workspace and Settings — are custom Livewire/Blade on this design system. There is no Filament; authentication uses the standard Laravel `web` guard (login: `App\Livewire\Auth\LoginPage`).
 
 ---
 
@@ -121,6 +121,8 @@ app/
 ├── Actions/          # Shared isolated operations (Ai/)
 ├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract, PlatformChannel)
 ├── Livewire/
+│   ├── Auth/         # Standalone full-page login screen (standard Laravel auth, no Filament)
+│   │   └── LoginPage.php                # GET /admin/login — authenticate against the web guard
 │   ├── Chat/         # Standalone full-page Livewire workspace (chrome-free)
 │   │   └── ConversationPage.php         # GET /admin/chats — full-screen 3-column manager workspace
 │   └── Settings/     # Custom full-page Livewire components for Settings section
@@ -142,10 +144,9 @@ app/
 │   └── Controllers/  # SimplePage, FilesController, SwaggerController, PreviewController
 ├── Models/           # BotUser, Message, ExternalMessage, ExternalSource, AiMessage, etc.
 ├── Modules/
-│   ├── Admin/        # Admin panel — custom Livewire screens (Filament kept for authentication only)
+│   ├── Admin/        # Admin panel — custom Livewire screens, standard Laravel auth (no Filament)
 │   │   ├── Actions/  # SendReplyAction, InviteOperator
-│   │   ├── AdminPanelProvider.php    # Filament panel: login only; /admin → /admin/chats; nav via navigationItems()
-│   │   ├── AdminServiceProvider.php  # Custom Livewire routes (/admin/chats, /admin/settings/*)
+│   │   ├── AdminServiceProvider.php  # All admin routes: login/logout, /admin→/admin/chats, /admin/chats, /admin/settings/*
 │   │   └── Services/ # AdminPanelInterface + ChannelStatusService + WebhookRegistrationService
 │   ├── External/     # External Sources integration
 │   │   ├── Actions/, Controllers/, DTOs/, Jobs/, Middleware/, Services/
@@ -167,7 +168,8 @@ resources/
 │   │       ├── button-secondary.blade.php, toggle.blade.php
 │   ├── layouts/
 │   │   ├── admin-settings.blade.php  # Dark-sidebar layout for custom settings pages
-│   │   └── admin-chat.blade.php      # Minimal full-screen layout for the chat workspace (no Filament chrome)
+│   │   ├── admin-chat.blade.php      # Minimal full-screen layout for the chat workspace + Alpine toast renderer
+│   │   └── admin-auth.blade.php      # Minimal layout for the standalone login screen
 │   └── livewire/
 │       ├── chat/
 │       │   └── conversation-page.blade.php            # View for App\Livewire\Chat\ConversationPage
@@ -283,7 +285,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Supported providers: OpenAI, DeepSeek, GigaChat (set via `ai.default_provider` in settings DB or from `/admin/settings/ai`)
 - Register the AI bot webhook with: `docker exec -it pet php artisan ai-bot:set-webhook`
 - AI conversation history is sourced from the `messages` table (no Redis cache), bounded by `ai.max_context_tokens` (default 3000, stored in settings DB) using a `mb_strlen / 4` token heuristic with sliding-window trimming
-- AI system prompt: stored in `settings` DB under key `ai.system_prompt` (editable from `/admin/settings/ai`); the Blade fallback at `resources/ai/system-prompt.blade.php` is NOT overwritten by the admin UI
+- AI system prompt: stored **only in the DB** under `ai.system_prompt` (via `SettingsService`), used **verbatim** — no templating / variable substitution, no file and no default (empty until an admin saves one; an empty value sends no system prompt). The «Системный промпт» field at `/admin/settings/ai` is loaded from and saved to that key (`SettingsService::set('ai.system_prompt', …)`) — no filesystem involved. `AiSystemPromptLoader::render()` reads the DB value and supplies it to every provider at request time
 - AI provider credentials (API keys, base URLs, models, tokens, cert path) are managed at `/admin/settings/ai/{provider}` and stored encrypted in the `settings` table via `SettingsService`. The «Проверить и сохранить» button runs a **verify-before-save** flow (`AiProviderAccessPage::connect()` → `App\Modules\Ai\Services\AiProviderVerificationService`): credentials are checked against the provider API (OpenAI/DeepSeek minimal chat-completion; GigaChat OAuth token request) and nothing is persisted on failure — analogous to channel integrations' `WebhookRegistrationService::verifyX()`
 - AI behaviour settings managed from `/admin/settings/ai`: auto-reply toggle and system prompt only. The `ai.rate_limit.*` and `ai.disable_timeout` settings have been removed entirely (no UI, no registry keys, no internal rate-limit logic). The `ai.max_context_tokens`, `ai.confidence_threshold`, `ai.auto_escalation` and `ai.enable_logging` keys are NOT exposed in the UI — `max_context_tokens`/`confidence_threshold` run on their registry defaults (3000 / 0.8); `auto_escalation`/`enable_logging` are vestigial (logging is always on)
 - AI drafts NEVER write to `messages` (only to `ai_messages`); a `messages` row appears only when the message is actually sent to the user — this invariant is what makes "any outgoing row = delivered" safe for the chat-history assembler
@@ -300,7 +302,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
 - Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
 - In-scope keys with `config => null`: all `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`, all `ai.*` credentials and behaviour settings. Infrastructure keys (`app.manager_interface`) retain their `config()` fallback.
-- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI (NOT Filament chrome) for editing only `telegram.template_topic_name` (Telegram topic-name template). Bot name (`app.bot_name`), description (`app.bot_description`), and the manager-interface radio (`app.manager_interface`) were removed from this screen. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
+- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI for editing only `telegram.template_topic_name` (Telegram topic-name template). Bot name (`app.bot_name`), description (`app.bot_description`), and the manager-interface radio (`app.manager_interface`) were removed from this screen. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
 
 ### Channel Integrations (Settings)
 
@@ -344,7 +346,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Max rating callbacks arrive as `update_type=message_callback` with `callback.payload` containing `feedback_rate_*` — handled in `MaxBotController`
 - On rating click: `HandleFeedbackRating` saves `rating`, sets `status='completed_no_comment'`, edits message to thank-you text. `comment` stays NULL — no comment capture is implemented
 - Every close event creates a new `Feedback` record — history accumulates
-- `Feedback` records persist in the DB; the legacy Filament admin UI for them was removed (a redesigned screen is pending)
+- `Feedback` records persist in the DB; the legacy admin UI for them was removed (a redesigned screen is pending)
 
 ### Manager Interface
 

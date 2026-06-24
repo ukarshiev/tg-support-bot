@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Settings;
 
 use App\Modules\Admin\Services\ChannelStatusService;
+use App\Modules\Ai\Services\AiSystemPromptLoader;
 use App\Services\Settings\SettingsService;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -12,9 +13,10 @@ use Livewire\Component;
 /**
  * AI assistant settings page.
  *
- * Manages the master AI toggle, provider selection, auto-reply mode,
- * context token limit, and system prompt. All values are persisted via
- * SettingsService (DB → config() fallback, cache-backed).
+ * Manages the master AI toggle, provider selection, auto-reply mode and the
+ * system prompt. All values are persisted via SettingsService (DB-backed). The
+ * system prompt is stored only in the DB under `ai.system_prompt` (empty until
+ * an admin saves one).
  *
  * Access: authenticated admin only (enforced in route middleware).
  * Layout: custom dark-sidebar admin layout (layouts.admin-settings).
@@ -33,7 +35,7 @@ class AiAssistantPage extends Component
     /** @var bool Auto-reply mode (true = auto, false = draft) */
     public bool $auto_reply = false;
 
-    /** @var string System prompt text */
+    /** @var string System prompt text — stored in the DB (`ai.system_prompt`) */
     public string $system_prompt = '';
 
     /** @var array<string, bool> Whether each provider has its credentials configured */
@@ -129,6 +131,11 @@ class AiAssistantPage extends Component
         $this->formErrors = [];
         $this->saved = false;
 
+        // The system prompt is independent of provider configuration — persist
+        // it first and unconditionally (DB write, no file/permissions involved),
+        // so a provider-validation failure never silently blocks saving it.
+        $settings->set(AiSystemPromptLoader::SETTING_KEY, $this->system_prompt);
+
         // Validation — only the (visible) detail settings matter when AI is enabled.
         if ($this->ai_enabled) {
             if (! in_array($this->default_provider, ['openai', 'deepseek', 'gigachat'], true)) {
@@ -138,6 +145,8 @@ class AiAssistantPage extends Component
             }
         }
 
+        // The prompt is already saved above; the toggle settings only persist
+        // once provider validation passes.
         if (! empty($this->formErrors)) {
             return;
         }
@@ -145,7 +154,6 @@ class AiAssistantPage extends Component
         $settings->set('ai.enabled', $this->ai_enabled);
         $settings->set('ai.default_provider', $this->default_provider);
         $settings->set('ai.auto_reply', $this->auto_reply);
-        $settings->set('ai.system_prompt', $this->system_prompt);
 
         $this->saved = true;
     }
@@ -169,7 +177,9 @@ class AiAssistantPage extends Component
     {
         $this->ai_enabled = (bool) ($settings->get('ai.enabled') ?? false);
         $this->auto_reply = (bool) ($settings->get('ai.auto_reply') ?? false);
-        $this->system_prompt = (string) ($settings->get('ai.system_prompt') ?? '');
+        // Stored only in the DB; empty until an admin saves one.
+        $stored = $settings->get(AiSystemPromptLoader::SETTING_KEY);
+        $this->system_prompt = is_string($stored) ? $stored : '';
 
         $this->providerConfigured = [
             'openai' => $this->providerHasAccess($settings, 'openai'),

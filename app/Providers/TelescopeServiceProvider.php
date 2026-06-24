@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Laravel\Telescope\IncomingEntry;
 use Laravel\Telescope\Telescope;
 use Laravel\Telescope\TelescopeApplicationServiceProvider;
@@ -50,17 +51,14 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
     /**
      * Configure who can access Telescope.
      *
-     * Overrides the package default (which leaves Telescope open in `local`).
-     * Dashboard access is gated by App\Http\Middleware\TelescopeBasicAuth:
-     *  - APP_DEBUG must be true (Telescope 404s on non-debug builds), and
-     *  - HTTP Basic auth must match the env credentials
-     *    (TELESCOPE_AUTH_USER / TELESCOPE_AUTH_PASSWORD).
-     *
-     * This callback (used by the package's own Authorize middleware) only
-     * mirrors the debug gate; the credential check lives in the middleware.
+     * Dashboard access is gated by session-based admin auth — the primary
+     * enforcement lives in the Telescope middleware stack
+     * (`['web', 'auth', App\Http\Middleware\TelescopeAccess::class]`). This gate
+     * mirrors that rule (admin role required) as defence in depth, overriding
+     * the package default that leaves Telescope open in the `local` environment.
      */
     protected function authorization(): void
     {
-        Telescope::auth(fn ($request) => config('app.debug') === true);
+        Telescope::auth(fn ($request) => ($user = $request->user()) instanceof User && $user->isAdmin());
     }
 }

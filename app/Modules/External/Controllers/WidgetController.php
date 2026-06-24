@@ -244,8 +244,13 @@ class WidgetController
             $attachments = $message->attachments->map(fn ($a) => $a->file_id)->values()->all();
 
             return [
+                // Manager replies sent from the admin panel store their text on
+                // messages.text (SendReplyAction), while incoming widget messages
+                // and Telegram-group replies store it on the externalMessage
+                // relation. Fall back to messages.text so admin-panel replies are
+                // not delivered as empty bubbles.
                 'id' => $message->id,
-                'text' => $message->externalMessage?->text,
+                'text' => optional($message->externalMessage)->text ?? $message->text,
                 'direction' => $message->message_type === 'incoming' ? 'in' : 'out',
                 'created_at' => $message->created_at?->toIso8601String(),
                 'attachments' => $attachments,
