@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Jobs\EnrichBotUserProfileJob;
 use App\Modules\External\DTOs\ExternalMessageDto;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,16 +13,21 @@ use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
 
 /**
- * @property int               $id
- * @property int               $topic_id
- * @property int               $chat_id
- * @property string            $platform
- * @property mixed             $aiCondition
- * @property mixed             $lastMessageManager
- * @property ExternalUser|null $externalUser
- * @property bool              $is_banned
- * @property bool              $is_closed
- * @property string|null       $closed_at
+ * @property int                             $id
+ * @property int                             $topic_id
+ * @property int                             $chat_id
+ * @property string                          $platform
+ * @property string|null                     $display_name
+ * @property string|null                     $username
+ * @property string|null                     $avatar_path
+ * @property \Illuminate\Support\Carbon|null $profile_synced_at
+ * @property mixed                           $aiCondition
+ * @property mixed                           $lastMessageManager
+ * @property ExternalUser|null               $externalUser
+ * @property bool                            $is_banned
+ * @property bool                            $is_closed
+ * @property string|null                     $closed_at
+ * @property \Illuminate\Support\Carbon|null $manager_last_read_at
  */
 class BotUser extends Model
 {
@@ -33,10 +39,20 @@ class BotUser extends Model
         'chat_id',
         'topic_id',
         'platform',
+        'display_name',
+        'username',
+        'avatar_path',
+        'profile_synced_at',
         'is_banned',
         'banned_at',
         'is_closed',
         'closed_at',
+        'manager_last_read_at',
+    ];
+
+    protected $casts = [
+        'manager_last_read_at' => 'datetime',
+        'profile_synced_at' => 'datetime',
     ];
 
     /**
@@ -64,11 +80,18 @@ class BotUser extends Model
     }
 
     /**
+     * Newest message of the conversation, by message date.
+     *
+     * Resolved by greatest `created_at` (tie-broken by `id`) rather than the
+     * default `id`-only, so the dialog-list preview/timestamp and the
+     * "last activity" sort agree even when messages are persisted out of id
+     * order by queued jobs.
+     *
      * @return HasOne
      */
     public function lastMessage(): HasOne
     {
-        return $this->hasOne(Message::class)->latestOfMany();
+        return $this->hasOne(Message::class)->latestOfMany(['created_at', 'id']);
     }
 
     /**
@@ -97,7 +120,7 @@ class BotUser extends Model
 
             return $botUser ? $botUser->platform : null;
         } catch (\Throwable $e) {
-            Log::channel('loki')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
+            Log::channel('app')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
             return null;
         }
     }
@@ -118,7 +141,7 @@ class BotUser extends Model
 
             return $botUser->platform ?? null;
         } catch (\Throwable $e) {
-            Log::channel('loki')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
+            Log::channel('app')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
             return null;
         }
     }
@@ -146,6 +169,34 @@ class BotUser extends Model
                         'platform' => 'telegram',
                     ]
                 );
+
+                if ($botUser->wasRecentlyCreated) {
+                    // New user — fill profile from DTO synchronously.
+                    $fill = [];
+                    if ($update->displayName !== null) {
+                        $fill['display_name'] = $update->displayName;
+                    }
+                    if ($update->username !== null) {
+                        $fill['username'] = $update->username;
+                    }
+                    if (!empty($fill)) {
+                        $botUser->update($fill);
+                    }
+                } else {
+                    // Existing user — opportunistically update only if changed.
+                    $fill = [];
+                    if ($update->displayName !== null && $botUser->display_name !== $update->displayName) {
+                        $fill['display_name'] = $update->displayName;
+                    }
+                    if ($update->username !== null && $botUser->username !== $update->username) {
+                        $fill['username'] = $update->username;
+                    }
+                    if (!empty($fill)) {
+                        $botUser->update($fill);
+                    }
+                }
+
+                self::maybeEnrichProfile($botUser);
             }
 
             return $botUser ?? null;
@@ -184,13 +235,37 @@ class BotUser extends Model
     public static function getUserByChatId(string|int $chatId, string $platform): ?BotUser
     {
         try {
-            return self::firstOrCreate([
+            $botUser = self::firstOrCreate([
                 'chat_id' => $chatId,
             ], [
                 'platform' => $platform,
             ]);
+
+            self::maybeEnrichProfile($botUser);
+
+            return $botUser;
         } catch (\Throwable $e) {
             return null;
+        }
+    }
+
+    /**
+     * Dispatch the async profile-enrichment job only when a (re)sync is due —
+     * i.e. the profile has never been synced or its data is older than the TTL.
+     *
+     * Guarding the dispatch (not just the job body) avoids enqueuing a no-op job
+     * on every incoming message; the job's own TTL check is the final safety net.
+     *
+     * @param BotUser $botUser
+     *
+     * @return void
+     */
+    private static function maybeEnrichProfile(BotUser $botUser): void
+    {
+        $syncedAt = $botUser->profile_synced_at;
+
+        if ($syncedAt === null || $syncedAt->diffInDays(now()) >= EnrichBotUserProfileJob::SYNC_TTL_DAYS) {
+            dispatch(new EnrichBotUserProfileJob($botUser));
         }
     }
 
@@ -211,10 +286,17 @@ class BotUser extends Model
                 throw new Exception('External user not found!');
             }
 
-            return BotUser::firstOrCreate([
-                'chat_id' => $this->externalUser->id,
-                'platform' => $this->externalUser->source,
-            ]);
+            return BotUser::firstOrCreate(
+                [
+                    'chat_id' => $this->externalUser->id,
+                    'platform' => $this->externalUser->source,
+                ],
+                [
+                    // External users are anonymous — give the admin card a readable
+                    // label instead of the raw internal chat_id (e.g. «-1»).
+                    'display_name' => 'Посетитель сайта',
+                ],
+            );
         } catch (\Throwable $e) {
             return null;
         }

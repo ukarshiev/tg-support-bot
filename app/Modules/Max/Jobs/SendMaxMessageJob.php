@@ -62,7 +62,7 @@ class SendMaxMessageJob extends AbstractSendMessageJob
                 }
 
                 if (str_contains($response->error_message ?? '', 'attachment.not.ready')) {
-                    Log::channel('loki')->info('SendMaxMessageJob: attachment not ready, retrying', [
+                    Log::channel('app')->info('SendMaxMessageJob: attachment not ready, retrying', [
                         'attempt' => $attempt + 1,
                         'delay' => $delay,
                     ]);
@@ -86,7 +86,7 @@ class SendMaxMessageJob extends AbstractSendMessageJob
 
             throw new \Exception($response->error_message ?? 'SendMaxMessageJob: attachment not ready after all retries', 1);
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['file' => $e->getFile(), 'line' => $e->getLine()]

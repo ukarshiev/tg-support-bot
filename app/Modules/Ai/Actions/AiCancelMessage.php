@@ -7,13 +7,14 @@ use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
 
 class AiCancelMessage extends AiAction
 {
     /**
-     * Cancel AI request sending.
+     * Cancel AI request — Telegram callback entry point.
      *
      * @param TelegramUpdateDto $update
      *
@@ -22,7 +23,7 @@ class AiCancelMessage extends AiAction
     public function execute(TelegramUpdateDto $update): void
     {
         try {
-            if (empty(config('traffic_source.settings.telegram_ai.token'))) {
+            if (empty((string) app(SettingsService::class)->get('telegram_ai.token'))) {
                 throw new Exception('AI bot token not specified!', 1);
             }
 
@@ -36,23 +37,75 @@ class AiCancelMessage extends AiAction
                 throw new Exception('Message not found in database!', 1);
             }
 
-            SendTelegramMessageJob::dispatch(
-                $botUser->id,
-                $update,
-                TGTextMessageDto::from([
-                    'token' => config('traffic_source.settings.telegram_ai.token'),
-                    'methodQuery' => 'deleteMessage',
-                    'typeSource' => 'private',
-                    'chat_id' => $update->chatId,
-                    'message_thread_id' => $update->messageThreadId,
-                    'message_id' => $messageData->message_id,
-                ]),
-                'outgoing',
-            );
+            if ($messageData->message_id !== null) {
+                SendTelegramMessageJob::dispatch(
+                    $botUser->id,
+                    $update,
+                    TGTextMessageDto::from([
+                        'token' => (string) app(SettingsService::class)->get('telegram_ai.token'),
+                        'methodQuery' => 'deleteMessage',
+                        'typeSource' => 'private',
+                        'chat_id' => $update->chatId,
+                        'message_thread_id' => $update->messageThreadId,
+                        'message_id' => $messageData->message_id,
+                    ]),
+                    'outgoing',
+                );
+            }
 
-            AiMessage::where('message_id', $messageData->message_id)->delete();
+            $messageData->update(['status' => AiMessage::STATUS_CANCELLED]);
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), ['source' => 'ai_error']);
+            Log::channel('app')->error($e->getMessage(), ['source' => 'ai_error']);
         }
+    }
+
+    /**
+     * Cancel an AI draft directly — used by the admin panel workspace.
+     *
+     * Sets status=cancelled. When a supergroup message_id exists (the AI bot
+     * is configured), also deletes the draft message from the supergroup.
+     *
+     * @param AiMessage $aiMessage The pending draft to cancel
+     *
+     * @return void
+     */
+    public function executeForDraft(AiMessage $aiMessage): void
+    {
+        // Delete supergroup draft when it was posted there.
+        if ($aiMessage->message_id !== null) {
+            /** @var BotUser|null $botUser */
+            $botUser = $aiMessage->botUser;
+            $token = (string) app(SettingsService::class)->get('telegram_ai.token');
+            $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
+
+            if ($botUser !== null && $token !== '' && $groupId !== '') {
+                $emptyUpdate = new TelegramUpdateDto(
+                    updateId: 0,
+                    typeQuery: 'message',
+                    aiTechMessage: false,
+                    typeSource: 'private',
+                );
+                SendTelegramMessageJob::dispatch(
+                    $botUser->id,
+                    $emptyUpdate,
+                    TGTextMessageDto::from([
+                        'token' => $token,
+                        'methodQuery' => 'deleteMessage',
+                        'typeSource' => 'supergroup',
+                        'chat_id' => $groupId,
+                        'message_id' => $aiMessage->message_id,
+                        'message_thread_id' => $botUser->topic_id,
+                    ]),
+                    'outgoing',
+                );
+            }
+        }
+
+        $aiMessage->update(['status' => AiMessage::STATUS_CANCELLED]);
+
+        Log::channel('app')->info('AiCancelMessage::executeForDraft: cancelled', [
+            'source' => 'ai_cancel_draft',
+            'ai_message_id' => $aiMessage->id,
+        ]);
     }
 }

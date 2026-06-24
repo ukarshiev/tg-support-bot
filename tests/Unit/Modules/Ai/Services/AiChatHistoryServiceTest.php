@@ -8,7 +8,6 @@ use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Ai\Services\AiChatHistoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
 class AiChatHistoryServiceTest extends TestCase
@@ -21,7 +20,7 @@ class AiChatHistoryServiceTest extends TestCase
     {
         parent::setUp();
 
-        Config::set('ai.max_context_tokens', 3000);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.max_context_tokens', 3000);
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
     }
@@ -103,7 +102,7 @@ class AiChatHistoryServiceTest extends TestCase
 
     public function test_sliding_window_drops_oldest_when_over_token_limit(): void
     {
-        Config::set('ai.max_context_tokens', 3000);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.max_context_tokens', 3000);
 
         $largeText = str_repeat('a', 4000); // ≈ 1000 tokens at mb_strlen/4
         $this->pushMessage('incoming', $largeText . '_1', -400);

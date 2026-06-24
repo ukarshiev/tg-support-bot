@@ -2,9 +2,14 @@
 
 @foreach($attachments as $attachment)
     @php
-        $fileUrl = $platform === 'telegram'
-            ? url('/api/files/' . $attachment->file_id)
-            : $attachment->file_id;
+        // telegram → proxy by file id; our locally-stored manager-reply files
+        // (file_id "chat-attachments/…") → auth-gated relative route; everything
+        // else (incoming external URLs) → used directly.
+        $fileUrl = match (true) {
+            $platform === 'telegram' => url('/api/files/' . $attachment->file_id),
+            str_starts_with((string) $attachment->file_id, 'chat-attachments/') => route('admin.chat-attachment', $attachment->id, false),
+            default => $attachment->file_id,
+        };
 
         $isImage = in_array($attachment->file_type, ['photo', 'sticker']);
         $isVoice = in_array($attachment->file_type, ['voice', 'audio_message']);

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Telegram\Middleware;
 
+use App\Services\Settings\SettingsService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -23,11 +24,12 @@ class TelegramQuery
                 throw new Exception('Secret-Token is invalid!');
             }
 
-            if ($receivedToken !== config('traffic_source.settings.telegram.secret_key')) {
+            $secretKey = (string) app(SettingsService::class)->get('telegram.secret_key');
+            if ($receivedToken !== $secretKey) {
                 throw new Exception('Secret-Token is invalid!');
             }
 
-            $this->sendRequestInLoki($request);
+            $this->logRequest($request);
             return $next($request);
         } catch (\Throwable $e) {
             return response()->json([
@@ -42,8 +44,8 @@ class TelegramQuery
      *
      * @return void
      */
-    private function sendRequestInLoki(Request $request): void
+    private function logRequest(Request $request): void
     {
-        Log::channel('loki')->info(json_encode($request->all()), ['source' => 'tg_request']);
+        Log::channel('app')->info(json_encode($request->all()), ['source' => 'tg_request']);
     }
 }

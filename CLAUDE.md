@@ -37,11 +37,13 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 **Supported platforms:**
 - **Telegram** — main support channel (forum topics in supergroup)
 - **VK** — secondary support channel
+- **Max** — additional support channel
 - **External Sources** — third-party integrations via REST API + webhooks
+- **Pluggable platform modules** — additional channels can be shipped as separate (incl. paid, private) Composer packages that implement `App\Contracts\PlatformChannel` and self-register in `App\Platform\PlatformChannelRegistry` — no core edits required (e.g. the paid Avito module)
 
 **Key integrations:**
 - AI providers: OpenAI, DeepSeek, GigaChat (draft responses for manager review)
-- Monitoring: Grafana + Loki + Sentry
+- Monitoring: Laravel Telescope (requests/logs/queries/jobs/exceptions debug dashboard)
 - Live chat: Node.js server (port 3001)
 
 ---
@@ -59,9 +61,9 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 | Static Analysis | PHPStan level 6 (larastan) |
 | Code Formatting | Laravel Pint (PSR-12 + Laravel) |
 | Testing | PHPUnit 11 + Mockery |
-| Admin Panel | Filament 3 |
-| Error Tracking | Sentry |
-| Log Aggregation | Loki + Grafana + Promtail |
+| Admin Panel | Livewire 3 + Blade (custom screens; no Filament) |
+| Logs | Rotating files (`storage/logs/`), viewed via `php artisan pail` or Telescope |
+| Debug / Monitoring | Laravel Telescope (`/telescope`) |
 | Telegram Logging | prog-time/tg-logger |
 
 ---
@@ -78,7 +80,7 @@ Business Logic      app/Services/ + app/Modules/*/Services/ + app/Actions/
 Integration         ManagerInterfaceContract
 app/Modules/Telegram/Api/   /          \
 app/Modules/Vk/Api/   TelegramGroupInterface   AdminPanelInterface
-     ↓              (forum topics)         (Filament web panel)
+     ↓              (forum topics)         (Livewire web panel)
 Queue Layer         app/Modules/*/Jobs/
      ↓
 Data Layer          app/Models/ + PostgreSQL
@@ -94,7 +96,7 @@ Data Layer          app/Models/ + PostgreSQL
 | Services | `app/Services/`, `app/Modules/*/Services/` | Reusable business logic |
 | Actions | `app/Actions/`, `app/Modules/*/Actions/` | Single isolated operations (one action = one thing) |
 | Telegram/VK API | `app/Modules/Telegram/Api/`, `app/Modules/Vk/Api/` | Direct API calls only |
-| Admin | `app/Modules/Admin/` | Filament resources, Livewire pages, SendReplyAction |
+| Admin | `app/Modules/Admin/` | Custom full-page Livewire screens (login + chat workspace + Settings), standard Laravel auth, SendReplyAction, admin design system |
 | Jobs | `app/Modules/*/Jobs/` | All async operations — message sending, webhooks |
 | Models | `app/Models/` | Data operations only, no business logic, no API calls |
 
@@ -106,6 +108,9 @@ Data Layer          app/Models/ + PostgreSQL
 - **Queue Pattern** — all Telegram/VK API sends go through Jobs, never synchronously
 - **Middleware Pattern** — webhook validation before controller runs
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
+- **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
+- **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → optional `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); all channel/AI keys have `config => null` (DB-only, no .env fallback); known keys registered in `SettingKeyRegistry`
+- **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. All admin screens — login, chat workspace and Settings — are custom Livewire/Blade on this design system. There is no Filament; authentication uses the standard Laravel `web` guard (login: `App\Livewire\Auth\LoginPage`).
 
 ---
 
@@ -114,21 +119,35 @@ Data Layer          app/Models/ + PostgreSQL
 ```
 app/
 ├── Actions/          # Shared isolated operations (Ai/)
-├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract)
+├── Contracts/        # Interfaces (AiProviderInterface, ManagerInterfaceContract, PlatformChannel)
+├── Livewire/
+│   ├── Auth/         # Standalone full-page login screen (standard Laravel auth, no Filament)
+│   │   └── LoginPage.php                # GET /admin/login — authenticate against the web guard
+│   ├── Chat/         # Standalone full-page Livewire workspace (chrome-free)
+│   │   └── ConversationPage.php         # GET /admin/chats — full-screen 3-column manager workspace
+│   └── Settings/     # Custom full-page Livewire components for Settings section
+│       ├── GeneralSettingsPage.php       # /admin/settings/general
+│       ├── IntegrationsListPage.php      # /admin/settings/integrations
+│       ├── IntegrationChannelPage.php   # /admin/settings/integrations/{channel}
+│       ├── AiAssistantPage.php          # /admin/settings/ai
+│       ├── AiProviderAccessPage.php     # /admin/settings/ai/{provider}
+│       ├── ApiWebhooksPage.php          # /admin/settings/api-webhooks (admin-only, source card list)
+│       ├── ApiWebhookSourcePage.php     # /admin/settings/api-webhooks/{source} (per-source edit)
+│       └── TeamPage.php                 # /admin/settings/team (admin-only, operator management)
+├── Platform/         # PlatformChannelRegistry — registry for pluggable platform modules
 ├── DTOs/             # Shared Data Transfer Objects (Ai/, Button/, Redis/)
+├── Services/
+│   └── Settings/     # Settings persistence layer: SettingsService, SettingKeyRegistry
 ├── Enums/            # Enumerations (ButtonType, TelegramError, VkError)
 ├── Helpers/          # Utilities (TelegramHelper, AiHelper, DateHelper)
 ├── Http/
 │   └── Controllers/  # SimplePage, FilesController, SwaggerController, PreviewController
-├── Logging/          # LokiHandler
 ├── Models/           # BotUser, Message, ExternalMessage, ExternalSource, AiMessage, etc.
 ├── Modules/
-│   ├── Admin/        # Filament 3 admin panel
-│   │   ├── Actions/  # SendReplyAction
-│   │   ├── Filament/
-│   │   │   ├── Pages/       # ConversationPage (Livewire)
-│   │   │   └── Resources/   # ConversationResource, BotUserResource, ExternalSourceResource
-│   │   └── Services/ # AdminPanelInterface (ManagerInterfaceContract implementation)
+│   ├── Admin/        # Admin panel — custom Livewire screens, standard Laravel auth (no Filament)
+│   │   ├── Actions/  # SendReplyAction, InviteOperator
+│   │   ├── AdminServiceProvider.php  # All admin routes: login/logout, /admin→/admin/chats, /admin/chats, /admin/settings/*
+│   │   └── Services/ # AdminPanelInterface + ChannelStatusService + WebhookRegistrationService
 │   ├── External/     # External Sources integration
 │   │   ├── Actions/, Controllers/, DTOs/, Jobs/, Middleware/, Services/
 │   ├── Telegram/     # Telegram bot
@@ -138,6 +157,31 @@ app/
 │       ├── Actions/, Api/, Controllers/, DTOs/, Jobs/, Middleware/, Services/
 ├── Providers/        # AppServiceProvider (binds ManagerInterfaceContract)
 └── Services/         # Shared services (Ai/, Button/, File/, Swagger/, Webhook/)
+
+resources/
+├── css/app.css        # Tailwind v4 @theme tokens: admin design system (Inter, accent, sidebar, input, …)
+├── views/
+│   ├── components/
+│   │   └── admin/    # Shared admin Blade components (Stage 1)
+│   │       ├── sidebar.blade.php, nav-item.blade.php, card.blade.php
+│   │       ├── form-field.blade.php, button-primary.blade.php
+│   │       ├── button-secondary.blade.php, toggle.blade.php
+│   ├── layouts/
+│   │   ├── admin-settings.blade.php  # Dark-sidebar layout for custom settings pages
+│   │   ├── admin-chat.blade.php      # Minimal full-screen layout for the chat workspace + Alpine toast renderer
+│   │   └── admin-auth.blade.php      # Minimal layout for the standalone login screen
+│   └── livewire/
+│       ├── chat/
+│       │   └── conversation-page.blade.php            # View for App\Livewire\Chat\ConversationPage
+│       └── settings/
+│           ├── general-settings-page.blade.php        # View for GeneralSettingsPage
+│           ├── integrations-list-page.blade.php       # View for IntegrationsListPage
+│           ├── integration-channel-page.blade.php    # View for IntegrationChannelPage
+│           ├── ai-assistant-page.blade.php           # View for AiAssistantPage
+│           ├── ai-provider-access-page.blade.php    # View for AiProviderAccessPage
+│           ├── api-webhooks-page.blade.php          # View for ApiWebhooksPage (source card list)
+│           ├── api-webhook-source-page.blade.php   # View for ApiWebhookSourcePage (per-source edit)
+│           └── team-page.blade.php                 # View for TeamPage (operator management)
 ```
 
 ---
@@ -231,43 +275,87 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 
 ### AI Assistant
 
-- AI is disabled by default (`AI_ENABLED=false`)
-- AI runs through a **separate Telegram bot** (`TELEGRAM_AI_BOT_TOKEN`) that is added to the same supergroup
-- The AI bot webhook URL is `POST /api/ai-bot/webhook`, protected by `AiBotQuery` middleware (`TELEGRAM_AI_BOT_SECRET`)
-- `AI_AUTO_REPLY=false` (default): AI posts a draft with "Accept / Cancel" inline buttons; manager reviews before sending
-- `AI_AUTO_REPLY=true`: AI posts the reply directly to the topic; it is immediately sent to the user via `SendReplyAction`
-- The AI bot only replies to messages whose `from.id` equals `TELEGRAM_BOT_ID` (forwarded user messages from the main bot)
+- AI is disabled by default (`ai.enabled = false` in settings DB); can be toggled from the admin panel at `/admin/settings/ai`. The master toggle **cannot be enabled** until the «Бот AI помощника» integration is configured (`telegram_ai.token` set — `ChannelStatusService::telegramAi()`): AI replies post to the supergroup as the AI bot, so without it they fail (Telegram 404). The page shows a notice + link to configure it; disabling is always allowed
+- AI runs through a **separate Telegram bot** (token stored as `telegram_ai.token` in settings DB) that is added to the same supergroup
+- The AI bot webhook URL is `POST /api/ai-bot/webhook`, protected by `AiBotQuery` middleware (secret stored as `telegram_ai.secret` in settings DB)
+- `ai.auto_reply = false` (default): AI posts a draft with "Accept / Cancel" inline buttons; manager reviews before sending
+- `ai.auto_reply = true`: AI posts the reply directly to the topic; it is immediately sent to the user; enabling via admin panel requires explicit confirmation
+- The AI bot processes updates arriving at `POST /api/ai-bot/webhook`; `ShouldAiReply` gates replies on AI enabled, `MANAGER_INTERFACE=telegram_group`, private-chat source, message type, replyable text, and active user — no configured bot ID comparison is used
 - The AI bot does NOT reply when `MANAGER_INTERFACE=admin_panel`
-- Supported providers: OpenAI, DeepSeek, GigaChat (set via `AI_DEFAULT_PROVIDER`)
+- Supported providers: OpenAI, DeepSeek, GigaChat (set via `ai.default_provider` in settings DB or from `/admin/settings/ai`)
 - Register the AI bot webhook with: `docker exec -it pet php artisan ai-bot:set-webhook`
-- AI conversation history is sourced from the `messages` table (no Redis cache), bounded by `AI_MAX_CONTEXT_TOKENS` (default 3000) using a `mb_strlen / 4` token heuristic with sliding-window trimming
-- AI system prompt lives in `resources/ai/system-prompt.blade.php` (Blade template — variables only, no `@if`/`@foreach`/`@include`/`@php`); path is configured by `config/ai.php @ system_prompt_path`
+- AI conversation history is sourced from the `messages` table (no Redis cache), bounded by `ai.max_context_tokens` (default 3000, stored in settings DB) using a `mb_strlen / 4` token heuristic with sliding-window trimming
+- AI system prompt: stored **only in the DB** under `ai.system_prompt` (via `SettingsService`), used **verbatim** — no templating / variable substitution, no file and no default (empty until an admin saves one; an empty value sends no system prompt). The «Системный промпт» field at `/admin/settings/ai` is loaded from and saved to that key (`SettingsService::set('ai.system_prompt', …)`) — no filesystem involved. `AiSystemPromptLoader::render()` reads the DB value and supplies it to every provider at request time
+- AI provider credentials (API keys, base URLs, models, tokens, cert path) are managed at `/admin/settings/ai/{provider}` and stored encrypted in the `settings` table via `SettingsService`. The «Проверить и сохранить» button runs a **verify-before-save** flow (`AiProviderAccessPage::connect()` → `App\Modules\Ai\Services\AiProviderVerificationService`): credentials are checked against the provider API (OpenAI/DeepSeek minimal chat-completion; GigaChat OAuth token request) and nothing is persisted on failure — analogous to channel integrations' `WebhookRegistrationService::verifyX()`
+- AI behaviour settings managed from `/admin/settings/ai`: auto-reply toggle and system prompt only. The `ai.rate_limit.*` and `ai.disable_timeout` settings have been removed entirely (no UI, no registry keys, no internal rate-limit logic). The `ai.max_context_tokens`, `ai.confidence_threshold`, `ai.auto_escalation` and `ai.enable_logging` keys are NOT exposed in the UI — `max_context_tokens`/`confidence_threshold` run on their registry defaults (3000 / 0.8); `auto_escalation`/`enable_logging` are vestigial (logging is always on)
 - AI drafts NEVER write to `messages` (only to `ai_messages`); a `messages` row appears only when the message is actually sent to the user — this invariant is what makes "any outgoing row = delivered" safe for the chat-history assembler
 - AI runs across all user platforms (`telegram`, `vk`, `max`). Triggers: `TelegramBotController::maybeDispatchAi()` for TG, `VkMessageService::maybeDispatchAi()` for VK, `MaxMessageService::maybeDispatchAi()` for Max. Triggering is text-only — attachments do not start AI. Gating still goes through `ShouldAiReply` (TG-DTO and platform-agnostic variants share the same rules: AI_ENABLED, `MANAGER_INTERFACE=telegram_group`, replyable text, user active)
-- Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
+- Final delivery of an AI answer to the user (Accept and auto-reply) is routed by `BotUser.platform` through `App\Modules\Ai\Actions\DeliverAiAnswerToUser` → `SendTelegramMessageJob` / `SendVkMessageJob` / `SendMaxMessageJob`. Any other platform is delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry` by a pluggable module (e.g. the paid Avito package). The Accept callback still edits the supergroup draft via `SendTelegramMessageJob` using the AI bot token regardless of user platform
+- All channel credentials, AI provider credentials, and AI behaviour settings are stored exclusively in the `settings` DB table (no `.env`/`config()` fallback for these keys — `config => null` in registry). Values must be entered via the admin UI. There is **no env-to-DB seeding command** — configure everything from `/admin/settings/*`.
+
+### Settings Persistence Layer
+
+- Runtime-editable application settings are stored in the `settings` table and accessed exclusively via `SettingsService` (`app/Services/Settings/SettingsService.php`)
+- **Reading priority:** DB row → `config()` default (declared in `SettingKeyRegistry`) → `null`. Channel credentials and AI settings have `config => null` (no fallback) — they return `null` until explicitly saved.
+- **Never call `config()` directly** for a setting that may be overridden at runtime — use `app(\App\Services\Settings\SettingsService::class)->get('key')` instead
+- Secret keys (`is_secret=true` in `SettingKeyRegistry`) are encrypted with `Crypt::encrypt()` before DB write and decrypted transparently in `get()` — never read the raw `settings.value` column for secret keys
+- Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
+- Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
+- In-scope keys with `config => null`: all `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`, all `ai.*` credentials and behaviour settings. Infrastructure keys (`app.manager_interface`) retain their `config()` fallback.
+- The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI for editing only `telegram.template_topic_name` (Telegram topic-name template). Bot name (`app.bot_name`), description (`app.bot_description`), and the manager-interface radio (`app.manager_interface`) were removed from this screen. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
+
+### Channel Integrations (Settings)
+
+- The Integrations screen (`/admin/settings/integrations`, `app/Livewire/Settings/IntegrationsListPage.php`) shows Telegram, Telegram AI bot, VK, MAX channel cards with connection status computed by `ChannelStatusService`
+- Per-channel config forms (`/admin/settings/integrations/{channel}`, `IntegrationChannelPage`) let admins configure tokens, keys, and identifiers for each platform. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`
+- Telegram channel page (`channel=telegram`) covers: `telegram.group_id`, `telegram.token`(secret), `telegram.secret_key`(secret) — **all three required** (`IntegrationChannelPage::validateFields()` blocks «Сохранить»/`connect()` with per-field errors until each is filled; fields are pre-filled from settings, so an existing config already satisfies this). The `telegram.template_topic_name` field moved to the General settings screen; the `telegram.bot_id` setting was removed (unused at runtime)
+- Telegram AI bot page (`channel=telegram_ai`) has two inputs: `telegram_ai.token`(secret) and `telegram_ai.secret`(secret) — **both required** (`IntegrationChannelPage::validateFields()` blocks «Сохранить»/`connect()` with per-field errors until filled; fields are pre-filled from settings, so an existing config already satisfies this). The bot's **`telegram_ai.id` and `telegram_ai.username` are captured automatically** from `getMe` during the verify-before-save step and persisted — there is no manual username field. (`telegram_ai.id`/`telegram_ai.username` are informational — not compared at runtime.) Webhook registration uses `php artisan ai-bot:set-webhook` (shown in the instruction panel)
+- Channel config is read/written exclusively via `SettingsService` using the registry keys `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`
+- All secret fields (tokens, keys) are rendered as `type="password"` inputs; blank submission does not overwrite an existing stored secret
+- The primary action button is **«Сохранить»** and follows a **verify-before-save** flow: (1) field validation, (2) resolve verification token (entered value or stored fallback), (3) call `WebhookRegistrationService::verifyX($token)` — if it fails, show error and do NOT persist anything; (4) on success, persist via `SettingsService`, then register webhook (telegram|vk|max) or show success notice (telegram_ai)
+- `WebhookRegistrationService` provides `verifyTelegram/verifyVk/verifyMax($token)` (pre-save platform check, explicit token) and `registerTelegram/registerVk/registerMax()` (webhook registration, reads from `SettingsService`)
+- Verify methods: Telegram uses `getMe`, VK uses `groups.getById`, MAX uses `GET /me` — all with a 10 s timeout, catch exceptions → `success=false`
+- Tokens are never logged — only non-sensitive context (registered URL, HTTP status code)
+- See `rules/domain/admin-panel.md` (BR-013 through BR-016) and `rules/process/security.md` (Secrets in the DB settings table)
+
+### Team Screen (`/admin/settings/team`)
+
+- The Team screen (`app/Livewire/Settings/TeamPage.php`) is admin-only — non-admins are redirected to `admin.settings.general` in `mount()` (see `rules/domain/admin-panel.md` BR-026)
+- Inviting a new operator calls `App\Modules\Admin\Actions\InviteOperator::execute(email, role)`: creates the `User` immediately with a 16-char secure password (`Str::password(16)`) and returns `['user', 'password']` — **no email is sent** (see BR-027)
+- `TeamPage::invite()` reveals the generated password to the admin once (copy/dismiss) so it can be handed to the operator; the plain-text password is NEVER logged
+- Delete requires a two-step confirmation (`confirmDelete(userId)` → `deleteMember()`). Admins cannot delete themselves — `deleteMember()` guards against `Auth::id() === $confirmDeleteId` (see BR-028)
+- Online status: v1 stub — renders a «—» placeholder badge. No `last_seen_at` column or tracking middleware. Real online-tracking is a separate future task
+- Avatar initials: deterministic, derived from user name (two-word: first letters; single-word: first 2 chars) or email local-part fallback; color: `crc32(email) % 8` from 8-color palette
 
 ### External Sources
 
 - Requests must be authenticated with a bearer token from `external_source_access_tokens`
 - When the team replies to an external user, a webhook is sent to `external_sources.webhook_url`
+- Bearer tokens are managed in the admin panel at `/admin/settings/api-webhooks` (`ApiWebhooksPage`) — admin-only
+- Token length: 64 characters (`Str::random(64)` in `ExternalSourceTokensService::generateToken()`)
+- Token active flag: `external_source_access_tokens.active` — inactive tokens (`active=false`) are rejected by `ApiQuery` middleware with 401
+- Token values are never logged or displayed in full — only a one-time reveal after regeneration, followed by dismissal
+- IP allowlist: `external_sources.allowed_ips` (JSON, editable on the per-source page `/admin/settings/api-webhooks/{source}`) restricts which IPs may call the API. Non-empty → `ApiQuery` rejects (403) requests whose IP isn't listed; empty/NULL → no restriction (`ExternalSource::isIpAllowed()`). The per-source edit page no longer has the secret-key/events design placeholders.
+- See `rules/domain/admin-panel.md` (BR-023, BR-024, BR-025) and `rules/domain/external-sources.md`
 
 ### Feedback Form
 
-- When `CloseTopic::execute()` closes a conversation, `SendFeedbackForm` creates a `Feedback` record (`status='awaiting_rating'`) and sends a 5-star inline-keyboard rating form to the user on their platform (Telegram/VK/Max)
+- When `CloseTopic::execute()` closes a conversation, `SendFeedbackForm` creates a `Feedback` record (`status='awaiting_rating'`) and sends a 5-star inline-keyboard rating form to the user on their platform (Telegram/VK/Max; other platforms are delegated to a `PlatformChannel` registered in `App\Platform\PlatformChannelRegistry`, e.g. the paid Avito module)
 - Telegram callback_data format: `feedback_rate_{botUserId}_{feedbackId}_{score}` (score 1..5) — handled in `TelegramBotController::checkBotQuery()`
 - VK rating callbacks arrive as `type=message_event` with `payload.command` containing `feedback_rate_*` — handled in `VkBotController`
 - Max rating callbacks arrive as `update_type=message_callback` with `callback.payload` containing `feedback_rate_*` — handled in `MaxBotController`
 - On rating click: `HandleFeedbackRating` saves `rating`, sets `status='completed_no_comment'`, edits message to thank-you text. `comment` stays NULL — no comment capture is implemented
 - Every close event creates a new `Feedback` record — history accumulates
-- Feedback records are viewable in Filament admin via `FeedbackResource` (read-only: List + View) and via `FeedbacksRelationManager` on the BotUser detail page
+- `Feedback` records persist in the DB; the legacy admin UI for them was removed (a redesigned screen is pending)
 
 ### Manager Interface
 
 - `MANAGER_INTERFACE=telegram_group` (default) — managers work via Telegram supergroup with forum topics
-- `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin` web panel (Filament 3)
-- Switching: change `.env` + restart the `php-fpm` container (`docker compose restart app`)
-- Does not require `php artisan migrate` or any DB changes
-- See `rules/domain/admin-panel.md` for full rules
+- `MANAGER_INTERFACE=admin_panel` — managers work via the `/admin/chats` workspace (full-screen, chrome-free, `App\Livewire\Chat\ConversationPage`)
+- Switching via `.env` only: change `MANAGER_INTERFACE` + `docker compose restart app`. **This is no longer editable from the admin panel** — the General Settings screen's manager-interface radio was removed.
+- The `ManagerInterfaceContract` DI binding in `AppServiceProvider::register()` reads from `config('app.manager_interface')` at boot, NOT from `SettingsService` — this is intentional to avoid DB dependency at container startup
+- Does not require `php artisan migrate` or any DB changes (for mode switching itself)
+- See `rules/domain/admin-panel.md` for full rules (BR-001 through BR-025)
 
 ---
 
@@ -362,8 +450,9 @@ tests/
 
 | Hook | Script | What it checks |
 |---|---|---|
-| `pre-commit` | `linting/pre-commit-check.sh` | Laravel Pint formatting |
 | `pre-push` | `linting/pre-push-check.sh` | PHPStan level 6 + PHPUnit |
+
+The `pre-commit` and `prepare-commit-msg` hooks have been removed. Pint formatting is not enforced by a local hook or CI at this time — run it manually before committing (`vendor/bin/pint`). PHPStan and tests are enforced by CI and by the `pre-push` hook.
 
 Never bypass hooks with `--no-verify`.
 

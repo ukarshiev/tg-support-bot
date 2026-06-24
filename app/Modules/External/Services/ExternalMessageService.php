@@ -5,6 +5,7 @@ namespace App\Modules\External\Services;
 use App\Modules\External\DTOs\ExternalMessageDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendExternalTelegramMessageJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class ExternalMessageService extends ExternalService
@@ -18,7 +19,7 @@ class ExternalMessageService extends ExternalService
         $this->messageParamsDTO = TGTextMessageDto::from([
             'methodQuery' => 'sendMessage',
             'typeSource' => 'private',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
         ]);
     }
@@ -37,7 +38,7 @@ class ExternalMessageService extends ExternalService
 
             $this->sendMessage();
         } catch (\Throwable $e) {
-            Log::channel('loki')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
         }
     }
 
@@ -46,6 +47,15 @@ class ExternalMessageService extends ExternalService
      */
     protected function sendMessage(): void
     {
+        // Always-both: without a Telegram group the admin workspace is the only
+        // destination, so persist the incoming message directly. With a group
+        // configured, the existing job both forwards and persists (unchanged).
+        if (! $this->groupConfigured()) {
+            $this->persistIncoming($this->update->text);
+
+            return;
+        }
+
         $this->messageParamsDTO->text = $this->update->text;
 
         SendExternalTelegramMessageJob::dispatch(

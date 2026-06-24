@@ -63,7 +63,7 @@ return [
 
         'stack' => [
             'driver' => 'stack',
-            'channels' => explode(',', env('LOG_STACK', 'single,loki')),
+            'channels' => explode(',', env('LOG_STACK', 'single')),
             'ignore_exceptions' => false,
         ],
 
@@ -136,13 +136,16 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
-        'loki' => [
-            'driver' => 'monolog',
-            'handler' => \App\Logging\LokiHandler::class,
-            'handler_with' => [
-                'url' => env('LOKI_URL_PUSH', 'http://loki:3100/loki/api/v1/push'),
-            ],
+        // Application event/error channel used across the codebase via
+        // Log::channel('app'). Previously shipped to Loki/Grafana; now a plain
+        // rotating file (storage/logs/app-YYYY-MM-DD.log) — tail it with
+        // `php artisan pail` or browse in Telescope's Logs tab.
+        'app' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/app.log'),
             'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
         ],
     ],
 

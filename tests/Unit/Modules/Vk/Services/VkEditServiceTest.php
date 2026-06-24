@@ -47,7 +47,7 @@ class VkEditServiceTest extends TestCase
 
         $this->assertEquals($dtoNewMessage->text, $jobData->queryParams->text);
         $this->assertEquals($this->botUser->topic_id, $jobData->queryParams->message_thread_id);
-        $this->assertEquals(config('traffic_source.settings.telegram.group_id'), $jobData->queryParams->chat_id);
+        $this->assertEquals('-100000000000', $jobData->queryParams->chat_id);
         $this->assertEquals($dtoNewMessage, $jobData->updateDto);
 
         $whereMessageParams = [
@@ -79,7 +79,7 @@ class VkEditServiceTest extends TestCase
 
         $this->assertEquals($dtoUpdateMessage->text, $jobData->queryParams->text);
         $this->assertEquals($this->botUser->topic_id, $jobData->queryParams->message_thread_id);
-        $this->assertEquals(config('traffic_source.settings.telegram.group_id'), $jobData->queryParams->chat_id);
+        $this->assertEquals('-100000000000', $jobData->queryParams->chat_id);
         $this->assertEquals($dtoUpdateMessage, $jobData->updateDto);
     }
 }

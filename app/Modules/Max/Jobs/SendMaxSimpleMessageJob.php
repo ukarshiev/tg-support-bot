@@ -38,9 +38,36 @@ class SendMaxSimpleMessageJob extends AbstractSendMessageJob
     public function handle(): void
     {
         try {
-            $this->maxMethods->sendQuery($this->queryParams->methodQuery, $this->queryParams->toArray());
+            $response = $this->maxMethods->sendQuery(
+                $this->queryParams->methodQuery,
+                $this->queryParams->toArray()
+            );
+
+            // A freshly uploaded attachment may not be processed by MAX yet —
+            // retry with backoff on `attachment.not.ready` (file/image replies).
+            $retryDelays = [2, 4, 8, 16, 30];
+
+            foreach ($retryDelays as $delay) {
+                if ($response->response_code === 200) {
+                    return;
+                }
+
+                if (!str_contains($response->error_message ?? '', 'attachment.not.ready')) {
+                    throw new \Exception($response->error_message ?? 'SendMaxSimpleMessageJob: unknown error', 1);
+                }
+
+                sleep($delay);
+                $response = $this->maxMethods->sendQuery(
+                    $this->queryParams->methodQuery,
+                    $this->queryParams->toArray()
+                );
+            }
+
+            if ($response->response_code !== 200) {
+                throw new \Exception($response->error_message ?? 'SendMaxSimpleMessageJob: attachment not ready after retries', 1);
+            }
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['file' => $e->getFile(), 'line' => $e->getLine()]

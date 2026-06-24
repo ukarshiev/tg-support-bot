@@ -3,6 +3,7 @@
 namespace App\Modules\Max\Api;
 
 use App\Modules\Max\DTOs\MaxAnswerDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use MaxBotApi\Config;
@@ -22,7 +23,7 @@ class MaxMethods
     {
         try {
             $client = new MaxClient(new Config(
-                token: config('traffic_source.settings.max.token'),
+                token: (string) app(SettingsService::class)->get('max.token'),
             ));
 
             $messageId = match ($methodQuery) {
@@ -60,7 +61,7 @@ class MaxMethods
         } catch (\Throwable $e) {
             $isRetryable = str_contains($e->getMessage(), 'attachment.not.ready');
 
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $isRetryable ? 'info' : 'error',
                 'MaxMethods::sendQuery failed | ' . get_class($e) . ': ' . $e->getMessage(),
                 [
@@ -93,7 +94,7 @@ class MaxMethods
      */
     private function sendMessageWithKeyboard(int $userId, string $text, array $keyboard): string
     {
-        $token = config('traffic_source.settings.max.token');
+        $token = (string) app(SettingsService::class)->get('max.token');
         $baseUrl = 'https://platform-api.max.ru';
 
         $body = [
@@ -109,7 +110,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendMessageWithKeyboard response', [
+        Log::channel('app')->info('MaxMethods::sendMessageWithKeyboard response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);
@@ -136,7 +137,7 @@ class MaxMethods
      */
     private function sendImageMessage(int $userId, string $fileToken, string $text = ''): string
     {
-        $token = config('traffic_source.settings.max.token');
+        $token = (string) app(SettingsService::class)->get('max.token');
         $baseUrl = 'https://platform-api.max.ru';
 
         $body = [
@@ -152,7 +153,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendImageMessage response', [
+        Log::channel('app')->info('MaxMethods::sendImageMessage response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);
@@ -178,7 +179,7 @@ class MaxMethods
      */
     private function sendAudioMessage(int $userId, string $fileToken): string
     {
-        $token = config('traffic_source.settings.max.token');
+        $token = (string) app(SettingsService::class)->get('max.token');
         $baseUrl = 'https://platform-api.max.ru';
 
         $body = [
@@ -193,7 +194,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendAudioMessage response', [
+        Log::channel('app')->info('MaxMethods::sendAudioMessage response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);
@@ -220,7 +221,7 @@ class MaxMethods
      */
     private function sendFileMessage(int $userId, string $fileToken, string $text = ''): string
     {
-        $token = config('traffic_source.settings.max.token');
+        $token = (string) app(SettingsService::class)->get('max.token');
         $baseUrl = 'https://platform-api.max.ru';
 
         $body = [
@@ -236,7 +237,7 @@ class MaxMethods
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
-        Log::channel('loki')->info('MaxMethods::sendFileMessage response', [
+        Log::channel('app')->info('MaxMethods::sendFileMessage response', [
             'status' => $response->status(),
             'body' => $response->body(),
         ]);

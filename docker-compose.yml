@@ -7,7 +7,6 @@ services:
         depends_on:
             - pgdb
             - redis
-            - loki
         env_file:
             - .env
         working_dir: /var/www/
@@ -52,21 +51,6 @@ services:
         depends_on:
             - pgdb
             - app
-            - pgadmin
-        networks:
-            - pet
-
-    pgadmin:
-        image: dpage/pgadmin4:latest
-        container_name: pgadmin
-        restart: always
-        depends_on:
-            - pgdb
-        environment:
-            - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
-            - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
-        ports:
-            - ${PGADMIN_PORT}
         networks:
             - pet
 
@@ -79,18 +63,6 @@ services:
         environment:
             - REDIS_PASSWORD=${REDIS_PASSWORD}
         command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
-        networks:
-            - pet
-
-    grafana:
-        image: grafana/grafana:latest
-        container_name: grafana
-        user: "472"
-        environment:
-            GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
-            GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
-        depends_on:
-            - loki
         networks:
             - pet
 
@@ -113,28 +85,24 @@ services:
             - 8.8.8.8
             - 1.1.1.1
 
-    node:
-        build: ./docker/node
-        container_name: node_server
+    scheduler:
+        build: .
+        container_name: laravel_scheduler
         restart: always
-        volumes:
-            - ./docker/node/server.js:/usr/src/app/server.js
         depends_on:
+            - app
             - redis
         env_file:
             - .env
-        ports:
-            - "3001:3000"
+        working_dir: /var/www
+        volumes:
+            - .:/var/www
+        command: php artisan schedule:work
         networks:
             - pet
-
-    loki:
-        image: grafana/loki:latest
-        container_name: loki
-        ports:
-            - ${LOKI_PORT}
-        networks:
-            - pet
+        dns:
+            - 8.8.8.8
+            - 1.1.1.1
 
 volumes:
     pgdata:

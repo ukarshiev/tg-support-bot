@@ -7,7 +7,7 @@ namespace App\Modules\Ai\Services;
 use App\Modules\Ai\Contracts\AiProviderInterface;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
-use Illuminate\Support\Facades\Cache;
+use App\Services\Settings\SettingsService;
 
 abstract class BaseAiProvider implements AiProviderInterface
 {
@@ -24,10 +24,38 @@ abstract class BaseAiProvider implements AiProviderInterface
     public function __construct(string $providerName)
     {
         $this->providerName = $providerName;
-        $this->config = config("ai.providers.{$providerName}", []);
-        $this->apiKey = $this->config['api_key'] ?? '';
+        $this->config = $this->buildProviderConfig($providerName);
+        $this->apiKey = $this->config['api_key'] ?? $this->config['client_secret'] ?? '';
         $this->baseUrl = $this->config['base_url'] ?? '';
         $this->modelName = $this->config['model'] ?? '';
+    }
+
+    /**
+     * Build provider config array from SettingsService for the given provider name.
+     *
+     * @param string $providerName
+     *
+     * @return array<string, mixed>
+     */
+    private function buildProviderConfig(string $providerName): array
+    {
+        $settings = app(SettingsService::class);
+        $prefix = "ai.{$providerName}_";
+
+        $keys = [
+            'api_key', 'client_id', 'client_secret',
+            'base_url', 'model', 'max_tokens', 'temperature', 'path_cert',
+        ];
+
+        $config = [];
+        foreach ($keys as $key) {
+            $value = $settings->get($prefix . $key);
+            if ($value !== null) {
+                $config[$key] = $value;
+            }
+        }
+
+        return $config;
     }
 
     /**
@@ -58,44 +86,6 @@ abstract class BaseAiProvider implements AiProviderInterface
     public function getModelName(): string
     {
         return $this->modelName;
-    }
-
-    /**
-     * Get current rate limiting status.
-     *
-     * @return array
-     */
-    public function getRateLimitStatus(): array
-    {
-        $cacheKey = "ai_rate_limit_{$this->providerName}";
-        $requests = Cache::get($cacheKey, 0);
-        $limit = config('ai.rate_limit.requests_per_minute', 60);
-
-        return [
-            'current_requests' => $requests,
-            'limit' => $limit,
-            'remaining' => max(0, $limit - $requests),
-            'reset_time' => now()->addMinute()->timestamp,
-        ];
-    }
-
-    /**
-     * Check rate limit for current provider.
-     *
-     * @return bool
-     */
-    protected function checkRateLimit(): bool
-    {
-        $cacheKey = "ai_rate_limit_{$this->providerName}";
-        $requests = Cache::get($cacheKey, 0);
-        $limit = config('ai.rate_limit.requests_per_minute', 60);
-
-        if ($requests >= $limit) {
-            return false;
-        }
-
-        Cache::put($cacheKey, $requests + 1, now()->addMinute());
-        return true;
     }
 
     /**
@@ -139,17 +129,17 @@ abstract class BaseAiProvider implements AiProviderInterface
      */
     protected function shouldEscalate(float $confidenceScore): bool
     {
-        $threshold = config('ai.confidence_threshold', 0.8);
+        $threshold = (float) (app(SettingsService::class)->get('ai.confidence_threshold') ?? 0.8);
         return $confidenceScore < $threshold;
     }
 
     /**
-     * Build the rendered system prompt for the given request.
+     * Build the system prompt for the given request.
      *
-     * Delegates to {@see AiSystemPromptLoader::render()} with the minimum
-     * set of variables exposed to the Blade template: `botName`, `platform`,
-     * `today`. The loader is resolved through the container so its
-     * per-request memoization is shared across providers.
+     * Delegates to {@see AiSystemPromptLoader::render()}, which reads the
+     * plain-text prompt file verbatim (no templating). The loader is resolved
+     * through the container so its per-request memoization is shared across
+     * providers.
      *
      * @param AiRequestDto $request
      *
@@ -157,10 +147,6 @@ abstract class BaseAiProvider implements AiProviderInterface
      */
     protected function buildSystemPrompt(AiRequestDto $request): string
     {
-        return app(AiSystemPromptLoader::class)->render([
-            'botName' => (string) config('app.name', 'AI Bot'),
-            'platform' => $request->platform,
-            'today' => now()->toDateString(),
-        ]);
+        return app(AiSystemPromptLoader::class)->render();
     }
 }

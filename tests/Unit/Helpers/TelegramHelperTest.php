@@ -12,7 +12,7 @@ class TelegramHelperTest extends TestCase
 
     public function test_get_file_path(): void
     {
-        $telegramToken = config('traffic_source.settings.telegram.token');
+        $telegramToken = '123:ABC';
         $localFilePath = 'storage/test.jpg';
         $successValue = "https://api.telegram.org/file/bot{$telegramToken}/{$localFilePath}";
 

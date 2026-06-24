@@ -2,6 +2,7 @@
 
 namespace App\Modules\Ai\Middleware;
 
+use App\Services\Settings\SettingsService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +14,7 @@ class AiBotQuery
      * Handle an incoming request.
      *
      * Validates the X-Telegram-Bot-Api-Secret-Token header against
-     * the TELEGRAM_AI_BOT_SECRET configuration value.
+     * the telegram_ai.secret setting stored in the DB via SettingsService.
      *
      * @param Request                                                                          $request
      * @param \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response) $next
@@ -28,15 +29,16 @@ class AiBotQuery
                 throw new \RuntimeException('Secret-Token is missing!');
             }
 
-            if ($receivedToken !== config('traffic_source.settings.telegram_ai.secret')) {
+            $secret = (string) app(SettingsService::class)->get('telegram_ai.secret');
+            if ($receivedToken !== $secret) {
                 throw new \RuntimeException('Secret-Token is invalid!');
             }
 
-            Log::channel('loki')->info(json_encode($request->all()), ['source' => 'ai_bot_request']);
+            Log::channel('app')->info(json_encode($request->all()), ['source' => 'ai_bot_request']);
 
             return $next($request);
         } catch (\Throwable $e) {
-            Log::channel('loki')->warning('AiBotQuery: rejected with 403', [
+            Log::channel('app')->warning('AiBotQuery: rejected with 403', [
                 'source' => 'ai_bot_forbidden',
                 'reason' => $e->getMessage(),
                 'has_secret_header' => $request->hasHeader('X-Telegram-Bot-Api-Secret-Token'),

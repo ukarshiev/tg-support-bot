@@ -17,12 +17,4 @@ class SimplePage
             return view('site.home_client_version');
         }
     }
-
-    /**
-     * @return View
-     */
-    public function liveChatPromo(): View
-    {
-        return view('site.live_chat_promo');
-    }
 }

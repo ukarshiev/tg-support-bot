@@ -9,7 +9,6 @@ use App\Modules\Ai\Services\AiSystemPromptLoader;
 use App\Modules\Telegram\Jobs\SendAiTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -36,22 +35,23 @@ class SendAiTelegramMessageJobTest extends TestCase
 
         Queue::fake();
 
-        Config::set('ai.providers.gigachat.client_secret', 'test_secret');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.gigachat_client_secret', 'test_secret');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.gigachat_base_url', 'https://gigachat.devices.sberbank.ru/api/v1');
 
         $loader = Mockery::mock(AiSystemPromptLoader::class);
         $loader->shouldReceive('render')->andReturn('System prompt');
         $this->app->instance(AiSystemPromptLoader::class, $loader);
 
-        $this->groupId = time();
-        config(['traffic_source.settings.telegram.group_id' => $this->groupId]);
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $this->groupId = (int) $settings->get('telegram.group_id');
 
         $this->telegramAiToken = 'test_ai_token';
-        config(['traffic_source.settings.telegram_ai.token' => $this->telegramAiToken]);
+        $settings->set('telegram_ai.token', $this->telegramAiToken);
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
 
         $this->provider = 'gigachat';
-        $this->baseProviderUrl = config('ai.providers.gigachat.base_url');
+        $this->baseProviderUrl = 'https://gigachat.devices.sberbank.ru/api/v1';
     }
 
     protected function tearDown(): void

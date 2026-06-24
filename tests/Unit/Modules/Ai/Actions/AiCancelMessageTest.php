@@ -30,8 +30,8 @@ class AiCancelMessageTest extends TestCase
 
         $this->groupId = time();
 
-        config(['traffic_source.settings.telegram_ai.token' => 'test_token']);
-        config(['traffic_source.settings.telegram.group_id' => $this->groupId]);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', 'test_token');
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.group_id', (string) $this->groupId);
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 123;
@@ -74,5 +74,29 @@ class AiCancelMessageTest extends TestCase
         $this->assertEquals($this->botUser->id, $firstJob->botUserId);
         $this->assertEquals($this->groupId, $firstJob->queryParams->chat_id);
         $this->assertEquals('deleteMessage', $firstJob->queryParams->methodQuery);
+
+        // Row must still exist but with status = cancelled (not deleted).
+        $this->assertDatabaseHas('ai_messages', [
+            'id' => $messageAiData->id,
+            'status' => 'cancelled',
+        ]);
+    }
+
+    public function test_execute_for_draft_marks_cancelled(): void
+    {
+        $draft = \App\Models\AiMessage::create([
+            'bot_user_id' => $this->botUser->id,
+            'message_id' => null,
+            'text_ai' => 'Draft to cancel',
+            'text_manager' => '',
+            'status' => \App\Models\AiMessage::STATUS_PENDING,
+        ]);
+
+        (new AiCancelMessage())->executeForDraft($draft);
+
+        $this->assertDatabaseHas('ai_messages', [
+            'id' => $draft->id,
+            'status' => 'cancelled',
+        ]);
     }
 }

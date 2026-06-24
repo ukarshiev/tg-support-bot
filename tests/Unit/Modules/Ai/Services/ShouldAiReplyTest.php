@@ -5,11 +5,14 @@ namespace Tests\Unit\Modules\Ai\Services;
 use App\Models\BotUser;
 use App\Modules\Ai\Services\ShouldAiReply;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class ShouldAiReplyTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -48,10 +51,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_true_on_happy_path(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(),
@@ -63,25 +63,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_when_ai_disabled(): void
     {
-        config([
-            'ai.enabled' => false,
-            'app.manager_interface' => 'telegram_group',
-        ]);
-
-        $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
-            $this->makeUpdate(),
-            $this->makeBotUser(),
-        );
-
-        $this->assertFalse($result);
-    }
-
-    public function test_returns_false_for_admin_panel_interface(): void
-    {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'admin_panel',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', false);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(),
@@ -93,10 +75,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_for_non_private_chat(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(typeSource: 'supergroup'),
@@ -108,10 +87,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_for_callback_query(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(typeQuery: 'callback_query'),
@@ -123,10 +99,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_for_slash_command(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(text: '/start'),
@@ -138,10 +111,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_for_empty_text(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(text: '   '),
@@ -153,10 +123,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_for_null_text(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(text: null),
@@ -168,10 +135,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_when_bot_user_is_null(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(),
@@ -183,10 +147,7 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_when_bot_user_is_banned(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(),
@@ -198,14 +159,35 @@ class ShouldAiReplyTest extends TestCase
 
     public function test_returns_false_when_bot_user_is_closed(): void
     {
-        config([
-            'ai.enabled' => true,
-            'app.manager_interface' => 'telegram_group',
-        ]);
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
 
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(),
             $this->makeBotUser(closed: true),
+        );
+
+        $this->assertFalse($result);
+    }
+
+    public function test_bot_user_text_returns_true_when_ai_enabled(): void
+    {
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
+
+        $result = (new ShouldAiReply())->shouldGenerateForBotUserText(
+            $this->makeBotUser(),
+            'hello',
+        );
+
+        $this->assertTrue($result);
+    }
+
+    public function test_bot_user_text_returns_false_when_ai_disabled(): void
+    {
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', false);
+
+        $result = (new ShouldAiReply())->shouldGenerateForBotUserText(
+            $this->makeBotUser(),
+            'hello',
         );
 
         $this->assertFalse($result);

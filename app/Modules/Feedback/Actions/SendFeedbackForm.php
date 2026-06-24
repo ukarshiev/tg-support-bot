@@ -10,6 +10,7 @@ use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
+use App\Platform\PlatformChannelRegistry;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\Log;
  * - telegram — SendTelegramSimpleQueryJob with inline_keyboard (5 star buttons)
  * - vk       — SendVkSimpleMessageJob with VK callback keyboard (5 buttons)
  * - max      — SendMaxMessageJob with Max inline keyboard (5 buttons)
+ * - other    — delegated to a PlatformChannel registered in PlatformChannelRegistry
+ *              by a pluggable module (e.g. the paid Avito package)
  *
  * callback_data / payload format: feedback_rate_{botUserId}_{score}
  * e.g. feedback_rate_42_3
@@ -43,7 +46,7 @@ class SendFeedbackForm
             'closed_at' => now(),
         ]);
 
-        Log::channel('loki')->info('SendFeedbackForm: created feedback record', [
+        Log::channel('app')->info('SendFeedbackForm: created feedback record', [
             'source' => 'feedback_form_created',
             'bot_user_id' => $botUser->id,
             'feedback_id' => $feedback->id,
@@ -64,7 +67,21 @@ class SendFeedbackForm
                 break;
 
             default:
-                Log::channel('loki')->warning('SendFeedbackForm: unsupported platform, skipping delivery', [
+                $channel = app(PlatformChannelRegistry::class)->for($botUser->platform);
+
+                if ($channel !== null) {
+                    $channel->sendFeedbackForm($botUser, $feedback->id);
+
+                    Log::channel('app')->info('SendFeedbackForm: delivered via registered channel', [
+                        'source' => 'feedback_form_registered_channel',
+                        'bot_user_id' => $botUser->id,
+                        'feedback_id' => $feedback->id,
+                        'platform' => $botUser->platform,
+                    ]);
+                    break;
+                }
+
+                Log::channel('app')->warning('SendFeedbackForm: unsupported platform, skipping delivery', [
                     'source' => 'feedback_form_unsupported_platform',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,

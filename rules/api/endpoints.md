@@ -64,6 +64,44 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | `DELETE` | `/api/external/{external_id}/messages` | `ApiQuery` | Delete a message |
 | `POST` | `/api/external/{external_id}/files` | `ApiQuery` | Upload a file |
 
+### Widget Gateway
+
+> Auth: `X-Widget-Key: <public_key>` header (no Bearer token). Protected by `WidgetGate` middleware (`app/Modules/External/Middleware/WidgetGate.php`).
+
+| Method | Path | Middleware | Description |
+|---|---|---|---|
+| `POST` | `/api/widget/{external_id}/messages` | `WidgetGate` | Send a text message from the widget user |
+| `POST` | `/api/widget/{external_id}/files` | `WidgetGate` | Send a file from the widget user (multipart, field: `uploaded_file`) |
+| `GET` | `/api/widget/{external_id}/messages` | `WidgetGate` | Fetch message history; optional `?after={id}` for incremental polling |
+| `OPTIONS` | `/api/widget/{external_id}/{any}` | `WidgetGate` | CORS preflight — returns 204 with CORS headers, no business logic |
+
+#### Request / Response details
+
+**POST /api/widget/{external_id}/messages**
+- Body: `{ "text": "string, max 4000 chars" }`
+- Response 200: `{ "success": true, "message_id": <int> }`
+- Response 422: validation error
+
+**POST /api/widget/{external_id}/files**
+- Multipart field: `uploaded_file` (max 20 MB)
+- Response 200: `{ "success": true }`
+- Response 422: validation error
+
+**GET /api/widget/{external_id}/messages**
+- Query: `?after=<int>` (optional — returns only messages with `id > after`; omit for full history)
+- Response 200: `{ "messages": [ { "id": int, "text": string|null, "direction": "in"|"out", "created_at": string, "attachments": [] } ] }`
+
+**Error responses**
+- 401 — missing or unknown `X-Widget-Key`
+- 403 — Origin/IP not in allowlist
+- 429 — rate limit exceeded (30/min for send routes, 120/min for polling)
+
+> Widget routes call `ExternalTrafficService` / `ExternalMessageService` / `ExternalFileService` directly — no HTTP loop.
+> Widget assets (`public/widget/widget.js`, `style.css`, `manager.png`) are served statically by the web server (no Laravel route).
+> Embed: `<script src="https://stand/widget/widget.js" data-domain="https://stand" data-key="pub_xxx" defer></script>`
+
+---
+
 ### Files
 
 | Method | Path | Middleware | Description |
@@ -76,31 +114,44 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/` | Main landing page |
-| `GET` | `/live_chat_promo` | Live chat promo page |
-| `GET` | `/preview/chat` | Chat widget preview |
 | `GET` | `/docs/swagger-v1-json` | OpenAPI JSON |
 | `GET` | `/docs/swagger-v1-ui` | Swagger UI |
 
-### Admin Panel (Filament 3)
+### Admin Panel (Livewire)
 
-> Auth: session-based. Users are stored in the `users` table. Managed by Filament auth.
-> These routes are rendered server-side by Filament/Livewire — no Swagger annotation required.
+> Auth: session-based, standard Laravel `web` guard. Users are stored in the `users` table. No Filament.
+> These routes are custom full-page Livewire/Blade screens — no Swagger annotation required.
+> Login form submits via Livewire (`App\Livewire\Auth\LoginPage::authenticate()`), so there is no plain `POST /admin/login` route.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/admin` | session | Admin panel home (redirects to first resource) |
-| `GET` | `/admin/login` | — | Login form |
-| `POST` | `/admin/login` | — | Authenticate manager |
-| `POST` | `/admin/logout` | session | Log out |
-| `GET` | `/admin/conversations` | session | List all conversations (`ConversationResource`) |
-| `GET` | `/admin/conversations/{id}` | session | View conversation with message history (`ViewConversation`) |
-| `GET` | `/admin/bot-users` | session | List all bot users (`BotUserResource`) |
-| `GET` | `/admin/bot-users/{id}` | session | View bot user detail with feedback history (`ViewBotUser`) |
-| `GET` | `/admin/feedbacks` | session | List all feedback records (`FeedbackResource`) |
-| `GET` | `/admin/feedbacks/{id}` | session | View single feedback record (`ViewFeedback`) |
-| `GET` | `/admin/external-sources` | session | List external sources (`ExternalSourceResource`) |
-| `GET` | `/admin/external-sources/create` | session | Create external source form |
-| `GET` | `/admin/external-sources/{id}/edit` | session | Edit external source form |
+| `GET` | `/admin` | session | Panel root — redirects to `/admin/chats` — name `admin.home` |
+| `GET` | `/admin/login` | guest | Login screen (`App\Livewire\Auth\LoginPage`) — name `login` |
+| `POST` | `/admin/logout` | session | Log out — name `admin.logout` |
+| `GET` | `/admin/chats` | session | Chat workspace (`App\Livewire\Chat\ConversationPage`, custom Livewire full-page) — name `admin.chats` |
+| `GET` | `/admin/settings/general` | session | General settings page (`GeneralSettingsPage`, custom Livewire) — name `admin.settings.general` |
+| `GET` | `/admin/settings/integrations` | session | Integration channels list (`IntegrationsListPage`, custom Livewire) — name `admin.settings.integrations` |
+| `GET` | `/admin/settings/integrations/{channel}` | session | Per-channel config form (`IntegrationChannelPage`; channel ∈ telegram\|telegram_ai\|vk\|max) — name `admin.settings.integrations.channel` |
+| `GET` | `/admin/settings/ai` | session | AI assistant settings (`AiAssistantPage`, custom Livewire) — name `admin.settings.ai` |
+| `GET` | `/admin/settings/ai/{provider}` | session | Per-provider access settings (`AiProviderAccessPage`) — name `admin.settings.ai.provider` |
+| `GET` | `/admin/settings/api-webhooks` | session (admin only) | API and webhooks list (`ApiWebhooksPage`, custom Livewire) — name `admin.settings.api-webhooks` |
+| `GET` | `/admin/settings/api-webhooks/{source}` | session (admin only) | Per-source config (`ApiWebhookSourcePage`; source ∈ `[0-9]+`) — name `admin.settings.api-webhooks.source` |
+| `GET` | `/admin/settings/team` | session (admin only) | Team management screen (`TeamPage`, custom Livewire) — name `admin.settings.team` |
+| `GET` | `/admin/bot-user-avatars/{botUser}` | session | Stream locally-stored bot user avatar (fetched by `EnrichBotUserProfileJob`); `avatar_path` must start with `avatars/` — name `admin.bot-user-avatar` |
+| `GET` | `/admin/team-member-avatars/{user}` | session | Stream locally-stored team member (operator) avatar (uploaded via Team admin UI); `avatar_path` must start with `avatars/` and contain no `..` — name `admin.team-member-avatar` |
+
+> The legacy Filament resource routes (`/admin/conversations`, `/admin/bot-users`, `/admin/feedbacks`, `/admin/external-sources`) were removed when the admin was rebuilt as custom Livewire screens, and Filament itself was later removed entirely. The underlying models, services, and artisan commands are unchanged.
+
+### Monitoring (Laravel Telescope)
+
+> Debug/inspection dashboard provided by the `laravel/telescope` package (registered automatically).
+> Rendered server-side — no Swagger annotation required. Entries stored in the `telescope_entries` tables (PostgreSQL); pruned daily by the scheduled `telescope:prune --hours=48`.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/telescope` | session (admin only) | Telescope dashboard — requests, exceptions, logs, queries, jobs, cache, redis, events, etc. Path configurable via `TELESCOPE_PATH` |
+
+> Authorization: gated by the middleware stack `['web', 'auth', App\Http\Middleware\TelescopeAccess::class]` (in `config/telescope.php` `middleware`). Guests are redirected to `/admin/login` (302) by the `auth` middleware; authenticated non-admins get **403**; admins reach the dashboard. HTTP Basic auth was removed — its `401` `WWW-Authenticate` challenge is stripped by the upstream edge proxy in front of the production domain, so the login prompt never reached the browser. Independent of `APP_DEBUG` (set `TELESCOPE_ENABLED=false` to disable entirely). See `process/security.md` §7 and `process/observability.md`.
 
 ### Telegram callback_data prefixes (main bot webhook)
 
@@ -134,6 +185,14 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 - Validates `Authorization: Bearer {token}` against `external_source_access_tokens` table
 - Only `active = true` tokens are accepted
 - Rejects with `401` if token is missing or invalid
+
+### WidgetGate
+- Reads `X-Widget-Key` header; resolves to an `ExternalSource` by `public_key`; rejects with `401` if not found
+- Calls `$source->isRequestAllowed($request)` (IP + Origin/Referer host check against `allowed_ips`); rejects with `403` if denied
+- Rate limits: 30/min for POST (send) routes, 120/min for GET (poll) routes, keyed by `{public_key}:{client_ip}`
+- Sets `Access-Control-Allow-Origin = request Origin` (+ methods/headers) CORS headers on every response
+- Handles OPTIONS preflight → 204 (no business logic)
+- Attaches resolved `ExternalSource` to `$request->attributes->get('widget_source')`
 
 ---
 

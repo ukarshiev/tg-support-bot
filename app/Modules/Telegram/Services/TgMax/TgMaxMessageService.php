@@ -45,7 +45,7 @@ class TgMaxMessageService extends FromTgMessageService
                 $this->sendMessage($text);
             }
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['file' => $e->getFile(), 'line' => $e->getLine()]

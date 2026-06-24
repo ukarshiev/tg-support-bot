@@ -4,36 +4,32 @@ declare(strict_types=1);
 
 namespace App\Modules\Ai\Services;
 
-use Illuminate\Support\Facades\View;
+use App\Services\Settings\SettingsService;
 
 class AiSystemPromptLoader
 {
+    /** Settings key under which the prompt is stored. */
+    public const SETTING_KEY = 'ai.system_prompt';
+
     private ?string $cached = null;
 
-    private ?array $cachedVars = null;
-
     /**
-     * Render the system prompt Blade template with the given variables.
+     * The system prompt for AI requests.
      *
-     * Result is memoized in the object's lifetime. Repeated calls with
-     * identical $vars return the cached string without re-reading the
-     * Blade file.
+     * Stored only in the DB (`ai.system_prompt` via SettingsService) and used
+     * verbatim — no templating / variable substitution. Returns '' when unset.
+     * Memoized for the object's lifetime.
      *
-     * @param array<string, mixed> $vars Variables exposed to the Blade template
-     *
-     * @return string Rendered prompt
+     * @return string Prompt text
      */
-    public function render(array $vars = []): string
+    public function render(): string
     {
-        if ($this->cached !== null && $this->cachedVars === $vars) {
+        if ($this->cached !== null) {
             return $this->cached;
         }
 
-        $path = (string) config('ai.system_prompt_path');
+        $stored = app(SettingsService::class)->get(self::SETTING_KEY);
 
-        $this->cached = View::file($path, $vars)->render();
-        $this->cachedVars = $vars;
-
-        return $this->cached;
+        return $this->cached = is_string($stored) ? $stored : '';
     }
 }

@@ -4,7 +4,7 @@
 # PHPStan check
 # -----------------------------
 echo -e "🔍 [PHPStan] Checking entire project..."
-vendor/bin/phpstan analyse --error-format=table --no-progress
+vendor/bin/phpstan analyse --error-format=table --no-progress --memory-limit=1G
 if [ $? -ne 0 ]; then
     echo -e "❌ Push blocked due to PHPStan errors."
     exit 1
@@ -15,8 +15,8 @@ fi
 # -----------------------------
 # Laravel / Artisan tests
 # -----------------------------
-echo -e "🧪 Running Laravel tests (php artisan test)..."
-php artisan test
+echo -e "🧪 Running Laravel tests (phpunit)..."
+php -d memory_limit=1G vendor/bin/phpunit
 if [ $? -ne 0 ]; then
     echo -e "❌ Push blocked due to failing tests."
     exit 1

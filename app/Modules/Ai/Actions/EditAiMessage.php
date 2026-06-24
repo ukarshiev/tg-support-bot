@@ -8,6 +8,7 @@ use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
 
@@ -23,7 +24,7 @@ class EditAiMessage
     public function execute(TelegramUpdateDto $update): void
     {
         try {
-            if (empty(config('traffic_source.settings.telegram_ai.token'))) {
+            if (empty((string) app(SettingsService::class)->get('telegram_ai.token'))) {
                 throw new Exception('AI bot token not specified!', 1);
             }
 
@@ -65,10 +66,10 @@ class EditAiMessage
                 $botUser->id,
                 $update,
                 TGTextMessageDto::from([
-                    'token' => config('traffic_source.settings.telegram_ai.token'),
+                    'token' => (string) app(SettingsService::class)->get('telegram_ai.token'),
                     'methodQuery' => 'editMessageText',
                     'typeSource' => 'supergroup',
-                    'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                    'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                     'message_id' => $messageData->message_id,
                     'message_thread_id' => $update->messageThreadId,
                     'text' => $textMessage,
@@ -93,7 +94,7 @@ class EditAiMessage
                 'incoming',
             );
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), ['source' => 'ai_error']);
+            Log::channel('app')->error($e->getMessage(), ['source' => 'ai_error']);
         }
     }
 }

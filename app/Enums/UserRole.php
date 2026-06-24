@@ -26,19 +26,6 @@ enum UserRole: string
     }
 
     /**
-     * Badge color for Filament.
-     *
-     * @return string
-     */
-    public function color(): string
-    {
-        return match ($this) {
-            self::Admin => 'danger',
-            self::Manager => 'info',
-        };
-    }
-
-    /**
      * @return array<string, string>
      */
     public static function options(): array

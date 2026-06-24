@@ -8,7 +8,6 @@ use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use phpDocumentor\Reflection\Exception;
 
 class DeepSeekProvider extends BaseAiProvider
 {
@@ -29,17 +28,13 @@ class DeepSeekProvider extends BaseAiProvider
     public function processMessage(AiRequestDto $request): ?AiResponseDto
     {
         try {
-            if (!$this->checkRateLimit()) {
-                throw new Exception('OpenAI rate limit exceeded');
-            }
-
             $this->ensureValidToken();
 
             $response = $this->makeApiCall($request);
 
             return $this->parseApiResponse($response, $request);
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), [
+            Log::channel('app')->error($e->getMessage(), [
                 'source' => 'ai_error',
                 'user_id' => $request->userId,
                 'platform' => $request->platform,
@@ -96,7 +91,7 @@ class DeepSeekProvider extends BaseAiProvider
 
     private function refreshAccessToken(): void
     {
-        $this->accessToken = $this->config['client_secret'];
+        $this->accessToken = $this->config['client_secret'] ?? '';
     }
 
     /**
@@ -116,8 +111,8 @@ class DeepSeekProvider extends BaseAiProvider
         ])->post($this->config['base_url'], [
             'model' => $this->config['model'] ?? 'deepseek-chat',
             'messages' => $messages,
-            'max_tokens' => (int)$this->config['max_tokens'],
-            'temperature' => (float)$this->config['temperature'],
+            'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
+            'temperature' => (float) ($this->config['temperature'] ?? 0.7),
             'stream' => false,
         ]);
 

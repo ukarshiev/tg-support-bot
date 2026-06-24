@@ -32,12 +32,12 @@ rules/
 │  ├─ bot-users.md                    ← Bot user management domain
 │  ├─ ai-assistant.md                 ← AI assistant integration domain
 │  ├─ external-sources.md             ← External source integration domain
-│  └─ admin-panel.md                  ← Admin panel domain (Filament 3, ManagerInterfaceContract)
+│  └─ admin-panel.md                  ← Admin panel domain (Livewire admin, ManagerInterfaceContract)
 ├─ api/
 │  └─ endpoints.md                    ← API contract rules and Swagger reference
 └─ process/
    ├─ architecture-design.md          ← Design before implementation
-   ├─ observability.md                ← Logging, metrics, monitoring (Loki + Grafana)
+   ├─ observability.md                ← Logging, metrics, monitoring (Telescope)
    ├─ ai-workflow.md                  ← AI agent lifecycle rules
    ├─ ci-cd.md                        ← CI/CD and pipeline rules
    ├─ security.md                     ← Security and safe coding rules
@@ -57,7 +57,7 @@ rules/
 | Database | PostgreSQL |
 | Queue | Laravel Queue (Redis) |
 | Containers | Docker |
-| Monitoring | Grafana + Loki + Sentry |
+| Monitoring | Laravel Telescope |
 | Live Chat | Node.js (port 3001) |
 | AI Providers | OpenAI, DeepSeek, GigaChat |
 
@@ -84,7 +84,7 @@ When performing a task, the AI agent **must follow this sequence**:
 | 8 | `domain/external-sources.md` | External integrations domain rules |
 | 9 | `api/endpoints.md` | Understand API contracts. Do not implement endpoints not defined in Swagger |
 | 10 | `process/observability.md` | Ensure logs, metrics, health checks, and request tracing will be included |
-| 11 | `domain/admin-panel.md` | Admin panel domain rules — read before modifying `/admin`, Filament resources, or `SendReplyAction` |
+| 11 | `domain/admin-panel.md` | Admin panel domain rules — read before modifying `/admin`, admin Livewire screens, or `SendReplyAction` |
 | 12 | `process/ci-cd.md` | Validate pipeline rules. Ensure automated testing and deployment constraints |
 | 13 | `process/security.md` | Read security rules before modifying auth, input handling, or secrets |
 | 14 | `process/testing-strategy.md` | Ensure tests will cover all changes and critical paths |
@@ -105,7 +105,7 @@ Business Logic Layer (Services + Actions)
 ManagerInterfaceContract
    /                    \
 TelegramGroupInterface   AdminPanelInterface
-(Telegram forum topics)  (Filament web panel /admin)
+(Telegram forum topics)  (Livewire web panel /admin)
     ↓
 Integration Layer (Modules/Telegram/Api/, Modules/Vk/Api/)
     ↓

@@ -13,6 +13,7 @@ use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Services\ActionService\Send\FromTgMessageService;
 use App\Services\Button\ButtonParser;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class TgExternalMessageService extends FromTgMessageService
@@ -116,12 +117,12 @@ class TgExternalMessageService extends FromTgMessageService
 
             SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
                 'methodQuery' => 'editForumTopic',
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_thread_id' => $this->botUser->topic_id,
                 'icon_custom_emoji_id' => __('icons.outgoing'),
             ]));
         } catch (\Throwable $e) {
-            Log::channel('loki')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
         }
     }
 

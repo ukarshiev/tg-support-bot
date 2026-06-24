@@ -8,7 +8,6 @@ use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiSystemPromptLoader;
 use App\Modules\Ai\Services\DeepSeekProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -30,8 +29,9 @@ class DeepSeekProviderTest extends TestCase
 
         Queue::fake();
 
-        Config::set('ai.default_provider', 'deepseek');
-        Config::set('ai.providers.deepseek.client_secret', 'test_123');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.default_provider', 'deepseek');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.deepseek_client_secret', 'test_123');
+        app(\App\Services\Settings\SettingsService::class)->set('ai.deepseek_base_url', 'https://api.deepseek.com/chat/completions');
 
         $loader = Mockery::mock(AiSystemPromptLoader::class);
         $loader->shouldReceive('render')->andReturn('System prompt');
@@ -41,7 +41,7 @@ class DeepSeekProviderTest extends TestCase
         $this->botUser = BotUser::getUserByChatId($chatId, 'telegram');
 
         $this->provider = 'deepseek';
-        $this->baseProviderUrl = config('ai.providers.deepseek.base_url');
+        $this->baseProviderUrl = 'https://api.deepseek.com/chat/completions';
     }
 
     protected function tearDown(): void

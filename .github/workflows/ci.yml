@@ -19,7 +19,7 @@ jobs:
 
       - name: Run Hadolint on Dockerfiles
         run: |
-          DOCKERFILES=("Dockerfile" "docker/node/Dockerfile")
+          DOCKERFILES=("Dockerfile")
           IGNORE_RULES="DL3008|DL3015"
           ERROR_FOUND=0
 
@@ -131,8 +131,7 @@ jobs:
           mapfile -t md_files < <(find . -type f -name "*.md" \
             -not -path "./node_modules/*" \
             -not -path "./_site/*" \
-            -not -path "./vendor/*" \
-            -not -path "./docker/grafana/plugins/*")
+            -not -path "./vendor/*")
 
           if [ ${#md_files[@]} -eq 0 ]; then
             echo "⚠️ No .md files found. Skipping."

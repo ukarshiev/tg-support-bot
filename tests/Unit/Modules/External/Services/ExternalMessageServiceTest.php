@@ -54,4 +54,29 @@ class ExternalMessageServiceTest extends TestCase
         $this->assertEquals('private', $job->queryParams->typeSource, );
         $this->assertEquals($job->queryParams->message_thread_id, $this->botUser->topic_id);
     }
+
+    public function test_persists_incoming_directly_when_no_group(): void
+    {
+        // Always-both: without a Telegram group the message is saved directly
+        // for the admin workspace and NOT forwarded to any group.
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->forget('telegram.token');
+        $settings->forget('telegram.secret_key');
+        $settings->forget('telegram.group_id');
+
+        (new ExternalMessageService($this->dto))->handleUpdate();
+
+        $this->assertDatabaseHas('external_messages', ['text' => $this->dto->text]);
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $this->botUser->id,
+            'message_type' => 'incoming',
+            'platform' => $this->botUser->platform,
+        ]);
+        Queue::assertNotPushed(SendExternalTelegramMessageJob::class);
+    }
+
+    public function test_external_bot_user_gets_readable_display_name(): void
+    {
+        $this->assertSame('Посетитель сайта', $this->botUser->display_name);
+    }
 }

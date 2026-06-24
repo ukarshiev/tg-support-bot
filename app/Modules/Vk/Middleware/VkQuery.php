@@ -2,6 +2,7 @@
 
 namespace App\Modules\Vk\Middleware;
 
+use App\Services\Settings\SettingsService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -18,12 +19,12 @@ class VkQuery
     public function handle(Request $request, Closure $next): Response
     {
         try {
-            $secretCode = config('traffic_source.settings.vk.secret_key');
+            $secretCode = (string) app(SettingsService::class)->get('vk.secret_key');
             if ($secretCode !== request()->secret) {
                 throw new Exception('Secret-Key is invalid!');
             }
 
-            $this->sendRequestInLoki($request);
+            $this->logRequest($request);
 
             return $next($request);
         } catch (\Throwable $e) {
@@ -39,10 +40,10 @@ class VkQuery
      *
      * @return void
      */
-    private function sendRequestInLoki(Request $request): void
+    private function logRequest(Request $request): void
     {
         $dataRequest = json_encode($request->all());
 
-        Log::channel('loki')->info($dataRequest, ['source' => 'vk_request']);
+        Log::channel('app')->info($dataRequest, ['source' => 'vk_request']);
     }
 }

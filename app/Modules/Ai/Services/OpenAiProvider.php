@@ -8,7 +8,6 @@ use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use phpDocumentor\Reflection\Exception;
 
 class OpenAiProvider extends BaseAiProvider
 {
@@ -27,15 +26,11 @@ class OpenAiProvider extends BaseAiProvider
     public function processMessage(AiRequestDto $request): ?AiResponseDto
     {
         try {
-            if (!$this->checkRateLimit()) {
-                throw new Exception('OpenAI rate limit exceeded');
-            }
-
             $response = $this->makeApiCall($request);
 
             return $this->parseApiResponse($response, $request);
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), [
+            Log::channel('app')->error($e->getMessage(), [
                 'source' => 'ai_error',
                 'user_id' => $request->userId,
                 'platform' => $request->platform,
@@ -64,8 +59,8 @@ class OpenAiProvider extends BaseAiProvider
         ])->post($this->baseUrl . '/chat/completions', [
             'model' => $this->modelName,
             'messages' => $messages,
-            'max_tokens' => (int)$this->config['max_tokens'],
-            'temperature' => (float)$this->config['temperature'],
+            'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
+            'temperature' => (float) ($this->config['temperature'] ?? 0.7),
         ]);
 
         if (!$response->successful()) {

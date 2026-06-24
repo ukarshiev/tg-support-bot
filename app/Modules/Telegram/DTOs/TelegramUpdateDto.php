@@ -3,6 +3,7 @@
 namespace App\Modules\Telegram\DTOs;
 
 use App\Helpers\TelegramHelper;
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
 use Spatie\LaravelData\Data;
 
@@ -26,6 +27,7 @@ use Spatie\LaravelData\Data;
  * @property string|null $fileId
  * @property string|null $fileType
  * @property string|null $username
+ * @property string|null $displayName
  * @property string|null $callbackData
  * @property array|null  $location
  * @property array|null  $contact
@@ -52,6 +54,7 @@ class TelegramUpdateDto extends Data
         public ?string $fileId = null,
         public ?string $fileType = null,
         public ?string $username = null,
+        public ?string $displayName = null,
         public ?string $callbackData = null,
         public ?array  $location = null,
         public ?array  $contact = null,
@@ -75,8 +78,9 @@ class TelegramUpdateDto extends Data
             }
 
             $textMessage = $data[$type]['text'] ?? '';
-            if (!empty($textMessage) && !empty(config('traffic_source.settings.telegram_ai.username'))) {
-                $aiTechMessage = str_contains($data[$type]['text'], config('traffic_source.settings.telegram_ai.username'));
+            $aiUsername = (string) app(SettingsService::class)->get('telegram_ai.username');
+            if (!empty($textMessage) && !empty($aiUsername)) {
+                $aiTechMessage = str_contains($data[$type]['text'], $aiUsername);
             } else {
                 $aiTechMessage = false;
             }
@@ -100,6 +104,7 @@ class TelegramUpdateDto extends Data
                 fileId: TelegramHelper::extractFileId($data),
                 fileType: TelegramHelper::extractFileType($data),
                 username: self::extractUsername($data, $type),
+                displayName: self::extractDisplayName($data, $type),
                 callbackData: $data['callback_query']['data'] ?? null,
                 location: $data['message']['location'] ?? null,
                 contact: $data['message']['contact'] ?? null,
@@ -196,7 +201,29 @@ class TelegramUpdateDto extends Data
      */
     private static function extractUsername(array $data, string $type): ?string
     {
-        return $data[$type]['username'] ?? $data['callback_query']['message']['from']['username'] ?? null;
+        return $data[$type]['from']['username'] ?? $data['callback_query']['from']['username'] ?? null;
+    }
+
+    /**
+     * Compose a display name from first_name + last_name, fallback to username.
+     *
+     * @param array  $data
+     * @param string $type
+     *
+     * @return string|null
+     */
+    private static function extractDisplayName(array $data, string $type): ?string
+    {
+        $firstName = $data[$type]['from']['first_name'] ?? $data['callback_query']['from']['first_name'] ?? null;
+        $lastName = $data[$type]['from']['last_name'] ?? $data['callback_query']['from']['last_name'] ?? null;
+
+        $name = trim(($firstName ?? '') . ' ' . ($lastName ?? ''));
+
+        if ($name !== '') {
+            return $name;
+        }
+
+        return $data[$type]['from']['username'] ?? $data['callback_query']['from']['username'] ?? null;
     }
 
     /**

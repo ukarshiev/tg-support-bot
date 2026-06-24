@@ -13,7 +13,7 @@ use phpDocumentor\Reflection\Exception;
 
 /**
  * Example request:
- * php artisan app:generate-token live_chat http://{bot-domain}:3001/push-message
+ * php artisan app:generate-token source_name https://example.com/webhook
  */
 class GenerateApiToken extends Command
 {

@@ -2,9 +2,9 @@
 
 namespace App\Modules\Telegram\Services\ActionService\Send;
 
-use App\Contracts\ManagerInterfaceContract;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Services\Settings\SettingsService;
 
 /**
  * Class ToTgMessageService
@@ -22,11 +22,8 @@ abstract class ToTgMessageService extends TemplateMessageService
 
     protected TGTextMessageDto $messageParamsDTO;
 
-    protected ManagerInterfaceContract $managerInterface;
-
     public function __construct(mixed $update)
     {
-        $this->managerInterface = app(ManagerInterfaceContract::class);
         try {
             $this->update = $update;
 
@@ -39,10 +36,14 @@ abstract class ToTgMessageService extends TemplateMessageService
                 throw new \RuntimeException('User does not exist!');
             }
 
+            // Use 0 as a safe placeholder when group_id is not yet configured.
+            // The messageParamsDTO is only used when the group is active (group-ON
+            // path); the group-OFF path bypasses it entirely.
+            $groupId = (int) app(SettingsService::class)->get('telegram.group_id');
             $this->messageParamsDTO = TGTextMessageDto::from([
                 'methodQuery' => 'sendMessage',
                 'typeSource' => 'private',
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => $groupId,
                 'message_thread_id' => $this->botUser->topic_id,
             ]);
         } catch (\RuntimeException $e) {

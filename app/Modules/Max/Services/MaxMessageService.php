@@ -3,6 +3,7 @@
 namespace App\Modules\Max\Services;
 
 use App\Models\BotUser;
+use App\Models\Message;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\ShouldAiReply;
@@ -10,6 +11,7 @@ use App\Modules\Max\DTOs\MaxUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendMaxTelegramMessageJob;
 use App\Modules\Telegram\Services\ActionService\Send\ToTgMessageService;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class MaxMessageService extends ToTgMessageService
@@ -32,6 +34,12 @@ class MaxMessageService extends ToTgMessageService
     /**
      * Handle an incoming Max update and route it to the appropriate send method.
      *
+     * When the Telegram supergroup is configured, the message is forwarded to the
+     * user's forum topic and persisted via SendMaxTelegramMessageJob::saveMessage().
+     * When the group is NOT configured, the message is persisted directly so the
+     * admin workspace always shows incoming Max messages (group-OFF path).
+     * The two branches are mutually exclusive: no duplicate rows are created.
+     *
      * @return void
      *
      * @throws \Exception
@@ -43,24 +51,63 @@ class MaxMessageService extends ToTgMessageService
                 throw new \Exception('Unknown event type', 1);
             }
 
-            Log::channel('loki')->info('MaxMessageService: incoming update', [
+            Log::channel('app')->info('MaxMessageService: incoming update', [
                 'text' => $this->update->text,
                 'listFileUrl' => $this->update->listFileUrl,
                 'listAttachments' => $this->update->listAttachments,
                 'rawAttachments' => $this->update->rawData['message']['body']['attachments'] ?? [],
             ]);
 
-            if (!empty($this->update->listAttachments)) {
-                $this->sendAttachments();
-            } elseif (!empty($this->update->text)) {
-                $this->sendMessage();
+            // When the Telegram supergroup is configured, forward to the group topic;
+            // the job persists the row after the API call succeeds.
+            if (!empty((string) app(SettingsService::class)->get('telegram.group_id'))) {
+                if (!empty($this->update->listAttachments)) {
+                    $this->sendAttachments();
+                } elseif (!empty($this->update->text)) {
+                    $this->sendMessage();
+                }
+            } else {
+                // Group-OFF path: persist directly so the admin workspace shows the message.
+                $this->persistIncomingMaxMessage();
+                if (!empty($this->update->text)) {
+                    $this->maybeDispatchAi($this->update->text);
+                }
             }
         } catch (\Throwable $e) {
-            Log::channel('loki')->log(
+            Log::channel('app')->log(
                 $e->getCode() === 1 ? 'warning' : 'error',
                 $e->getMessage(),
                 ['file' => $e->getFile(), 'line' => $e->getLine()]
             );
+        }
+    }
+
+    /**
+     * Persist an incoming Max message directly to the `messages` table without
+     * routing it through the Telegram supergroup.
+     *
+     * Called only when no telegram.group_id is configured. The group-ON path
+     * persists via SendMaxTelegramMessageJob::saveMessage() instead.
+     *
+     * @return void
+     */
+    protected function persistIncomingMaxMessage(): void
+    {
+        $message = Message::create([
+            'bot_user_id' => $this->botUser->id,
+            'platform' => $this->botUser->platform,
+            'message_type' => 'incoming',
+            'from_id' => $this->update->from_id ?? 0,
+            'to_id' => 0,
+            'text' => $this->update->text ?? null,
+        ]);
+
+        foreach ($this->update->listAttachments as $attachment) {
+            $message->attachments()->create([
+                'file_id' => $attachment['file_id'],
+                'file_type' => $attachment['type'],
+                'file_name' => $attachment['file_name'] ?? null,
+            ]);
         }
     }
 
@@ -106,7 +153,7 @@ class MaxMessageService extends ToTgMessageService
                     break;
 
                 default:
-                    Log::channel('loki')->warning('MaxMessageService: unsupported attachment type', [
+                    Log::channel('app')->warning('MaxMessageService: unsupported attachment type', [
                         'type' => $type,
                         'url' => $url,
                     ]);
@@ -127,13 +174,13 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendPhoto',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'photo' => $url,
             'caption' => $caption !== '' ? $caption : null,
         ]);
 
-        Log::channel('loki')->info('MaxMessageService: dispatchPhoto', [
+        Log::channel('app')->info('MaxMessageService: dispatchPhoto', [
             'photo' => $url,
             'caption' => $caption,
         ]);
@@ -158,13 +205,13 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendDocument',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'document' => $url,
             'caption' => $caption !== '' ? $caption : null,
         ]);
 
-        Log::channel('loki')->info('MaxMessageService: dispatchDocument', [
+        Log::channel('app')->info('MaxMessageService: dispatchDocument', [
             'document' => $url,
             'caption' => $caption,
             'fileName' => $fileName,
@@ -188,12 +235,12 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendVoice',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'voice' => $url,
         ]);
 
-        Log::channel('loki')->info('MaxMessageService: dispatchVoice', [
+        Log::channel('app')->info('MaxMessageService: dispatchVoice', [
             'voice' => $url,
         ]);
 
@@ -213,7 +260,7 @@ class MaxMessageService extends ToTgMessageService
     {
         $dto = TGTextMessageDto::from([
             'methodQuery' => 'sendMessage',
-            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $this->botUser->topic_id,
             'text' => $this->update->text,
         ]);
@@ -249,7 +296,7 @@ class MaxMessageService extends ToTgMessageService
             return;
         }
 
-        if ((bool) config('ai.auto_reply', false)) {
+        if ((bool) app(SettingsService::class)->get('ai.auto_reply')) {
             SendAiReplyJob::dispatch($this->botUser->id, null, (string) $text);
         } else {
             SendAiDraftJob::dispatch($this->botUser->id, null, (string) $text);

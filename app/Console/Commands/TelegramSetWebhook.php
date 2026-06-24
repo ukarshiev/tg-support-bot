@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Modules\Telegram\Api\TelegramMethods;
+use App\Services\Settings\SettingsService;
 use Illuminate\Console\Command;
 
 class TelegramSetWebhook extends Command
@@ -18,7 +19,7 @@ class TelegramSetWebhook extends Command
     {
         $appUrl = config('app.url');
         $url = $appUrl . '/api/telegram/bot';
-        $secret = config('traffic_source.settings.telegram.secret_key');
+        $secret = (string) app(SettingsService::class)->get('telegram.secret_key');
 
         $queryParams = [
             'url' => $url,

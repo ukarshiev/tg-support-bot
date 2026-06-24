@@ -20,29 +20,30 @@ Every change must pass automated checks before merging or deploying.
 
 ## 2. Git Hooks (Local)
 
-The project uses git hooks managed in `linting/`:
+The project keeps a single local hook managed in `linting/`:
 
 | Hook | Script | What it does |
 |---|---|---|
-| `pre-commit` | `linting/pre-commit-check.sh` | Runs Laravel Pint (code formatting check) |
-| `pre-push` | `linting/pre-push-check.sh` | Runs PHPStan + PHPUnit |
-| `prepare-commit-msg` | `linting/prepare-commit-msg-check.sh` | Validates commit message format |
+| `pre-push` | `linting/pre-push-check.sh` | Runs PHPStan level 6 + PHPUnit |
+
+The `pre-commit` and `prepare-commit-msg` hooks have been removed. All checks (Pint, PHPStan, tests, hadolint, shellcheck) are covered by CI (`.github/workflows/ci.yml`).
+
+**Pint coverage gap (conscious decision):** Pint is not enforced by the local `pre-push` hook and has no dedicated CI job. Run `vendor/bin/pint` manually before committing to keep formatting clean.
 
 ### Hook Compliance Rules
 
-- Code must be formatted with Pint before every commit
 - PHPStan level 6 must pass before every push
 - All tests must pass before every push
 - If a hook fails, fix the issue — do not bypass
 
 ```bash
-# ✅ Correct — run Pint before committing
-docker exec -it pet ./vendor/bin/pint
+# ✅ Correct — run Pint manually before committing (no local pre-commit hook)
+vendor/bin/pint
 git add -p
 git commit -m "issues-42 | add feature"
 
 # ❌ Incorrect — bypass hooks
-git commit --no-verify -m "issues-42 | add feature"
+git push --no-verify
 ```
 
 ---
@@ -125,9 +126,6 @@ The application runs in Docker. All development commands must be run inside the 
 | Nginx | `nginx` | Web server |
 | Queue worker | `queue` | `php artisan queue:work` |
 | Node.js | `node` | Live chat server |
-| Loki | `loki` | Log aggregation |
-| Grafana | `grafana` | Monitoring dashboard |
-| Promtail | `promtail` | Log forwarding |
 
 Queue worker config:
 - Tries: 3
@@ -167,7 +165,6 @@ issues-85-fix-banned-user-reply
 
 ## 9. Forbidden Actions
 
-- ❌ `git commit --no-verify` (bypass pre-commit)
 - ❌ `git push --no-verify` (bypass pre-push)
 - ❌ Hardcoding environment variables in code
 - ❌ Committing `.env` files

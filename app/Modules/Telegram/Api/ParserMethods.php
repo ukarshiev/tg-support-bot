@@ -33,7 +33,7 @@ class ParserMethods
 
             return $resultQuery;
         } catch (\Throwable $e) {
-            Log::channel('loki')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
             return [
                 'ok' => false,
                 'response_code' => 500,
@@ -70,7 +70,7 @@ class ParserMethods
 
             return $resultQuery;
         } catch (\Throwable $e) {
-            Log::channel('loki')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
             return [
                 'ok' => false,
                 'response_code' => 500,
@@ -154,7 +154,7 @@ class ParserMethods
 
             return $resultQuery;
         } catch (\Throwable $e) {
-            Log::channel('loki')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
             return [
                 'ok' => false,
                 'response_code' => 500,

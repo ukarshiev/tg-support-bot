@@ -5,17 +5,31 @@ namespace Tests\Unit\Modules\Admin\Actions;
 use App\Models\BotUser;
 use App\Models\ExternalSource;
 use App\Models\ExternalUser;
+use App\Models\User;
 use App\Modules\Admin\Actions\SendReplyAction;
+use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
 use App\Modules\External\Jobs\SendWebhookMessage;
+use App\Modules\Max\Actions\UploadFileMax;
+use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Mockery;
 use Tests\TestCase;
 
 class SendReplyActionTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        Mockery::close();
+    }
 
     public function test_saves_outgoing_message_for_telegram_user(): void
     {
@@ -75,6 +89,141 @@ class SendReplyActionTest extends TestCase
         Queue::assertNotPushed(SendWebhookMessage::class);
     }
 
+    public function test_dispatches_vk_file_job_with_attachment_for_vk_user(): void
+    {
+        Queue::fake();
+
+        Http::fake([
+            'api.vk.com/method/docs.getMessagesUploadServer*' => Http::response([
+                'response' => ['upload_url' => 'https://vk-upload.test/upload'],
+            ]),
+            'vk-upload.test/upload' => Http::response(['file' => 'uploaded-file-data']),
+            'api.vk.com/method/docs.save*' => Http::response([
+                'response' => ['doc' => ['owner_id' => 111, 'id' => 222]],
+            ]),
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 210, 'platform' => 'vk']);
+        $file = UploadedFile::fake()->create('doc.pdf', 10);
+
+        SendReplyAction::execute($botUser, 'caption', $file);
+
+        // The uploaded doc reference is attached to the outgoing VK message.
+        Queue::assertPushed(SendVkSimpleMessageJob::class, function (SendVkSimpleMessageJob $job): bool {
+            return $job->queryParams->attachment === 'doc111_222';
+        });
+    }
+
+    public function test_records_local_attachment_for_vk_file_reply(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        Http::fake([
+            'api.vk.com/method/docs.getMessagesUploadServer*' => Http::response([
+                'response' => ['upload_url' => 'https://vk-upload.test/upload'],
+            ]),
+            'vk-upload.test/upload' => Http::response(['file' => 'uploaded-file-data']),
+            'api.vk.com/method/docs.save*' => Http::response([
+                'response' => ['doc' => ['owner_id' => 111, 'id' => 222]],
+            ]),
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 211, 'platform' => 'vk']);
+        $file = UploadedFile::fake()->create('report.pdf', 10);
+
+        SendReplyAction::execute($botUser, '', $file);
+
+        // Regression: the outgoing file must be stored on the private disk and
+        // recorded by its path so the admin chat workspace can render it instead
+        // of showing only the «Вложение» placeholder.
+        $attachment = \App\Models\MessageAttachment::where('file_name', 'report.pdf')->first();
+        $this->assertNotNull($attachment);
+        $this->assertStringStartsWith('chat-attachments/', (string) $attachment->file_id);
+        Storage::disk('local')->assertExists($attachment->file_id);
+    }
+
+    public function test_saves_outgoing_message_for_max_user(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 400, 'platform' => 'max']);
+
+        SendReplyAction::execute($botUser, 'Hello MAX');
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'platform' => 'max',
+            'message_type' => 'outgoing',
+            'text' => 'Hello MAX',
+        ]);
+    }
+
+    public function test_dispatches_max_text_job_for_max_user(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 401, 'platform' => 'max']);
+
+        SendReplyAction::execute($botUser, 'Hello MAX');
+
+        Queue::assertPushed(SendMaxSimpleMessageJob::class, function (SendMaxSimpleMessageJob $job): bool {
+            return $job->queryParams->methodQuery === 'sendMessage'
+                && $job->queryParams->text === 'Hello MAX'
+                && $job->queryParams->user_id === 401;
+        });
+        // MAX must no longer fall through to the external-webhook path.
+        Queue::assertNotPushed(SendWebhookMessage::class);
+    }
+
+    public function test_dispatches_max_file_job_with_token_for_max_user(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        // Mock the uploader so the test never hits MAX's CDN.
+        $upload = Mockery::mock(UploadFileMax::class);
+        $upload->shouldReceive('uploadContents')->once()->andReturn('tok_abc');
+        $this->app->instance(UploadFileMax::class, $upload);
+
+        $botUser = BotUser::create(['chat_id' => 402, 'platform' => 'max']);
+        $file = UploadedFile::fake()->create('photo.jpg', 10);
+
+        SendReplyAction::execute($botUser, 'caption', $file);
+
+        Queue::assertPushed(SendMaxSimpleMessageJob::class, function (SendMaxSimpleMessageJob $job): bool {
+            return in_array($job->queryParams->methodQuery, ['sendImage', 'sendAudio', 'sendFile'], true)
+                && $job->queryParams->file_token === 'tok_abc'
+                && $job->queryParams->text === 'caption';
+        });
+
+        // The outgoing file is stored on the private disk and recorded by its path
+        // so the admin thread serves it through the chat-attachment route.
+        $attachment = \App\Models\MessageAttachment::where('file_name', 'photo.jpg')->first();
+        $this->assertNotNull($attachment);
+        $this->assertStringStartsWith('chat-attachments/', (string) $attachment->file_id);
+        Storage::disk('local')->assertExists($attachment->file_id);
+    }
+
+    public function test_max_file_upload_failure_falls_back_to_text(): void
+    {
+        Queue::fake();
+
+        $upload = Mockery::mock(UploadFileMax::class);
+        $upload->shouldReceive('uploadContents')->andReturn(null);
+        $this->app->instance(UploadFileMax::class, $upload);
+
+        $botUser = BotUser::create(['chat_id' => 403, 'platform' => 'max']);
+        $file = UploadedFile::fake()->create('doc.pdf', 10);
+
+        SendReplyAction::execute($botUser, 'fallback text', $file);
+
+        Queue::assertPushed(SendMaxSimpleMessageJob::class, function (SendMaxSimpleMessageJob $job): bool {
+            return $job->queryParams->methodQuery === 'sendMessage'
+                && $job->queryParams->text === 'fallback text';
+        });
+    }
+
     public function test_dispatches_webhook_for_external_user_with_webhook_url(): void
     {
         Queue::fake();
@@ -132,6 +281,146 @@ class SendReplyActionTest extends TestCase
                 && $job->payload['message']['content_type'] === 'text'
                 && $job->payload['message']['message_type'] === 'outgoing'
                 && $job->payload['message']['text'] === 'Test message';
+        });
+    }
+
+    public function test_reopens_closed_conversation_on_reply(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 300,
+            'platform' => 'telegram',
+            'is_closed' => true,
+            'closed_at' => now()->subDay(),
+        ]);
+
+        SendReplyAction::execute($botUser, 'Reopening reply');
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->isClosed());
+        $this->assertNull($botUser->closed_at);
+    }
+
+    public function test_does_not_touch_open_conversation_on_reply(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 301, 'platform' => 'telegram', 'is_closed' => false]);
+
+        SendReplyAction::execute($botUser, 'Regular reply');
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->isClosed());
+    }
+
+    // ── Authorship ─────────────────────────────────────────────────────────────
+
+    public function test_passing_author_writes_sender_user_id_and_sender_name(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create(['name' => 'Operator Vasya']);
+        $botUser = BotUser::create(['chat_id' => 500, 'platform' => 'telegram']);
+
+        SendReplyAction::execute($botUser, 'Authored reply', null, $user);
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'sender_user_id' => $user->id,
+            'sender_name' => 'Operator Vasya',
+        ]);
+    }
+
+    public function test_omitting_author_leaves_sender_fields_null(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 501, 'platform' => 'telegram']);
+
+        SendReplyAction::execute($botUser, 'Anonymous reply');
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'sender_user_id' => null,
+            'sender_name' => null,
+        ]);
+    }
+
+    public function test_explicit_null_author_preserves_backward_compatibility(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create(['chat_id' => 502, 'platform' => 'vk']);
+
+        SendReplyAction::execute($botUser, 'Compat reply', null, null);
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'sender_user_id' => null,
+            'sender_name' => null,
+        ]);
+    }
+
+    // ── Supergroup mirror ──────────────────────────────────────────────────────
+
+    public function test_mirrors_reply_to_group_when_telegram_configured(): void
+    {
+        Queue::fake();
+
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('telegram.token', 'main_token');
+        $settings->set('telegram.secret_key', 'secret');
+        $settings->set('telegram.group_id', '-100111222333');
+
+        $botUser = BotUser::create(['chat_id' => 600, 'platform' => 'telegram', 'topic_id' => 10]);
+
+        SendReplyAction::execute($botUser, 'Mirrored reply');
+
+        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job) use ($botUser): bool {
+            return $job->botUserId === $botUser->id
+                && $job->text === 'Mirrored reply';
+        });
+
+        // Only one messages row (not two).
+        $this->assertSame(1, \App\Models\Message::where('bot_user_id', $botUser->id)->count());
+    }
+
+    public function test_does_not_mirror_to_group_when_telegram_not_configured(): void
+    {
+        Queue::fake();
+
+        // Telegram channel not configured — no token/secret set.
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.token', null);
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.secret_key', null);
+
+        $botUser = BotUser::create(['chat_id' => 601, 'platform' => 'vk']);
+
+        SendReplyAction::execute($botUser, 'VK reply, no mirror');
+
+        Queue::assertNotPushed(MirrorAdminReplyToGroupJob::class);
+    }
+
+    public function test_mirror_uses_placeholder_text_for_file_only_reply(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('telegram.token', 'main_token');
+        $settings->set('telegram.secret_key', 'secret');
+        $settings->set('telegram.group_id', '-100111222333');
+
+        $botUser = BotUser::create(['chat_id' => 602, 'platform' => 'telegram', 'topic_id' => 11]);
+
+        SendReplyAction::execute($botUser, '');
+
+        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job): bool {
+            // The «Ответ из админки:» label + newline is added by the job's prefix.
+            return $job->text === '[вложение]' && $job->prefix === "👤 Ответ из админки:\n";
         });
     }
 }

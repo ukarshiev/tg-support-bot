@@ -2,8 +2,9 @@
 
 namespace App\Modules\Telegram\Controllers;
 
-use App\Contracts\ManagerInterfaceContract;
 use App\Models\BotUser;
+use App\Models\Message;
+use App\Modules\Admin\Services\ChannelStatusService;
 use App\Modules\Ai\Actions\EditAiMessage;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
@@ -18,12 +19,15 @@ use App\Modules\Telegram\Actions\SendStartMessage;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Telegram\Services\Tg\TgEditMessageService;
+use App\Modules\Telegram\Services\Tg\TgMessageService;
 use App\Modules\Telegram\Services\TgExternal\TgExternalEditService;
 use App\Modules\Telegram\Services\TgExternal\TgExternalMessageService;
 use App\Modules\Telegram\Services\TgMax\TgMaxMessageService;
 use App\Modules\Telegram\Services\TgVk\TgVkEditService;
 use App\Modules\Telegram\Services\TgVk\TgVkMessageService;
+use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
 
 class TelegramBotController
@@ -34,7 +38,7 @@ class TelegramBotController
 
     private ?BotUser $botUser;
 
-    public function __construct(Request $request, private readonly ManagerInterfaceContract $managerInterface)
+    public function __construct(Request $request)
     {
         $dataHook = TelegramUpdateDto::fromRequest($request);
         if (empty($dataHook)) {
@@ -108,7 +112,7 @@ class TelegramBotController
         if ($this->dataHook->editedTopicStatus && $this->dataHook->typeSource === 'supergroup') {
             SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
                 'methodQuery' => 'deleteMessage',
-                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                 'message_id' => $this->dataHook->messageId,
             ]));
         } elseif (!$this->dataHook->isBot) {
@@ -164,7 +168,7 @@ class TelegramBotController
                     } elseif (str_contains($this->dataHook->text, '/ai_generate') && $this->isSupergroup()) {
                         app(SendAiAnswerMessage::class)->execute($this->dataHook);
                     } else {
-                        $this->managerInterface->notifyIncomingMessage($this->botUser, $this->dataHook);
+                        $this->notifyIncomingMessage();
                         $this->maybeDispatchAi();
                     }
                     break;
@@ -176,6 +180,83 @@ class TelegramBotController
                 default:
                     throw new \Exception("Unknown event type: {$this->dataHook->typeQuery}");
             }
+        }
+    }
+
+    /**
+     * Handle an incoming user message: always save to DB and, when the
+     * Telegram supergroup is configured (telegram.token + telegram.group_id),
+     * also forward to the user's forum topic.
+     *
+     * Admin panel workspace always shows the message from the DB.
+     * The supergroup is an optional addition — enabled automatically when
+     * the Telegram channel integration is fully configured.
+     *
+     * When the group is NOT configured, the message is persisted directly
+     * to the `messages` table so the admin workspace still shows it.
+     * The two branches are mutually exclusive: no duplicate rows are created.
+     *
+     * @return void
+     */
+    private function notifyIncomingMessage(): void
+    {
+        // Forward to supergroup only when Telegram channel is fully configured.
+        if (app(ChannelStatusService::class)->telegram()['connected']
+            && !empty((string) app(SettingsService::class)->get('telegram.group_id'))
+        ) {
+            // Ensure the forum topic exists first.
+            if (empty($this->botUser->topic_id)) {
+                TopicCreateJob::dispatch($this->botUser->id);
+            }
+
+            // Group path: TgMessageService dispatches SendTelegramMessageJob which
+            // calls saveMessage() after the group API call succeeds.
+            (new TgMessageService($this->dataHook))->handleUpdate();
+        } else {
+            // Group-OFF path: persist the incoming message directly so the admin
+            // workspace shows it even when no supergroup is configured.
+            $this->persistIncomingTelegramMessage();
+        }
+    }
+
+    /**
+     * Persist an incoming Telegram message directly to the `messages` table
+     * without routing it through the supergroup.
+     *
+     * Called only when the Telegram group is not configured. The group-ON path
+     * persists via SendTelegramMessageJob::saveMessage() instead, so the two
+     * branches are mutually exclusive and produce exactly one row each.
+     *
+     * @return void
+     */
+    private function persistIncomingTelegramMessage(): void
+    {
+        try {
+            $message = Message::create([
+                'bot_user_id' => $this->botUser->id,
+                'platform' => $this->botUser->platform,
+                'message_type' => 'incoming',
+                // from_id: the user's Telegram message_id — matches the column
+                // semantics used by SendTelegramMessageJob (where from_id = updateDto->messageId)
+                // so in-group reply threading stays consistent if the group is later enabled.
+                'from_id' => $this->dataHook->messageId ?? 0,
+                'to_id' => 0,
+                // Capture caption for media messages (photo / document) per BR-002a.
+                'text' => $this->dataHook->text ?? $this->dataHook->caption ?? null,
+            ]);
+
+            // Persist any media attachment so the admin can preview it.
+            if (!empty($this->dataHook->fileId)) {
+                $message->attachments()->create([
+                    'file_id' => $this->dataHook->fileId,
+                    'file_type' => $this->dataHook->fileType ?? 'document',
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::channel('app')->error(
+                'persistIncomingTelegramMessage: failed to persist message',
+                ['error' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()]
+            );
         }
     }
 
@@ -195,7 +276,7 @@ class TelegramBotController
             return;
         }
 
-        if ((bool) config('ai.auto_reply', false)) {
+        if ((bool) app(SettingsService::class)->get('ai.auto_reply')) {
             SendAiReplyJob::dispatch($this->botUser->id, $this->dataHook, $this->dataHook->text);
         } else {
             SendAiDraftJob::dispatch($this->botUser->id, $this->dataHook, $this->dataHook->text);

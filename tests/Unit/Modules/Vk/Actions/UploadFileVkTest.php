@@ -6,12 +6,15 @@ use App\Helpers\TelegramHelper;
 use App\Modules\Telegram\Actions\GetFile;
 use App\Modules\Vk\Actions\GetMessagesUploadServerVk;
 use App\Modules\Vk\Actions\UploadFileVk;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
 
 class UploadFileVkTest extends TestCase
 {
+    use RefreshDatabase;
+
     private int $chatId;
 
     private string $photoFileId;

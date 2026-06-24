@@ -24,11 +24,13 @@ This project uses the following observability tools:
 
 | Tool | Purpose | Access |
 |---|---|---|
-| **Loki** | Centralized log aggregation | Port 3100 |
-| **Grafana** | Log visualization, dashboards | Port 3000 |
-| **Promtail** | Log forwarder (reads nginx + app logs) | — |
-| **Sentry** | Error tracking, exception capture | `SENTRY_LARAVEL_DSN` |
+| **Rotating log files** | Application logs on disk (`storage/logs/laravel-*.log`, `storage/logs/app-*.log`) | `php artisan pail` / `tail` |
+| **Laravel Telescope** | Debug/inspection dashboard: requests, exceptions, **logs**, queries, jobs, cache, redis, events | `GET /telescope` — session-based admin auth (guests → `/admin/login`); works with `APP_DEBUG=false` |
 | **TG Logger** (`prog-time/tg-logger`) | Send critical alerts to Telegram channel | `TG_LOGGER_TOKEN`, `TG_LOGGER_CHAT_ID` |
+
+> **Loki + Grafana were removed.** Centralized log aggregation is no longer used — logs live in rotating files (view with `php artisan pail`) and in the **Telescope** Logs tab at `/telescope`. The former `Log::channel('loki')` calls were renamed to `Log::channel('app')`, a daily rotating-file channel (`storage/logs/app-YYYY-MM-DD.log`); the `App\Logging\LokiHandler` class was deleted.
+>
+> **Telescope notes:** entries are stored in the `telescope_entries` tables and pruned daily by the scheduled `telescope:prune --hours=48` (needs a cron running `schedule:run`). In `local` everything is recorded; in non-local only failures/exceptions/scheduled/monitored entries are kept (`TelescopeServiceProvider::register()`). Dashboard access is gated by the middleware stack `['web', 'auth', App\Http\Middleware\TelescopeAccess::class]` (in `config/telescope.php` `middleware`): the `auth` middleware redirects guests to `/admin/login` (**302**), `TelescopeAccess` aborts **403** for authenticated non-admins, and admins reach the dashboard. This is **independent of `APP_DEBUG`** (keep it `false` in prod); set `TELESCOPE_ENABLED=false` to disable Telescope entirely. `TelescopeServiceProvider::authorization()` mirrors the same admin-only rule for the package's `Telescope::auth()` gate (defence in depth). **HTTP Basic auth was removed**: its `401` `WWW-Authenticate` challenge is intercepted/stripped by the upstream edge proxy in front of the production domain (it rewrites `4xx` responses), so the browser never showed the login prompt — session auth (`2xx`/`3xx`) passes the edge cleanly.
 
 ---
 
@@ -145,30 +147,7 @@ public function handle(): void
 
 ---
 
-## 7. Sentry Integration Rules
-
-- Sentry DSN is configured via `SENTRY_LARAVEL_DSN`
-- All unhandled exceptions are automatically captured by Sentry
-- Do not log sensitive user data in Sentry context
-- `SENTRY_TRACES_SAMPLE_RATE` controls performance monitoring sampling (default: 0.1 = 10%)
-
-```php
-// ✅ Correct — Sentry captures context for debugging
-\Sentry\configureScope(function (\Sentry\State\Scope $scope) use ($botUser): void {
-    $scope->setUser(['id' => $botUser->id, 'platform' => $botUser->platform]);
-});
-```
-
-```php
-// ❌ Incorrect — logging sensitive data
-\Sentry\configureScope(function (\Sentry\State\Scope $scope) use ($dto): void {
-    $scope->setExtra('raw_data', $dto->rawData);  // may contain user tokens/messages
-});
-```
-
----
-
-## 8. Health Check Rules
+## 7. Health Check Rules
 
 The application must remain operable when checked by Docker/orchestration.
 
@@ -180,16 +159,16 @@ The application must remain operable when checked by Docker/orchestration.
 
 ---
 
-## 9. Sensitive Data Rules
+## 8. Sensitive Data Rules
 
 Never expose private information in logs or error messages.
 
 Forbidden in logs:
-- `TELEGRAM_TOKEN`
-- `VK_TOKEN`
+- Channel access secrets from the DB `settings` table (`telegram.token`, `telegram.secret_key`, `telegram_ai.token`, `telegram_ai.secret`, `vk.token`, `vk.secret_key`, `max.token`, `max.secret_key`) — i.e. any key with `is_secret = true` in `SettingKeyRegistry`
+- AI provider credentials from settings (`ai.openai_api_key`, `ai.gigachat_client_secret`, `ai.deepseek_client_secret`, etc.)
 - Bearer tokens from `external_source_access_tokens`
 - User passwords
-- AI provider API keys (`OPENAI_API_KEY`, `GIGACHAT_CLIENT_SECRET`, etc.)
+- Infrastructure secrets (`DB_PASSWORD`, `REDIS_PASSWORD`, `APP_KEY`, `TG_LOGGER_TOKEN`)
 - Full webhook payloads (may contain PII)
 
 Mask when necessary:
@@ -201,14 +180,13 @@ Log::info('Webhook sent', ['url' => $webhookUrl, 'token' => '***']);
 
 ---
 
-## 10. Definition of Done for Observability
+## 9. Definition of Done for Observability
 
 A feature is not complete unless:
 
 - Logs added for main flows (start, success, failure)
 - Errors logged at correct level with context
 - No silent catch blocks
-- Sentry will capture unhandled exceptions automatically
 - Sensitive data is not present in any log output
 
 Observability is part of implementation, not an afterthought.
@@ -232,7 +210,6 @@ Observability is part of implementation, not an afterthought.
 - [ ] Proper log levels applied
 - [ ] Job start/success/failure logged
 - [ ] Telegram API errors logged with context
-- [ ] Sentry DSN configured
 - [ ] No sensitive data in logs
 - [ ] No silent failures
 - [ ] New flows observable in production

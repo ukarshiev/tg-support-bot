@@ -4,16 +4,19 @@ namespace Tests\Unit\Modules\Vk\Api;
 
 use App\Modules\Vk\Api\VkMethods;
 use App\Modules\Vk\DTOs\VkAnswerDto;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class VkMethodsTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
 
-        config()->set('traffic_source.settings.vk.token', 'fake_token');
+        app(\App\Services\Settings\SettingsService::class)->set('vk.token', 'fake_token');
     }
 
     public function test_send_query_vk_success(): void

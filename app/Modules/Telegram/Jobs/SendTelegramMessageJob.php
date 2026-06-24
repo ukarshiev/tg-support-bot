@@ -9,6 +9,7 @@ use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class SendTelegramMessageJob extends AbstractSendMessageJob
@@ -57,7 +58,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
                     $response = $this->telegramMethods->sendQueryTelegram(
                         'editForumTopic',
                         [
-                            'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                             'message_thread_id' => $botUser->topic_id,
                             'icon_custom_emoji_id' => __('icons.incoming'),
                         ]
@@ -67,7 +68,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
                         $response = $this->telegramMethods->sendQueryTelegram(
                             'reopenForumTopic',
                             [
-                                'chat_id' => config('traffic_source.settings.telegram.group_id'),
+                                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                                 'message_thread_id' => $botUser->topic_id,
                             ]
                         );
@@ -116,7 +117,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
                 $this->telegramResponseHandler($response);
             }
         } catch (\Throwable $e) {
-            Log::channel('loki')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
         }
     }
 
@@ -140,7 +141,11 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             'message_type' => $this->typeMessage,
             'from_id' => $this->updateDto->messageId,
             'to_id' => $resultQuery->message_id,
-            'text' => $this->typeMessage === 'incoming' ? ($this->updateDto->text ?? null) : ($this->queryParams->text ?? null),
+            // Photos/documents carry their text in `caption`, not `text` —
+            // fall back to it so the caption is persisted (and shown in the admin).
+            'text' => $this->typeMessage === 'incoming'
+                ? ($this->updateDto->text ?? $this->updateDto->caption ?? null)
+                : ($this->queryParams->text ?? $this->queryParams->caption ?? null),
         ]);
 
         if ($this->typeMessage === 'incoming' && !empty($this->updateDto->fileId)) {

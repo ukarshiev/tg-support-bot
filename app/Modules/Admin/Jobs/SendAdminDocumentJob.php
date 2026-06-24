@@ -42,7 +42,7 @@ class SendAdminDocumentJob implements ShouldQueue
             ]);
 
             if (!$response->ok) {
-                Log::channel('loki')->error('SendAdminDocumentJob: Telegram rejected document', [
+                Log::channel('app')->error('SendAdminDocumentJob: Telegram rejected document', [
                     'response_code' => $response->response_code,
                     'type_error' => $response->type_error,
                 ]);
@@ -66,7 +66,7 @@ class SendAdminDocumentJob implements ShouldQueue
                 ]);
             }
         } catch (\Throwable $e) {
-            Log::channel('loki')->error($e->getMessage(), [
+            Log::channel('app')->error($e->getMessage(), [
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
