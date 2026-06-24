@@ -173,19 +173,21 @@
                 <div x-data="{ count: $refs.prompt ? $refs.prompt.value.length : {{ mb_strlen($system_prompt) }} }">
                     <div class="mb-2 flex items-center justify-between">
                         <label for="system_prompt" class="text-sm font-semibold text-text-primary">Системный промпт</label>
-                        <span class="text-[11px] text-gray-400"><span x-text="count">{{ mb_strlen($system_prompt) }}</span> / 2000 символов</span>
+                        <span class="text-[11px] text-gray-400"><span x-text="count">{{ mb_strlen($system_prompt) }}</span> / 10000 символов</span>
                     </div>
                     <textarea
                         id="system_prompt"
                         x-ref="prompt"
                         wire:model="system_prompt"
                         x-on:input="count = $event.target.value.length"
-                        maxlength="2000"
-                        rows="6"
-                        class="block w-full resize-y rounded-[10px] border border-border-light bg-bg-primary px-3.5 py-3 text-[13px] leading-relaxed text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                        maxlength="10000"
+                        rows="16"
+                        class="block w-full resize-y rounded-[10px] border border-border-light bg-bg-primary px-3.5 py-3 font-mono text-[13px] leading-relaxed text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
                         placeholder="Ты — помощник службы поддержки. Отвечай вежливо и по существу..."
                     ></textarea>
-                    <p class="mt-2 text-[11px] text-gray-400">Промпт определяет поведение и стиль ответов ИИ-ассистента</p>
+                    <p class="mt-2 text-[11px] text-gray-400">
+                        Промпт хранится в базе данных и используется как есть, без подстановки переменных. Если поле пустое, системный промпт не отправляется.
+                    </p>
                 </div>
 
             </div>
