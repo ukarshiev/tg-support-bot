@@ -9,6 +9,7 @@ use App\Models\AutoReply;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Models\User;
 use App\Modules\Admin\Actions\BanBotUser;
 use App\Modules\Admin\Actions\ClearBotUserHistory;
 use App\Modules\Admin\Actions\DeleteBotUser;
@@ -17,7 +18,6 @@ use App\Modules\Admin\Actions\UnbanBotUser;
 use App\Modules\Ai\Actions\AiAcceptMessage;
 use App\Modules\Ai\Actions\AiCancelMessage;
 use App\Modules\Telegram\Actions\CloseTopic;
-use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -591,10 +591,7 @@ class ConversationPage extends Component
         $this->loadDialogList();
         $this->dispatch('messages-updated');
 
-        Notification::make()
-            ->title('Сообщение отправлено')
-            ->success()
-            ->send();
+        $this->toast('Сообщение отправлено');
     }
 
     /**
@@ -674,10 +671,37 @@ class ConversationPage extends Component
         $this->loadMessages();
         $this->loadDialogList();
 
-        Notification::make()
-            ->title('Диалог закрыт')
-            ->success()
-            ->send();
+        $this->toast('Диалог закрыт');
+    }
+
+    /**
+     * Emit a transient success toast to the browser.
+     *
+     * Dispatches the `admin-toast` event consumed by the Alpine listener in
+     * the admin-chat layout (replaces the former Filament notifications).
+     *
+     * @param string $message
+     *
+     * @return void
+     */
+    private function toast(string $message): void
+    {
+        $this->dispatch('admin-toast', message: $message, type: 'success');
+    }
+
+    /**
+     * Whether the current user is an administrator.
+     *
+     * Used to gate destructive actions (chat deletion) — only admins may
+     * delete a conversation; managers must not see or trigger the button.
+     *
+     * @return bool
+     */
+    public function isAdmin(): bool
+    {
+        $user = Auth::user();
+
+        return $user instanceof User && $user->isAdmin();
     }
 
     /**
@@ -691,6 +715,10 @@ class ConversationPage extends Component
      */
     public function deleteChat(): void
     {
+        if (! $this->isAdmin()) {
+            abort(403);
+        }
+
         if (empty($this->activeBotUser)) {
             return;
         }
@@ -702,10 +730,7 @@ class ConversationPage extends Component
         $this->chatMessages = collect();
         $this->loadDialogList();
 
-        Notification::make()
-            ->title('Чат удалён')
-            ->success()
-            ->send();
+        $this->toast('Чат удалён');
     }
 
     /**
@@ -729,10 +754,7 @@ class ConversationPage extends Component
         $this->loadDialogList();
         $this->dispatch('messages-updated');
 
-        Notification::make()
-            ->title('История очищена')
-            ->success()
-            ->send();
+        $this->toast('История очищена');
     }
 
     /**
@@ -754,10 +776,7 @@ class ConversationPage extends Component
         $this->loadMessages();
         $this->loadDialogList();
 
-        Notification::make()
-            ->title('Пользователь заблокирован')
-            ->success()
-            ->send();
+        $this->toast('Пользователь заблокирован');
     }
 
     /**
@@ -779,10 +798,7 @@ class ConversationPage extends Component
         $this->loadMessages();
         $this->loadDialogList();
 
-        Notification::make()
-            ->title('Пользователь разблокирован')
-            ->success()
-            ->send();
+        $this->toast('Пользователь разблокирован');
     }
 
     /**
@@ -894,10 +910,7 @@ class ConversationPage extends Component
         $this->loadDialogList();
         $this->dispatch('messages-updated');
 
-        Notification::make()
-            ->title('ИИ-ответ отправлен')
-            ->success()
-            ->send();
+        $this->toast('ИИ-ответ отправлен');
     }
 
     /**

@@ -357,7 +357,7 @@ class ConversationPageTest extends TestCase
             ->set('replyText', 'Hello!')
             ->call('sendReply')
             ->assertHasNoErrors()
-            ->assertNotified('Сообщение отправлено');
+            ->assertDispatched('admin-toast', message: 'Сообщение отправлено');
 
         $this->assertDatabaseHas('messages', [
             'bot_user_id' => $botUser->id,
@@ -772,5 +772,49 @@ class ConversationPageTest extends TestCase
         $component = Livewire::test(ConversationPage::class);
 
         $this->assertTrue($component->instance()->getMediaAttachments()->isEmpty());
+    }
+
+    // ── deleteChat (admin-only) ──────────────────────────────────────────────
+
+    public function test_is_admin_true_for_admin_user(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $this->assertTrue(Livewire::test(ConversationPage::class)->instance()->isAdmin());
+    }
+
+    public function test_is_admin_false_for_manager_user(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+
+        $this->assertFalse(Livewire::test(ConversationPage::class)->instance()->isAdmin());
+    }
+
+    public function test_admin_can_delete_chat(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $botUser = BotUser::create(['chat_id' => 1, 'platform' => 'telegram']);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('deleteChat')
+            ->assertSet('activeBotUser', null);
+
+        $this->assertDatabaseMissing('bot_users', ['id' => $botUser->id]);
+    }
+
+    public function test_manager_cannot_delete_chat(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+
+        $botUser = BotUser::create(['chat_id' => 1, 'platform' => 'telegram']);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('deleteChat')
+            ->assertStatus(403);
+
+        $this->assertDatabaseHas('bot_users', ['id' => $botUser->id]);
     }
 }
