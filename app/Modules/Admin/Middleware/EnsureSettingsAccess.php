@@ -17,8 +17,8 @@ use Symfony\Component\HttpFoundation\Response;
  *   see the notifications card only; every other settings route redirects
  *   them back to «Основные».
  *
- * Authentication itself is handled by the Filament Authenticate middleware,
- * which runs earlier in the group — by the time this runs the user is signed in.
+ * Authentication itself is handled by the standard `auth` middleware, which
+ * runs earlier in the group — by the time this runs the user is signed in.
  */
 class EnsureSettingsAccess
 {

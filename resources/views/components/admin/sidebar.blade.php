@@ -3,7 +3,7 @@
 
     Props:
       $title       — sidebar heading text (default "Настройки")
-      $backUrl     — URL for the back chevron (default route('filament.admin.pages.dashboard') or '#')
+      $backUrl     — URL for the back chevron (default route('admin.chats') or '/admin')
       $version     — version string shown in footer (default "v7.2.0")
       $docsUrl     — URL for "Документация" footer link (default "https://docs.tg-support-bot.ru/")
 --}}
@@ -15,8 +15,8 @@
 ])
 
 @php
-    $resolvedBackUrl = $backUrl ?? (Route::has('filament.admin.pages.dashboard')
-        ? route('filament.admin.pages.dashboard')
+    $resolvedBackUrl = $backUrl ?? (Route::has('admin.chats')
+        ? route('admin.chats')
         : '/admin');
 @endphp
 
@@ -40,7 +40,7 @@
 
     {{-- Logout --}}
     <div class="px-3 pb-2">
-        <form method="POST" action="{{ route('filament.admin.auth.logout') }}">
+        <form method="POST" action="{{ route('admin.logout') }}">
             @csrf
             <button
                 type="submit"
@@ -60,6 +60,6 @@
     <div class="border-t border-border-sidebar px-4 py-4 text-xs text-text-sidebar-secondary">
         <span>{{ $version }}</span>
         <span class="mx-1">·</span>
-        <a href="{{ $docsUrl }}" class="text-accent transition hover:underline">Документация</a>
+        <a href="{{ $docsUrl }}" target="_blank" rel="noopener noreferrer" class="text-accent transition hover:underline">Документация</a>
     </div>
 </aside>
