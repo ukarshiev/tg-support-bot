@@ -201,6 +201,7 @@ flowchart TD
 **Sidebar navigation**: 7 items. «Основные», «Интеграции», «ИИ-ассистент», «API и вебхуки», and «Команда» are active/linked; «Уведомления» and «Автоответы» remain disabled placeholders (`disabled` prop on `<x-admin.nav-item>`). They become real links as their respective tasks are implemented.
 
 **Form fields** (persisted via `SettingsService`):
+
 | Field | Setting key | Validation |
 |---|---|---|
 | ID группы для приёма сообщений | `telegram.group_id` | **required**, string, max:50 |
@@ -212,7 +213,7 @@ flowchart TD
 - **Уведомления в браузере** — requests `Notification.requestPermission()`; shows status (Включены / Заблокированы / Включить / Не поддерживается).
 - **Звуковой сигнал** — a toggle persisted in `localStorage['tg-support-sound']` (`'1'`/`'0'`, default on) plus a «Проверить» test button.
 
-These are only *preference setters*. The actual desktop notification + sound playback fire on the chat workspace (`ConversationPage`), which polls every 5 s via **`wire:poll.5s.keep-alive`** (the `.keep-alive` modifier is required — a plain `wire:poll` pauses while the tab is in the background, which would suppress all background notifications): its `pollUpdates()` emits a `new-incoming-messages` browser event for incoming messages in non-active, non-banned dialogs (watermarked by `lastSeenMessageId`, so each notifies once), and the page's Alpine `showNotification()` (gated on `!document.hasFocus()`) / `playSound()` (gated on the `localStorage` flag) respond. There are no notification controls in the chat header anymore — they live only here.
+These are only _preference setters_. The actual desktop notification + sound playback fire on the chat workspace (`ConversationPage`), which polls every 5 s via **`wire:poll.5s.keep-alive`** (the `.keep-alive` modifier is required — a plain `wire:poll` pauses while the tab is in the background, which would suppress all background notifications): its `pollUpdates()` emits a `new-incoming-messages` browser event for incoming messages in non-active, non-banned dialogs (watermarked by `lastSeenMessageId`, so each notifies once), and the page's Alpine `showNotification()` (gated on `!document.hasFocus()`) / `playSound()` (gated on the `localStorage` flag) respond. There are no notification controls in the chat header anymore — they live only here.
 
 The chat workspace also **badges its favicon** while the tab is in the background: on `new-incoming-messages` with `document.hidden`, Alpine redraws the favicon on a `<canvas>` (the original icon + a red count badge, accumulated in `pendingCount`) and swaps the `<link rel="icon">` href to the data URL; on `visibilitychange`→visible / window `focus` it restores the original favicon. No notification permission is required for the favicon badge.
 
@@ -243,6 +244,7 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 **Channel status**: computed by `ChannelStatusService::all()` on `mount()`. A channel is «Подключён» when all required keys are non-empty; otherwise «Не настроен».
 
 **Required keys by channel**:
+
 | Channel | Required for "connected" |
 |---|---|
 | Telegram | `telegram.token`, `telegram.secret_key` |
@@ -259,6 +261,7 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 `app/Livewire/Settings/IntegrationChannelPage.php` — per-channel configuration form. Route constraint: `channel` ∈ `telegram|telegram_ai|vk|max`.
 
 **Form fields**:
+
 | Channel | Fields |
 |---|---|
 | Telegram | `telegram.token`(secret), `telegram.secret_key`(secret) |
@@ -288,13 +291,14 @@ SW strategy: HTML **navigations** are network-first with the precached `public/o
 `app/Livewire/Settings/AiAssistantPage.php` — main AI settings screen.
 
 **Form fields** (all persisted via `SettingsService`):
+
 | Field | Setting key | Validation |
 |---|---|---|
 | ИИ-ассистент (master toggle) | `ai.enabled` | bool |
 | Провайдер по умолчанию | `ai.default_provider` | required, in:openai,deepseek,gigachat |
 | Автоответ (toggle) | `ai.auto_reply` | bool, confirm dialog required |
 | Лимит контекста | `ai.max_context_tokens` | int > 0 |
-| Системный промпт | `ai.system_prompt` (DB via `SettingsService`); no file, no default |
+| Системный промпт | `ai.system_prompt` (DB, no file/default) | string, used verbatim |
 
 **Auto-reply confirmation**: enabling auto-reply shows a yellow warning banner with «Включить автоответ» / «Отмена» buttons. The toggle reverts to `false` until `confirmAutoReply()` is called.
 
