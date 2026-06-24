@@ -1,4 +1,9 @@
 (function () {
+    // Build marker — lets you confirm in DevTools which widget version is loaded.
+    // If this line is NOT printed in the console, the browser/CDN is serving a
+    // cached/old widget.js and the de-dup fix is not yet live.
+    console.log('[pt-widget] build: single-render-dedup (no optimistic copy)');
+
     // ── Configuration ──────────────────────────────────────────────────────
     // Values are read from the <script> tag's data-* attributes.
     // Embed: <script src="https://stand/widget/widget.js" data-domain="https://stand" data-key="pub_xxx" defer></script>
@@ -71,21 +76,31 @@
     let pollInterval    = null;
     let chatIsOpen      = false;
     let historyLoaded   = false;
+    let fetchInFlight   = false;
+
+    // Fetch and render messages newer than lastMessageId. Guarded so two overlapping
+    // calls (the 3s tick and the post-send refresh) can't both fetch with the same
+    // cursor and double-render; renderMessage's id-dedupe is the final backstop.
+    async function fetchNewMessages() {
+        if (fetchInFlight) return;
+        fetchInFlight = true;
+        try {
+            const data = await pollMessages(lastMessageId);
+            if (data && data.messages && data.messages.length) {
+                data.messages.forEach(msg => renderMessage(msg));
+                lastMessageId = data.messages[data.messages.length - 1].id;
+                scrollBottom();
+            }
+        } catch (err) {
+            // Network error — silently skip this tick
+        } finally {
+            fetchInFlight = false;
+        }
+    }
 
     function startPolling() {
         if (pollInterval) return;
-        pollInterval = setInterval(async () => {
-            try {
-                const data = await pollMessages(lastMessageId);
-                if (data && data.messages && data.messages.length) {
-                    data.messages.forEach(msg => renderMessage(msg));
-                    lastMessageId = data.messages[data.messages.length - 1].id;
-                    scrollBottom();
-                }
-            } catch (err) {
-                // Network error — silently skip this tick
-            }
-        }, 3000);
+        pollInterval = setInterval(fetchNewMessages, 3000);
     }
 
     function stopPolling() {
@@ -289,6 +304,14 @@
     function renderMessage(msg) {
         const messagesContainer = container.querySelector('#ptw_messages');
 
+        // Single source of truth: every bubble carries its server id, and the
+        // same id is never rendered twice. This is the only place messages enter
+        // the DOM, so there is no optimistic copy to collide with — the duplicate
+        // (optimistic render + the poll re-fetching the same row) cannot occur.
+        if (msg.id != null && document.getElementById('messageBlock_' + msg.id)) {
+            return;
+        }
+
         // Date separator
         const msgDate = msg.created_at ? new Date(msg.created_at) : new Date();
         if (isDifferentDay(lastRenderedDate, msgDate)) {
@@ -328,44 +351,6 @@
         content += `</div>`;
 
         const timeSend = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        content += `<div class="ptw_message_date">${timeSend}</div>`;
-
-        messageEl.innerHTML = content;
-        messagesContainer.appendChild(messageEl);
-    }
-
-    // Optimistic local render for outgoing messages (file or text)
-    function renderLocalOutgoing(text, file) {
-        const now = new Date();
-        if (isDifferentDay(lastRenderedDate, now)) {
-            createLineBlock(now);
-            lastRenderedDate = now;
-        }
-
-        const messagesContainer = container.querySelector('#ptw_messages');
-        const messageEl = document.createElement('section');
-        messageEl.className = 'ptw_message_block ptw_client_message_block';
-
-        let content = `<div class="contentBlock">`;
-
-        if (file) {
-            const isImage = file.type.startsWith('image/');
-            if (isImage) {
-                const objectUrl = URL.createObjectURL(file);
-                content += `<img class="imageMessage" src="${objectUrl}" alt="" />`;
-            } else {
-                content += createFileCardHTML(file.name, '');
-            }
-        }
-
-        if (text) {
-            const safeText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            content += `<span>${safeText}</span>`;
-        }
-
-        content += `</div>`;
-
-        const timeSend = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         content += `<div class="ptw_message_date">${timeSend}</div>`;
 
         messageEl.innerHTML = content;
@@ -413,7 +398,6 @@
 
         // Upload files
         for (const file of filesToSend) {
-            renderLocalOutgoing(null, file);
             try {
                 await sendFileHttp(file);
             } catch (err) {
@@ -423,7 +407,6 @@
 
         // Send text
         if (text) {
-            renderLocalOutgoing(text, null);
             try {
                 await sendMessageHttp(text);
             } catch (err) {
@@ -431,6 +414,10 @@
             }
         }
 
+        // Render the just-sent message(s) immediately via the single render path
+        // instead of drawing a local optimistic copy — no duplicate is possible
+        // because every bubble is keyed by its server id.
+        await fetchNewMessages();
         scrollBottom();
     }
 
