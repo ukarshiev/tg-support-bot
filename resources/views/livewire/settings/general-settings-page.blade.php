@@ -77,47 +77,18 @@
         <div x-data="{
             notifyPermission: (typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'),
             soundEnabled: (localStorage.getItem('tg-support-sound') !== '0'),
-            audioCtx: null,
             enableNotifications() {
-                this.unlockAudio();
+                if (window.tgSupportSound) { window.tgSupportSound.unlock(); }
                 if (typeof Notification === 'undefined') { return; }
                 Notification.requestPermission().then(p => { this.notifyPermission = p; });
             },
             setSound(val) {
                 this.soundEnabled = val;
                 localStorage.setItem('tg-support-sound', val ? '1' : '0');
-                if (val) { this.unlockAudio(); this.playSound(); }
-            },
-            unlockAudio() {
-                try {
-                    if (!this.audioCtx) {
-                        const Ctx = window.AudioContext || window.webkitAudioContext;
-                        if (!Ctx) { return; }
-                        this.audioCtx = new Ctx();
-                    }
-                    if (this.audioCtx.state === 'suspended') { this.audioCtx.resume(); }
-                } catch (e) {}
+                if (val) { this.playSound(); }
             },
             playSound() {
-                try {
-                    this.unlockAudio();
-                    const ctx = this.audioCtx;
-                    if (!ctx) { return; }
-                    const now = ctx.currentTime;
-                    [880, 1175].forEach((freq, i) => {
-                        const osc = ctx.createOscillator();
-                        const gain = ctx.createGain();
-                        osc.type = 'sine';
-                        osc.frequency.value = freq;
-                        const start = now + i * 0.12;
-                        gain.gain.setValueAtTime(0.0001, start);
-                        gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
-                        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
-                        osc.connect(gain).connect(ctx.destination);
-                        osc.start(start);
-                        osc.stop(start + 0.2);
-                    });
-                } catch (e) {}
+                if (window.tgSupportSound) { window.tgSupportSound.unlock(); window.tgSupportSound.playSelected(); }
             }
         }">
             <p class="mb-5 text-sm text-text-secondary">
