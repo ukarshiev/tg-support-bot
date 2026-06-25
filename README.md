@@ -155,8 +155,7 @@ https://t.me/TgSupportTest1Bot
 **Backend:**
 - Laravel 12 (PHP 8.2+)
 - PostgreSQL (база данных)
-- Redis (кэш и очереди)
-- Laravel Queue (обработка фоновых задач)
+- Laravel Queue (обработка фоновых задач, sync)
 - spatie/laravel-data (DTO)
 
 **Admin & Frontend:**
@@ -175,7 +174,7 @@ https://t.me/TgSupportTest1Bot
 - REST API + L5-Swagger (`/api/documentation`)
 
 **DevOps:**
-- Docker + Docker Compose (сервисы: `pet`, `pgdb`, `nginx`, `redis`, `laravel_queue`, `laravel_scheduler`)
+- Docker + Docker Compose (сервисы: `pet`, `pgdb`, `nginx`, `laravel_queue`, `laravel_scheduler`)
 - Nginx (reverse proxy, SSL)
 
 **Мониторинг и логирование:**
@@ -309,7 +308,7 @@ curl -X POST https://yourdomain.com/api/external/user_12345/messages \
 
 Доступ защищён **сессионной авторизацией админки**: middleware-стек `['web', 'auth', App\Http\Middleware\TelescopeAccess::class]` — гость перенаправляется на `/admin/login` (302), не-админ получает **403**, админ открывает дашборд. HTTP Basic auth не используется (его `401`-челлендж вырезается edge-прокси перед доменом). Не зависит от `APP_DEBUG`; чтобы выключить дашборд полностью — `TELESCOPE_ENABLED=false`.
 
-Дашборд отладки: запросы, исключения, логи (`Log::channel('app')`), SQL-запросы, очереди/джобы, кэш, redis, события. Записи хранятся в таблицах `telescope_entries` (PostgreSQL) и обрезаются ежедневно (`telescope:prune --hours=48`). В окружении `local` пишется всё; в остальных — только сбои/исключения/расписание.
+Дашборд отладки: запросы, исключения, логи (`Log::channel('app')`), SQL-запросы, очереди/джобы, кэш, события. Записи хранятся в таблицах `telescope_entries` (PostgreSQL) и обрезаются ежедневно (`telescope:prune --hours=48`). В окружении `local` пишется всё; в остальных — только сбои/исключения/расписание.
 
 ### Логи
 

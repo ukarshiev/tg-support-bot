@@ -55,7 +55,7 @@ TG Support Bot is a Laravel 12 application for customer support via Telegram and
 | Language | PHP 8.2+ |
 | Framework | Laravel 12 |
 | Database | PostgreSQL |
-| Cache / Queue | Redis + Laravel Queue |
+| Cache / Queue | Laravel Queue (sync) |
 | Containers | Docker |
 | API Documentation | L5-Swagger (annotations-based) |
 | Static Analysis | PHPStan level 6 (larastan) |
@@ -109,7 +109,7 @@ Data Layer          app/Models/ + PostgreSQL
 - **Middleware Pattern** — webhook validation before controller runs
 - **Contract Pattern** — `ManagerInterfaceContract` decouples manager UI from business logic
 - **Platform Registry Pattern** — `PlatformChannel` + `PlatformChannelRegistry` (`app/Platform/`) let external (incl. paid, private) platform packages self-register delivery for a `platform` key without editing the core
-- **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → optional `config()` fallback, Redis cache, `Crypt` encryption for secrets, type coercion); all channel/AI keys have `config => null` (DB-only, no .env fallback); known keys registered in `SettingKeyRegistry`
+- **Settings Pattern** — `SettingsService` + `SettingKeyRegistry` (`app/Services/Settings/`) provide a unified `get/set/has/forget` API for runtime-editable settings (DB → optional `config()` fallback, file-cache layer, `Crypt` encryption for secrets, type coercion); all channel/AI keys have `config => null` (DB-only, no .env fallback); known keys registered in `SettingKeyRegistry`
 - **Admin Design System Pattern** — Tailwind v4 tokens in `resources/css/app.css @theme` + shared Blade components in `resources/views/components/admin/`. All admin screens — login, chat workspace and Settings — are custom Livewire/Blade on this design system. There is no Filament; authentication uses the standard Laravel `web` guard (login: `App\Livewire\Auth\LoginPage`).
 
 ---
@@ -299,7 +299,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - **Reading priority:** DB row → `config()` default (declared in `SettingKeyRegistry`) → `null`. Channel credentials and AI settings have `config => null` (no fallback) — they return `null` until explicitly saved.
 - **Never call `config()` directly** for a setting that may be overridden at runtime — use `app(\App\Services\Settings\SettingsService::class)->get('key')` instead
 - Secret keys (`is_secret=true` in `SettingKeyRegistry`) are encrypted with `Crypt::encrypt()` before DB write and decrypted transparently in `get()` — never read the raw `settings.value` column for secret keys
-- Cache: values cached forever in the default store (Redis); invalidated on `set()` / `forget()`
+- Cache: values cached forever in the default store (file); invalidated on `set()` / `forget()`
 - Known keys and their types/fallbacks/secret flags are registered in `SettingKeyRegistry::$keys`
 - In-scope keys with `config => null`: all `telegram.*`, `telegram_ai.*`, `vk.*`, `max.*`, all `ai.*` credentials and behaviour settings. Infrastructure keys (`app.manager_interface`) retain their `config()` fallback.
 - The General Settings screen (`/admin/settings/general`, `app/Livewire/Settings/GeneralSettingsPage.php`) provides a custom Livewire/Blade UI for editing only `telegram.template_topic_name` (Telegram topic-name template). Bot name (`app.bot_name`), description (`app.bot_description`), and the manager-interface radio (`app.manager_interface`) were removed from this screen. Uses the admin design system (Tailwind v4 tokens + `<x-admin.*>` Blade components)
