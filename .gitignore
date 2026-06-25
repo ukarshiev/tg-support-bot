@@ -44,3 +44,7 @@ yarn-error.log
 .claude
 /github-tasks.json
 /resources/ai/system-prompt.blade.php
+
+# Mutagen — local dev sync config, not versioned
+/mutagen.yml
+/mutagen.yml.lock
