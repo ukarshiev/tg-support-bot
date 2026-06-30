@@ -29,20 +29,22 @@ use App\Modules\Telegram\Services\TgVk\TgVkEditService;
 use App\Modules\Telegram\Services\TgVk\TgVkMessageService;
 use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class TelegramBotController
 {
-    private TelegramUpdateDto $dataHook;
+    private ?TelegramUpdateDto $dataHook = null;
 
     protected ?string $platform;
 
-    private ?BotUser $botUser;
+    private ?BotUser $botUser = null;
 
     public function __construct(Request $request)
     {
         $dataHook = TelegramUpdateDto::fromRequest($request);
         if (empty($dataHook)) {
-            abort(200);
+            return;
         }
         $this->dataHook = $dataHook;
 
@@ -55,7 +57,7 @@ class TelegramBotController
         }
 
         if (empty($this->botUser) || empty($this->platform)) {
-            abort(200);
+            return;
         }
     }
 
@@ -103,46 +105,62 @@ class TelegramBotController
      *
      * @throws \Exception
      */
-    public function bot_query(): void
+    public function bot_query(): JsonResponse
     {
-        $this->checkBotQuery();
-        if ($this->dataHook->typeQuery === 'callback_query') {
-            return;
-        }
-        if ($this->dataHook->editedTopicStatus && $this->dataHook->typeSource === 'supergroup') {
-            SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
-                'methodQuery' => 'deleteMessage',
-                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-                'message_id' => $this->dataHook->messageId,
-            ]));
-        } elseif (!$this->dataHook->isBot) {
-            if ($this->dataHook->typeSource === 'supergroup') {
-                if ($this->dataHook->text === '/contact' && $this->isSupergroup()) {
-                    app(SendContactMessage::class)->execute($this->botUser);
-                    return;
+        try {
+            if ($this->dataHook === null || $this->botUser === null || $this->platform === null) {
+                return response()->json(['ok' => true]);
+            }
+
+            $this->checkBotQuery();
+            if ($this->dataHook->typeQuery === 'callback_query') {
+                return response()->json(['ok' => true]);
+            }
+            if ($this->dataHook->editedTopicStatus && $this->dataHook->typeSource === 'supergroup') {
+                SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
+                    'methodQuery' => 'deleteMessage',
+                    'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
+                    'message_id' => $this->dataHook->messageId,
+                ]));
+            } elseif (!$this->dataHook->isBot) {
+                if ($this->dataHook->typeSource === 'supergroup') {
+                    if ($this->dataHook->text === '/contact' && $this->isSupergroup()) {
+                        app(SendContactMessage::class)->execute($this->botUser);
+                        return response()->json(['ok' => true]);
+                    }
+                }
+
+                switch ($this->platform) {
+                    case 'telegram':
+                        $this->controllerPlatformTg();
+                        break;
+
+                    case 'vk':
+                        $this->controllerPlatformVk();
+                        break;
+
+                    case 'max':
+                        $this->controllerPlatformMax();
+                        break;
+
+                    case 'ignore':
+                        return response()->json(['ok' => true]);
+
+                    default:
+                        $this->controllerExternalPlatform();
+                        break;
                 }
             }
 
-            switch ($this->platform) {
-                case 'telegram':
-                    $this->controllerPlatformTg();
-                    break;
+            return response()->json(['ok' => true]);
+        } catch (\Throwable $e) {
+            Log::channel('app')->error('TelegramBotController: webhook handling failed', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
-                case 'vk':
-                    $this->controllerPlatformVk();
-                    break;
-
-                case 'max':
-                    $this->controllerPlatformMax();
-                    break;
-
-                case 'ignore':
-                    return;
-
-                default:
-                    $this->controllerExternalPlatform();
-                    break;
-            }
+            return response()->json(['ok' => true]);
         }
     }
 
@@ -163,9 +181,11 @@ class TelegramBotController
         } else {
             switch ($this->dataHook->typeQuery) {
                 case 'message':
-                    if ($this->dataHook->text === '/start' && !$this->isSupergroup()) {
+                    $text = (string) $this->dataHook->text;
+
+                    if ($text === '/start' && !$this->isSupergroup()) {
                         app(SendStartMessage::class)->execute($this->dataHook);
-                    } elseif (str_contains($this->dataHook->text, '/ai_generate') && $this->isSupergroup()) {
+                    } elseif (str_contains($text, '/ai_generate') && $this->isSupergroup()) {
                         app(SendAiAnswerMessage::class)->execute($this->dataHook);
                     } else {
                         $this->notifyIncomingMessage();

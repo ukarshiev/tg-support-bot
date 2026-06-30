@@ -78,6 +78,7 @@ class WebhookRegistrationServiceTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('Ошибка', $result['message']);
+        $this->assertStringContainsString('Unauthorized', $result['message']);
     }
 
     // ── registerVk() ─────────────────────────────────────────────────────────

@@ -114,7 +114,7 @@ return [
     |
     */
 
-    'lottery' => [2, 100],
+    'lottery' => array_map('intval', explode(',', env('SESSION_LOTTERY', '2,100'))),
 
     /*
     |--------------------------------------------------------------------------
@@ -215,3 +215,4 @@ return [
     'partitioned' => env('SESSION_PARTITIONED_COOKIE', false),
 
 ];
+

@@ -96,7 +96,7 @@ class TelegramAnswerDto
     {
         try {
             $error = TelegramError::fromResponse($textError);
-            return $error->name;
+            return $error?->name;
         } catch (\Throwable $e) {
             return null;
         }

@@ -7,6 +7,7 @@ use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Services\Button\ButtonParser;
 use App\Services\Button\KeyboardBuilder;
 
@@ -31,10 +32,11 @@ class SendStartMessage
      */
     public function execute(TelegramUpdateDto $update): void
     {
-        $this->telegramMethods->sendQueryTelegram('deleteMessage', [
+        SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
+            'methodQuery' => 'deleteMessage',
             'chat_id' => $update->chatId,
             'message_id' => $update->messageId,
-        ]);
+        ]));
 
         if ($update->typeSource !== 'private') {
             return;

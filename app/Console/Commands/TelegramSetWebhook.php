@@ -23,7 +23,9 @@ class TelegramSetWebhook extends Command
 
         $queryParams = [
             'url' => $url,
-            'max_connections' => 40,
+            // Local Synology/Windows reverse-proxy chain handles sequential
+            // Telegram delivery more reliably than parallel webhook bursts.
+            'max_connections' => 1,
             'drop_pending_updates' => true,
             'secret_token' => $secret,
         ];

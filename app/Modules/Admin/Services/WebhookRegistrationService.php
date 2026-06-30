@@ -186,7 +186,10 @@ class WebhookRegistrationService
 
         $queryParams = [
             'url' => $url,
-            'max_connections' => 40,
+            // Synology -> Windows TCP bridge -> Docker Desktop is a single-host
+            // local setup. Keep Telegram delivery sequential so parallel retries
+            // do not overload the reverse-proxy chain and cause webhook timeouts.
+            'max_connections' => 1,
             'drop_pending_updates' => true,
             'secret_token' => $secret,
         ];
@@ -205,9 +208,15 @@ class WebhookRegistrationService
             'raw' => $result->rawData ?? null,
         ]);
 
+        $description = (string) (
+            $result->rawData['description']
+            ?? $result->message
+            ?? 'неизвестная ошибка'
+        );
+
         return [
             'success' => false,
-            'message' => 'Ошибка регистрации вебхука Telegram: ' . ($result->description ?? 'неизвестная ошибка'),
+            'message' => 'Ошибка регистрации вебхука Telegram: ' . $description,
         ];
     }
 
