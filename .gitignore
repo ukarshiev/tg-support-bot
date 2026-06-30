@@ -48,3 +48,5 @@ yarn-error.log
 # Mutagen — local dev sync config, not versioned
 /mutagen.yml
 /mutagen.yml.lock
+
+.local-*.txt

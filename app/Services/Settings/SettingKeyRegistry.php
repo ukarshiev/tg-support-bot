@@ -256,6 +256,43 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => false,
         ],
+
+        // ── PostEditBot Bridge ───────────────────────────────────────────────
+        'posteditbot_bridge.enabled' => [
+            'type' => 'bool',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'posteditbot_bridge.api_url' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'posteditbot_bridge.token' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => true,
+        ],
+        'posteditbot_bridge.timeout_ms' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'posteditbot_bridge.cache_ttl_seconds' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'posteditbot_bridge.ai_mode' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'posteditbot_bridge.show_client_card' => [
+            'type' => 'bool',
+            'config' => null,
+            'is_secret' => false,
+        ],
     ];
 
     /**

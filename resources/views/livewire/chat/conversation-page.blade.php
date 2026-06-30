@@ -1032,6 +1032,31 @@
                 {{-- Design: node a2tax7 — 12/600 text-secondary --}}
                 <span class="text-text-secondary font-semibold tracking-wider" style="font-size:12px; letter-spacing:0.05em;">ИНФОРМАЦИЯ</span>
 
+                @php $postEditBotProfile = $this->postEditBotProfile(); @endphp
+                @if($postEditBotProfile)
+                    @php
+                        $postEditBotClient = is_array($postEditBotProfile['client'] ?? null) ? $postEditBotProfile['client'] : [];
+                        $postEditBotActive = is_countable($postEditBotProfile['currentSubscriptions'] ?? null) ? count($postEditBotProfile['currentSubscriptions']) : 0;
+                        $postEditBotPast = is_countable($postEditBotProfile['pastSubscriptions'] ?? null) ? count($postEditBotProfile['pastSubscriptions']) : 0;
+                        $postEditBotPayments = is_countable($postEditBotProfile['payments'] ?? null) ? count($postEditBotProfile['payments']) : 0;
+                    @endphp
+                    <div class="rounded-xl border border-border-light bg-bg-secondary p-3" title="Карточка клиента из PostEditBot">
+                        <div class="mb-2 text-xs font-semibold text-text-secondary">POSTEDITBOT</div>
+                        @if(($postEditBotProfile['found'] ?? false) === true)
+                            <div class="space-y-1 text-[12px] text-text-primary">
+                                <div><span class="text-text-secondary">Клиент:</span> {{ $postEditBotClient['email'] ?? $postEditBotClient['tgUsername'] ?? $postEditBotClient['tgId'] ?? '—' }}</div>
+                                <div><span class="text-text-secondary">Активные подписки:</span> {{ $postEditBotActive }}</div>
+                                <div><span class="text-text-secondary">Прошлые подписки:</span> {{ $postEditBotPast }}</div>
+                                <div><span class="text-text-secondary">Последние платежи:</span> {{ $postEditBotPayments }}</div>
+                            </div>
+                        @else
+                            <div class="text-[12px] text-text-secondary">
+                                Профиль не найден. AI не будет выдумывать подписки и оплаты.
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
                 {{-- Info rows — each: icon (16×16, text-secondary) + vertical texts (label 11 text-secondary / value 13 text-primary) --}}
 
                 {{-- ID пользователя — hash icon --}}

@@ -1,0 +1,30 @@
+services:
+  app:
+    container_name: relaxa-support-app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${SUPPORT_APP_PORT:-55610}:9000"
+
+  pgdb:
+    container_name: relaxa-support-postgres
+    ports:
+      - "127.0.0.1:${SUPPORT_PG_PORT:-55611}:5432"
+
+  nginx:
+    container_name: relaxa-support-nginx
+    volumes:
+      - ./docker/relaxa/nginx-local.conf:/etc/nginx/conf.d/relaxa-local.conf:ro
+    ports:
+      - "${SUPPORT_HTTP_PORT:-55612}:80"
+      - "${SUPPORT_HTTPS_PORT:-55613}:443"
+
+  queue:
+    container_name: relaxa-support-queue
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  scheduler:
+    container_name: relaxa-support-scheduler
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

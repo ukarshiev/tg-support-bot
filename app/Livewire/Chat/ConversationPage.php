@@ -17,7 +17,9 @@ use App\Modules\Admin\Actions\SendReplyAction;
 use App\Modules\Admin\Actions\UnbanBotUser;
 use App\Modules\Ai\Actions\AiAcceptMessage;
 use App\Modules\Ai\Actions\AiCancelMessage;
+use App\Modules\PostEditBotBridge\Services\PostEditBotBridgeClient;
 use App\Modules\Telegram\Actions\CloseTopic;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -132,6 +134,23 @@ class ConversationPage extends Component
     public function getPollingInterval(): ?string
     {
         return '5s';
+    }
+
+    /**
+     * Карточка клиента из PostEditBot для правой панели.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function postEditBotProfile(): ?array
+    {
+        if ($this->activeBotUser === null) {
+            return null;
+        }
+        if (! (bool) (app(SettingsService::class)->get('posteditbot_bridge.show_client_card') ?? true)) {
+            return null;
+        }
+
+        return app(PostEditBotBridgeClient::class)->profileForBotUser($this->activeBotUser);
     }
 
     // ── Dialog list ────────────────────────────────────────────────────────────

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Modules\Ai\Services;
 
+use App\Models\BotUser;
 use App\Modules\Ai\Contracts\AiProviderInterface;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
+use App\Modules\PostEditBotBridge\Services\ClientProfilePromptBuilder;
+use App\Modules\PostEditBotBridge\Services\PostEditBotBridgeClient;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
@@ -34,6 +37,7 @@ class AiAssistantService
             $this->provider = $this->getDefaultProvider($request->provider);
 
             $context = $this->historyService->buildForBotUser($request->userId, $request->message);
+            $context = $this->appendPostEditBotContext($request->userId, $context);
 
             $requestWithContext = new AiRequestDto(
                 message: $request->message,
@@ -69,9 +73,15 @@ class AiAssistantService
     public function generateReply(int $userId, string $platform, string $userMessage): ?string
     {
         try {
+            $bridgeAiMode = (string) (app(SettingsService::class)->get('posteditbot_bridge.ai_mode') ?? 'hybrid');
+            if ($bridgeAiMode === 'draft') {
+                return null;
+            }
+
             $this->provider = $this->getDefaultProvider(null);
 
             $context = $this->historyService->buildForBotUser($userId, $userMessage);
+            $context = $this->appendPostEditBotContext($userId, $context);
 
             $request = new AiRequestDto(
                 message: $userMessage,
@@ -132,5 +142,38 @@ class AiAssistantService
         }
 
         throw new \Exception('No AI providers available');
+    }
+
+    /**
+     * @param array<int, array{role: string, content: string}> $context
+     *
+     * @return array<int, array{role: string, content: string}>
+     */
+    private function appendPostEditBotContext(int $botUserId, array $context): array
+    {
+        try {
+            $botUser = BotUser::find($botUserId);
+            if ($botUser === null) {
+                return $context;
+            }
+
+            $profile = app(PostEditBotBridgeClient::class)->profileForBotUser($botUser);
+            $prompt = app(ClientProfilePromptBuilder::class)->build($profile);
+            if ($prompt === null || trim($prompt) === '') {
+                return $context;
+            }
+
+            array_unshift($context, [
+                'role' => 'system',
+                'content' => $prompt,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('app')->warning('PostEditBot Bridge: AI context пропущен', [
+                'bot_user_id' => $botUserId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $context;
     }
 }
