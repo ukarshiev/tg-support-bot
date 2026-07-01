@@ -149,4 +149,60 @@ abstract class BaseAiProvider implements AiProviderInterface
     {
         return app(AiSystemPromptLoader::class)->render();
     }
+
+    /**
+     * Build provider chat messages with a final language guard.
+     *
+     * The guard is intentionally placed after history and before the current
+     * user message: previous assistant answers can be in another language, but
+     * the next answer must follow the latest user message.
+     *
+     * @param AiRequestDto $request
+     *
+     * @return array<int, array{role: string, content: string}>
+     */
+    protected function buildChatMessages(AiRequestDto $request): array
+    {
+        $messages = [
+            [
+                'role' => 'system',
+                'content' => $this->buildSystemPrompt($request),
+            ],
+        ];
+
+        foreach ($request->context as $contextMessage) {
+            $messages[] = [
+                'role' => $contextMessage['role'] ?? 'user',
+                'content' => $contextMessage['content'] ?? '',
+            ];
+        }
+
+        $languageRule = $request->preferredLanguageName !== null && $request->preferredLanguageName !== ''
+            ? implode(' ', [
+                'Правило языка для следующего ответа:',
+                'пользователь выбрал язык ' . $request->preferredLanguageName . '.',
+                'Отвечай строго на этом языке, не угадывай язык по истории или текущему тексту.',
+                'Если пользователь пишет на другом языке, всё равно отвечай на выбранном языке.',
+            ])
+            : implode(' ', [
+                'Правило языка для следующего ответа:',
+                'определи язык только по последнему сообщению пользователя ниже.',
+                'Игнорируй язык прошлых сообщений и прошлых ответов ассистента.',
+                'Если последнее сообщение на русском или кириллице — отвечай на русском.',
+                'Если последнее сообщение на английском или латинице — отвечай на английском.',
+                'Если язык неясен, используй язык последнего понятного сообщения пользователя, а не ассистента.',
+            ]);
+
+        $messages[] = [
+            'role' => 'system',
+            'content' => $languageRule,
+        ];
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $request->message,
+        ];
+
+        return $messages;
+    }
 }

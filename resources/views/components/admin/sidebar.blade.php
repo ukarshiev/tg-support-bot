@@ -25,7 +25,8 @@
     <div class="flex items-center gap-3 px-4 py-5">
         <a href="{{ $resolvedBackUrl }}"
            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-sidebar-secondary transition hover:bg-sidebar-hover hover:text-text-sidebar"
-           aria-label="Назад">
+           aria-label="Назад"
+           title="Вернуться назад">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
@@ -45,6 +46,7 @@
             <button
                 type="submit"
                 class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-sidebar-secondary transition hover:bg-sidebar-hover hover:text-text-sidebar"
+                title="Выйти из аккаунта"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -57,9 +59,30 @@
     </div>
 
     {{-- Footer --}}
-    <div class="border-t border-border-sidebar px-4 py-4 text-xs text-text-sidebar-secondary">
+    <div
+        class="flex items-center gap-2 border-t border-border-sidebar px-4 py-4 text-xs text-text-sidebar-secondary"
+        x-data="{ theme: window.adminTheme?.get?.() || 'light' }"
+        x-on:admin-theme-changed.window="theme = $event.detail.theme"
+    >
         <span>{{ $version }}</span>
         <span class="mx-1">·</span>
-        <a href="{{ $docsUrl }}" target="_blank" rel="noopener noreferrer" class="text-accent transition hover:underline">Документация</a>
+        <a href="{{ $docsUrl }}" target="_blank" rel="noopener noreferrer" class="text-accent transition hover:underline" title="Открыть документацию">Документация</a>
+        <button
+            type="button"
+            class="ml-auto inline-flex h-7 w-12 items-center rounded-full border border-border-sidebar bg-sidebar-hover p-0.5 text-text-sidebar-secondary transition hover:text-text-sidebar focus:outline-none focus:ring-2 focus:ring-accent/60"
+            x-on:click="window.adminTheme.toggle(); theme = window.adminTheme.get();"
+            :aria-pressed="theme === 'dark'"
+            :title="theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'"
+        >
+            <span
+                class="flex h-6 w-6 items-center justify-center rounded-full bg-bg-primary text-[13px] shadow transition-transform"
+                :class="theme === 'dark' ? 'translate-x-5 text-accent' : 'translate-x-0 text-text-secondary'"
+                aria-hidden="true"
+            >
+                <span x-show="theme !== 'dark'">☀</span>
+                <span x-show="theme === 'dark'">☾</span>
+            </span>
+            <span class="sr-only" x-text="theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'"></span>
+        </button>
     </div>
 </aside>

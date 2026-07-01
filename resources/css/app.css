@@ -31,6 +31,16 @@
     --color-bg-input: #F1F3F5;
     --color-border-light: #E5E7EB;
 
+    /* Chat surfaces */
+    --color-chat-bubble-incoming: #FFFFFF;
+    --color-chat-bubble-incoming-border: #E5E7EB;
+    --color-chat-control-bg: #F1F3F5;
+    --color-chat-control-border: #D5DBF9;
+    --color-chat-soft-accent: #EEF2FF;
+    --color-chat-soft-success: #DCFCE7;
+    --color-chat-soft-danger: #FEE2E2;
+    --color-chat-soft-neutral: #F3F4F6;
+
     /* Text */
     --color-text-primary: #1A1D26;
     --color-text-secondary: #6B7280;
@@ -40,6 +50,89 @@
     --color-text-online: #34C759;
     --color-bg-badge: #4F6EF7;
     --color-text-on-badge: #FFFFFF;
+}
+
+/*
+    Admin theme tokens.
+    Dark mode uses slate tones, not pure black: this keeps contrast readable
+    without the "flashlight in the eyes" effect on large admin screens.
+*/
+:root {
+    color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+
+    --color-sidebar: #0F172A;
+    --color-sidebar-active: #1E293B;
+    --color-sidebar-hover: #172033;
+    --color-border-sidebar: #263244;
+    --color-text-sidebar: #F8FAFC;
+    --color-text-sidebar-secondary: #94A3B8;
+
+    --color-bg-primary: #111827;
+    --color-bg-secondary: #0F172A;
+    --color-bg-input: #1F2937;
+    --color-border-light: #334155;
+
+    --color-chat-bubble-incoming: #182235;
+    --color-chat-bubble-incoming-border: #334155;
+    --color-chat-control-bg: #172033;
+    --color-chat-control-border: #31415F;
+    --color-chat-soft-accent: #1D2A4A;
+    --color-chat-soft-success: #12352D;
+    --color-chat-soft-danger: #3A1E28;
+    --color-chat-soft-neutral: #182235;
+
+    --color-text-primary: #E5E7EB;
+    --color-text-secondary: #94A3B8;
+
+    --color-accent: #6382FF;
+    --color-text-link: #8EA2FF;
+}
+
+:root[data-theme='dark'] .admin-muted-surface {
+    background-color: #182235;
+}
+
+:root[data-theme='dark'] .admin-danger-soft {
+    background-color: rgba(127, 29, 29, 0.22);
+}
+
+/*
+    Dark mode compatibility for upstream templates.
+    Some official Blade pages use fixed light backgrounds instead of theme
+    tokens. These overrides keep the dark theme consistent without rewriting
+    every upstream class.
+*/
+:root[data-theme='dark'] .bg-\[\#FAFAFA\],
+:root[data-theme='dark'] .bg-white {
+    background-color: var(--color-bg-secondary) !important;
+}
+
+:root[data-theme='dark'] [style*='background:#EEF2FF'],
+:root[data-theme='dark'] [style*='background: #EEF2FF'],
+:root[data-theme='dark'] [style*='background:#F0F4FF'],
+:root[data-theme='dark'] [style*='background: #F0F4FF'],
+:root[data-theme='dark'] [style*='background:#ECFDF5'],
+:root[data-theme='dark'] [style*='background: #ECFDF5'],
+:root[data-theme='dark'] [style*='background:#FFF3E0'],
+:root[data-theme='dark'] [style*='background: #FFF3E0'],
+:root[data-theme='dark'] [style*='background:#E8F5E9'],
+:root[data-theme='dark'] [style*='background: #E8F5E9'],
+:root[data-theme='dark'] [style*='background:#E3F2FD'],
+:root[data-theme='dark'] [style*='background: #E3F2FD'],
+:root[data-theme='dark'] [style*='background:#FCE4EC'],
+:root[data-theme='dark'] [style*='background: #FCE4EC'] {
+    background: #1E293B !important;
+}
+
+:root[data-theme='dark'] .bg-red-50,
+:root[data-theme='dark'] .bg-green-50,
+:root[data-theme='dark'] .bg-blue-50,
+:root[data-theme='dark'] .bg-yellow-50 {
+    background-color: rgba(30, 41, 59, 0.86) !important;
 }
 
 /* ── Slim scrollbar for the chat dialog list (dark sidebar) ──────────────── */

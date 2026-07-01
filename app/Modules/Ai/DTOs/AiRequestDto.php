@@ -16,6 +16,8 @@ class AiRequestDto
      * @param string     $provider        AI provider to use
      * @param float|null $maxConfidence   Maximum confidence for auto-reply
      * @param bool       $forceEscalation Force escalation to operator
+     * @param string|null $preferredLanguageCode Selected user language code
+     * @param string|null $preferredLanguageName Selected user language name
      */
     public function __construct(
         public readonly string $message,
@@ -24,7 +26,9 @@ class AiRequestDto
         public readonly array $context = [],
         public readonly string $provider = 'openai',
         public readonly ?float $maxConfidence = null,
-        public readonly bool $forceEscalation = false
+        public readonly bool $forceEscalation = false,
+        public readonly ?string $preferredLanguageCode = null,
+        public readonly ?string $preferredLanguageName = null
     ) {
     }
 
@@ -44,7 +48,9 @@ class AiRequestDto
             context: $data['context'] ?? [],
             provider: $data['provider'] ?? 'openai',
             maxConfidence: $data['max_confidence'] ?? null,
-            forceEscalation: $data['force_escalation'] ?? false
+            forceEscalation: $data['force_escalation'] ?? false,
+            preferredLanguageCode: $data['preferred_language_code'] ?? null,
+            preferredLanguageName: $data['preferred_language_name'] ?? null
         );
     }
 
@@ -63,6 +69,8 @@ class AiRequestDto
             'provider' => $this->provider,
             'max_confidence' => $this->maxConfidence,
             'force_escalation' => $this->forceEscalation,
+            'preferred_language_code' => $this->preferredLanguageCode,
+            'preferred_language_name' => $this->preferredLanguageName,
         ];
     }
 }

@@ -28,6 +28,8 @@ use Spatie\LaravelData\Data;
  * @property array|null  $media
  * @property float|null  $latitude
  * @property float|null  $longitude
+ * @property string|null $action
+ * @property string|null $callback_query_id
  */
 class TGTextMessageDto extends Data
 {
@@ -55,6 +57,8 @@ class TGTextMessageDto extends Data
         public ?array         $media = null,
         public ?float         $latitude = null,
         public ?float         $longitude = null,
+        public ?string        $action = null,
+        public ?string        $callback_query_id = null,
         public int|string|null         $icon_custom_emoji_id = null,
     ) {
     }
@@ -114,3 +118,4 @@ class TGTextMessageDto extends Data
         return $mediaData;
     }
 }
+

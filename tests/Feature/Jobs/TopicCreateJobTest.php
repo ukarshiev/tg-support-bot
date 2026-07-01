@@ -7,6 +7,7 @@ use App\Models\Message;
 use App\Modules\Telegram\Actions\DeleteForumTopic;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -42,6 +43,38 @@ class TopicCreateJobTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    public function test_topic_name_template_allows_missing_optional_parts(): void
+    {
+        app(SettingsService::class)->set('telegram.template_topic_name', '{first_name} {last_name} ({username})');
+
+        Http::fake([
+            'https://api.telegram.org/bot*/getChat*' => Http::response([
+                'ok' => true,
+                'result' => [
+                    'id' => $this->botUser->chat_id,
+                    'first_name' => 'Test',
+                    'username' => 'testuser',
+                ],
+            ], 200),
+            'https://api.telegram.org/bot*/createForumTopic*' => Http::response([
+                'ok' => true,
+                'result' => [
+                    'message_thread_id' => 77,
+                ],
+            ], 200),
+            'https://api.telegram.org/bot*/sendContact*' => Http::response([
+                'ok' => true,
+            ], 200),
+        ]);
+
+        $job = new TopicCreateJob($this->botUser->id);
+        $job->handle();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/createForumTopic')
+            && $request['name'] === 'Test (testuser)');
+        $this->assertEquals(77, $this->botUser->fresh()->topic_id);
     }
 
     public function test_success_send_creates_message_record(): void

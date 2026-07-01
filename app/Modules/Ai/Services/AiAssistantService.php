@@ -16,8 +16,10 @@ class AiAssistantService
 
     private array $providers = [];
 
-    public function __construct(private readonly AiChatHistoryService $historyService)
-    {
+    public function __construct(
+        private readonly AiChatHistoryService $historyService,
+        private readonly AiKnowledgeService $knowledgeService
+    ) {
         $this->initializeProviders();
     }
 
@@ -33,7 +35,7 @@ class AiAssistantService
         try {
             $this->provider = $this->getDefaultProvider($request->provider);
 
-            $context = $this->historyService->buildForBotUser($request->userId, $request->message);
+            $context = $this->buildContext($request->userId, $request->message);
 
             $requestWithContext = new AiRequestDto(
                 message: $request->message,
@@ -42,7 +44,9 @@ class AiAssistantService
                 context: $context,
                 provider: $request->provider,
                 maxConfidence: $request->maxConfidence,
-                forceEscalation: $request->forceEscalation
+                forceEscalation: $request->forceEscalation,
+                preferredLanguageCode: $request->preferredLanguageCode,
+                preferredLanguageName: $request->preferredLanguageName
             );
 
             return $this->provider->processMessage($requestWithContext);
@@ -71,7 +75,7 @@ class AiAssistantService
         try {
             $this->provider = $this->getDefaultProvider(null);
 
-            $context = $this->historyService->buildForBotUser($userId, $userMessage);
+            $context = $this->buildContext($userId, $userMessage);
 
             $request = new AiRequestDto(
                 message: $userMessage,
@@ -132,5 +136,24 @@ class AiAssistantService
         }
 
         throw new \Exception('No AI providers available');
+    }
+
+    /**
+     * Build compact request context:
+     * 1) matching knowledge blocks, if any;
+     * 2) limited chat history.
+     *
+     * @return array<int, array{role: string, content: string}>
+     */
+    private function buildContext(int $userId, string $userMessage): array
+    {
+        $history = $this->historyService->buildForBotUser($userId, $userMessage);
+        $knowledge = $this->knowledgeService->buildContextMessage($userMessage);
+
+        if ($knowledge === null) {
+            return $history;
+        }
+
+        return array_merge([$knowledge], $history);
     }
 }

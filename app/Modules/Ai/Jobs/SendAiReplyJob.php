@@ -4,11 +4,13 @@ namespace App\Modules\Ai\Jobs;
 
 use App\Models\AiMessage;
 use App\Models\BotUser;
+use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
 use App\Modules\Admin\Services\ChannelStatusService;
 use App\Modules\Ai\Actions\DeliverAiAnswerToUser;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiBotApi;
+use App\Modules\Telegram\Actions\SendTypingAction;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
@@ -77,12 +79,16 @@ class SendAiReplyJob implements ShouldQueue
                 return;
             }
 
+            app(SendTypingAction::class)->execute($botUser);
+
             $aiRequest = new AiRequestDto(
                 message: $this->userMessage,
                 userId: $this->botUserId,
                 platform: $botUser->platform ?? 'telegram',
                 provider: (string) app(SettingsService::class)->get('ai.default_provider'),
-                forceEscalation: false
+                forceEscalation: false,
+                preferredLanguageCode: $botUser->preferred_language_code,
+                preferredLanguageName: $botUser->preferred_language_name
             );
 
             $aiResponse = $aiService->processMessage($aiRequest);
@@ -126,8 +132,22 @@ class SendAiReplyJob implements ShouldQueue
                     'text_manager' => $replyText,
                     'status' => AiMessage::STATUS_ACCEPTED,
                 ]);
+
+                if ($telegramConnected) {
+                    $plainReplyText = trim(html_entity_decode(strip_tags($replyText), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+                    if ($plainReplyText !== '') {
+                        MirrorAdminReplyToGroupJob::dispatch($botUser->id, $plainReplyText, "🤖 Ответ ИИ:\n");
+
+                        Log::channel('app')->info('SendAiReplyJob: AI reply mirror queued for supergroup', [
+                            'source' => 'ai_reply_supergroup_mirror',
+                            'bot_user_id' => $botUser->id,
+                        ]);
+                    }
+                }
             }
 
+            app(SendTypingAction::class)->execute($botUser);
             $delivered = app(DeliverAiAnswerToUser::class)->execute($botUser, $replyText, $this->updateDto);
             if (!$delivered) {
                 throw new \RuntimeException('AI auto-reply delivery skipped: unsupported platform', 1);
@@ -147,3 +167,4 @@ class SendAiReplyJob implements ShouldQueue
         }
     }
 }
+

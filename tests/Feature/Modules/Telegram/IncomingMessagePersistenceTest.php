@@ -50,6 +50,18 @@ class IncomingMessagePersistenceTest extends TestCase
         app(\App\Services\Settings\SettingsService::class)->forget('telegram.group_id');
     }
 
+
+    private function selectTelegramLanguage(BotUser $botUser, string $code = 'ru', string $name = 'Русский'): BotUser
+    {
+        $botUser->update([
+            'preferred_language_code' => $code,
+            'preferred_language_name' => $name,
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        return $botUser;
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     /**
@@ -95,6 +107,28 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
     }
 
+
+    public function test_telegram_incoming_without_selected_language_shows_selector_and_does_not_persist(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+
+        $botUser = BotUser::create(['chat_id' => 112233, 'platform' => 'telegram']);
+
+        $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
+
+        $this->assertSame(0, Message::where('bot_user_id', $botUser->id)->count());
+        Queue::assertPushed(\App\Modules\Telegram\Jobs\SendTelegramMessageJob::class, function ($job): bool {
+            return $job->typeMessage === 'outgoing'
+                && $job->queryParams->text === 'Выберите язык / Choose your language:';
+        });
+    }
+
     // ── Telegram — group OFF ──────────────────────────────────────────────────
 
     /**
@@ -113,7 +147,7 @@ class IncomingMessagePersistenceTest extends TestCase
         // TestCase::setUp() seeds a default group_id — remove it for the group-OFF scenario.
         $this->clearGroupId();
 
-        $botUser = BotUser::create(['chat_id' => 123456, 'platform' => 'telegram']);
+        $botUser = $this->selectTelegramLanguage(BotUser::create(['chat_id' => 123456, 'platform' => 'telegram']));
 
         $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
 
@@ -151,7 +185,7 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
         $this->clearGroupId();
 
-        $botUser = BotUser::create(['chat_id' => 234567, 'platform' => 'telegram']);
+        $botUser = $this->selectTelegramLanguage(BotUser::create(['chat_id' => 234567, 'platform' => 'telegram']));
 
         $payload = $this->telegramPayload($botUser, [
             'photo' => [
@@ -194,7 +228,7 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
         $this->clearGroupId();
 
-        $botUser = BotUser::create(['chat_id' => 345678, 'platform' => 'telegram']);
+        $botUser = $this->selectTelegramLanguage(BotUser::create(['chat_id' => 345678, 'platform' => 'telegram']));
 
         $payload = $this->telegramPayload($botUser, [
             'document' => [
@@ -240,7 +274,7 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
 
         // BotUser without a topic_id → TopicCreateJob will be dispatched first.
-        $botUser = BotUser::create(['chat_id' => 456789, 'platform' => 'telegram']);
+        $botUser = $this->selectTelegramLanguage(BotUser::create(['chat_id' => 456789, 'platform' => 'telegram']));
 
         $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
 
@@ -275,11 +309,11 @@ class IncomingMessagePersistenceTest extends TestCase
             'telegram.group_id' => '-100999888',
         ]);
 
-        $botUser = BotUser::create([
+        $botUser = $this->selectTelegramLanguage(BotUser::create([
             'chat_id' => 567890,
             'platform' => 'telegram',
             'topic_id' => 42,
-        ]);
+        ]));
 
         $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
 
@@ -492,7 +526,7 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
         $this->clearGroupId();
 
-        $botUser = BotUser::create(['chat_id' => 678901, 'platform' => 'telegram']);
+        $botUser = $this->selectTelegramLanguage(BotUser::create(['chat_id' => 678901, 'platform' => 'telegram']));
 
         // Trigger the group-OFF persistence path.
         $this->postTgWebhook($this->telegramPayload($botUser, ['text' => 'Admin can see me']))->assertOk();

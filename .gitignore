@@ -48,3 +48,12 @@ yarn-error.log
 # Mutagen — local dev sync config, not versioned
 /mutagen.yml
 /mutagen.yml.lock
+
+# Local agent/dev artifacts, not versioned
+/.codex/
+/.composer/
+/.playwright-cli/
+/.playwright-mcp/
+/graphify-out/
+/output/
+/.local-support-credentials.txt

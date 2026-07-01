@@ -32,6 +32,14 @@
     .tglogin__btn{height:48px;border:none;border-radius:10px;background:#4F6EF7;color:#FFFFFF;font-size:15px;font-weight:600;cursor:pointer;transition:background .15s,opacity .15s;}
     .tglogin__btn:hover{background:#4360e6;}
     .tglogin__btn:disabled{opacity:.7;cursor:default;}
+    :root[data-theme='dark'] .tglogin{background:#0F172A;}
+    :root[data-theme='dark'] .tglogin__brand{background:#0F172A;}
+    :root[data-theme='dark'] .tglogin__form-panel{background:#111827;}
+    :root[data-theme='dark'] .tglogin__title,
+    :root[data-theme='dark'] .tglogin__label{color:#E5E7EB;}
+    :root[data-theme='dark'] .tglogin__subtitle{color:#94A3B8;}
+    :root[data-theme='dark'] .tglogin__input{background:#1F2937;border-color:#334155;color:#E5E7EB;}
+    :root[data-theme='dark'] .tglogin__input::placeholder{color:#94A3B8;}
     @media (max-width:1023px){
         .tglogin__brand{display:none;}
         .tglogin__form-panel{padding:32px 24px;}
@@ -90,6 +98,7 @@
                         wire:model="email"
                         placeholder="admin@example.com"
                         class="tglogin__input @error('email') tglogin__input--error @enderror"
+                        title="Введите email администратора"
                     />
                     @error('email')
                         <p class="tglogin__error">{{ $message }}</p>
@@ -105,6 +114,7 @@
                         wire:model="password"
                         placeholder="••••••••"
                         class="tglogin__input @error('password') tglogin__input--error @enderror"
+                        title="Введите пароль администратора"
                     />
                     @error('password')
                         <p class="tglogin__error">{{ $message }}</p>
@@ -112,7 +122,7 @@
                 </div>
             </div>
 
-            <button type="submit" class="tglogin__btn" wire:loading.attr="disabled" wire:target="authenticate">
+            <button type="submit" class="tglogin__btn" wire:loading.attr="disabled" wire:target="authenticate" title="Войти в админку">
                 <span wire:loading.remove wire:target="authenticate">Войти</span>
                 <span wire:loading wire:target="authenticate">Вход…</span>
             </button>

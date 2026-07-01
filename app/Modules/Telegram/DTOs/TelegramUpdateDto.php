@@ -28,6 +28,7 @@ use Spatie\LaravelData\Data;
  * @property string|null $fileType
  * @property string|null $username
  * @property string|null $displayName
+ * @property string|null $languageCode
  * @property string|null $callbackData
  * @property array|null  $location
  * @property array|null  $contact
@@ -55,6 +56,7 @@ class TelegramUpdateDto extends Data
         public ?string $fileType = null,
         public ?string $username = null,
         public ?string $displayName = null,
+        public ?string $languageCode = null,
         public ?string $callbackData = null,
         public ?array  $location = null,
         public ?array  $contact = null,
@@ -105,6 +107,7 @@ class TelegramUpdateDto extends Data
                 fileType: TelegramHelper::extractFileType($data),
                 username: self::extractUsername($data, $type),
                 displayName: self::extractDisplayName($data, $type),
+                languageCode: self::extractLanguageCode($data, $type),
                 callbackData: $data['callback_query']['data'] ?? null,
                 location: $data['message']['location'] ?? null,
                 contact: $data['message']['contact'] ?? null,
@@ -232,8 +235,21 @@ class TelegramUpdateDto extends Data
      *
      * @return string|null
      */
+    private static function extractLanguageCode(array $data, string $type): ?string
+    {
+        return $data[$type]['from']['language_code'] ?? $data['callback_query']['from']['language_code'] ?? null;
+    }
+
+    /**
+     * @param array  $data
+     * @param string $type
+     *
+     * @return string|null
+     */
     private static function extractTypeSource(array $data, string $type): ?string
     {
         return $data[$type]['chat']['type'] ?? $data[$type]['message']['chat']['type'] ?? null;
     }
 }
+
+

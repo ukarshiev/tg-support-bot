@@ -18,6 +18,16 @@
 
     <title>Чаты — Admin</title>
 
+    <script>
+        (() => {
+            const key = 'tg-support-bot-admin-theme';
+            const saved = localStorage.getItem(key);
+            const theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+            document.documentElement.style.colorScheme = theme;
+        })();
+    </script>
+
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 

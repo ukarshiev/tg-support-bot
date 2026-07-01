@@ -84,7 +84,9 @@ class SendAiDraftJob implements ShouldQueue
                 userId: $this->botUserId,
                 platform: $botUser->platform ?? 'telegram',
                 provider: (string) app(SettingsService::class)->get('ai.default_provider'),
-                forceEscalation: false
+                forceEscalation: false,
+                preferredLanguageCode: $botUser->preferred_language_code,
+                preferredLanguageName: $botUser->preferred_language_name
             );
 
             $aiResponse = $aiService->processMessage($aiRequest);

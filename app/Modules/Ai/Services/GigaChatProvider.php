@@ -158,26 +158,7 @@ class GigaChatProvider extends BaseAiProvider
      */
     private function buildMessages(AiRequestDto $request): array
     {
-        $messages = [
-            [
-                'role' => 'system',
-                'content' => $this->buildSystemPrompt($request),
-            ],
-        ];
-
-        foreach ($request->context as $contextMessage) {
-            $messages[] = [
-                'role' => $contextMessage['role'] ?? 'user',
-                'content' => $contextMessage['content'] ?? '',
-            ];
-        }
-
-        $messages[] = [
-            'role' => 'user',
-            'content' => $request->message,
-        ];
-
-        return $messages;
+        return $this->buildChatMessages($request);
     }
 
     /**

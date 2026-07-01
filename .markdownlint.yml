@@ -9,6 +9,9 @@ MD022: false
 # Duplicate headings — same heading names appear in different sections
 MD024: false
 
+# Deployment instruction heading intentionally ends with colon
+MD026: false
+
 # Fenced code blocks surrounded by blank lines — existing docs skip this
 MD031: false
 
@@ -26,6 +29,9 @@ MD036: false
 
 # Fenced code blocks should have a language — many plain text blocks exist
 MD040: false
+
+# Changelog intentionally starts with the latest version, not an H1
+MD041: false
 
 # Unordered list style — existing docs mix asterisks and dashes
 MD004: false

@@ -26,7 +26,7 @@
         <div class="border-t border-border-light"></div>
 
         {{-- Column headers — hidden on mobile --}}
-        <div class="hidden grid-cols-[1fr_200px_120px_60px] items-center bg-[#FAFAFA] px-6 py-3 text-[12px] font-medium text-text-secondary lg:grid">
+        <div class="admin-muted-surface hidden grid-cols-[1fr_200px_120px_60px] items-center bg-[#FAFAFA] px-6 py-3 text-[12px] font-medium text-text-secondary lg:grid">
             <span>Участник</span>
             <span>Роль</span>
             <span>Статус</span>
@@ -36,7 +36,7 @@
 
         {{-- Delete error notice --}}
         @if ($deleteError)
-            <div class="border-b border-border-light bg-red-50 px-4 py-3 lg:px-6">
+            <div class="admin-danger-soft border-b border-border-light bg-red-50 px-4 py-3 lg:px-6">
                 <p class="text-sm text-red-700">{{ $deleteError }}</p>
             </div>
         @endif

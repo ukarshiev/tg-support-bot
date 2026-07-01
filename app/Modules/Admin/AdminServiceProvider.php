@@ -5,6 +5,7 @@ namespace App\Modules\Admin;
 use App\Livewire\Auth\LoginPage;
 use App\Livewire\Chat\ConversationPage;
 use App\Livewire\Settings\AiAssistantPage;
+use App\Livewire\Settings\AiKnowledgePage;
 use App\Livewire\Settings\AiProviderAccessPage;
 use App\Livewire\Settings\ApiWebhookSourcePage;
 use App\Livewire\Settings\ApiWebhooksPage;
@@ -123,6 +124,9 @@ class AdminServiceProvider extends ServiceProvider
                 // AI assistant settings.
                 Route::get('/ai', AiAssistantPage::class)
                     ->name('ai');
+
+                Route::get('/ai/knowledge', AiKnowledgePage::class)
+                    ->name('ai.knowledge');
 
                 Route::get('/ai/{provider}', AiProviderAccessPage::class)
                     ->name('ai.provider')

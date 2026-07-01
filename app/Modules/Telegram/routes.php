@@ -15,7 +15,7 @@ Route::group([
         $secretKey = (string) app(SettingsService::class)->get('telegram.secret_key');
         $queryParams = [
             'url' => config('app.url') . '/api/telegram/bot',
-            'max_connections' => 40,
+            'max_connections' => 5,
             'drop_pending_updates' => true,
             'secret_token' => $secretKey,
         ];

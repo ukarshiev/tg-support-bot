@@ -5,14 +5,16 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Установка системных пакетов и Node.js
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git curl zip unzip libpq-dev libicu-dev libzip-dev shellcheck && \
+    apt-get install -y --no-install-recommends git curl zip unzip libpq-dev libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev shellcheck && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    docker-php-ext-install pdo pdo_pgsql pgsql intl zip && \
+    docker-php-ext-configure gd --with-freetype --with-jpeg && \
+    docker-php-ext-install pdo pdo_pgsql pgsql intl zip gd && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Настройки PHP
 COPY ./docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
+COPY ./docker/php-fpm/zz-relaxa-pool.conf /usr/local/etc/php-fpm.d/zz-relaxa-pool.conf
 
 # Установка Composer
 COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
@@ -51,3 +53,4 @@ USER www-data
 
 EXPOSE 9000
 CMD ["php-fpm"]
+

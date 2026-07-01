@@ -23,7 +23,7 @@ class TelegramSetWebhook extends Command
 
         $queryParams = [
             'url' => $url,
-            'max_connections' => 40,
+            'max_connections' => 5,
             'drop_pending_updates' => true,
             'secret_token' => $secret,
         ];

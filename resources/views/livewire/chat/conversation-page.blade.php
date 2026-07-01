@@ -201,6 +201,7 @@
             @foreach(['all' => 'Все', 'open' => 'Открытые', 'closed' => 'Закрытые'] as $value => $label)
                 <button
                     wire:click="$set('statusFilter', '{{ $value }}')"
+                    title="Показать {{ mb_strtolower($label) }} диалоги"
                     class="rounded-md transition-colors cursor-pointer"
                     style="padding: 6px 12px; font-size:13px; font-weight: {{ $statusFilter === $value ? '600' : '400' }}; {{ $statusFilter === $value ? 'background:#4F6EF7; color:#FFFFFF;' : 'background:transparent; color:#8B92A5;' }}"
                     type="button"
@@ -437,6 +438,7 @@
                                 wire:click="clearHistory"
                                 wire:confirm="Очистить историю переписки? Все сообщения этого чата будут удалены, сам чат останется."
                                 x-on:click="menuOpen = false"
+                                title="Очистить историю"
                                 class="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-text-primary transition hover:bg-bg-secondary"
                                 style="cursor:pointer;"
                             >
@@ -457,6 +459,7 @@
                                     wire:click="deleteChat"
                                     wire:confirm="Удалить чат и все его сообщения? Действие необратимо."
                                     x-on:click="menuOpen = false"
+                                    title="Удалить чат"
                                     class="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50"
                                     style="cursor:pointer;"
                                 >
@@ -607,7 +610,7 @@
                                 {{-- No author recorded — generic headset glyph (historical / AI / telegram-group) --}}
                                 <div
                                     class="flex shrink-0 items-center justify-center rounded-full select-none"
-                                    style="width:32px; height:32px; background:#EEF2FF;"
+                                    style="width:32px; height:32px; background:var(--color-chat-soft-accent);"
                                     aria-hidden="true"
                                     title="Менеджер"
                                 >
@@ -640,7 +643,7 @@
                                 >{{ $hdrInitials }}</div>
                             @endif
                             {{-- Bubble --}}
-                            <div class="flex flex-col" style="border-radius:16px 16px 16px 4px; background:#FFFFFF; border:1px solid #E5E7EB; padding:10px 14px; gap:4px; max-width:70%;">
+                            <div class="flex flex-col" style="border-radius:16px 16px 16px 4px; background:var(--color-chat-bubble-incoming); border:1px solid var(--color-chat-bubble-incoming-border); padding:10px 14px; gap:4px; max-width:70%;">
                                 @if($message->attachments->isNotEmpty())
                                     <x-message-attachments
                                         :attachments="$message->attachments"
@@ -672,7 +675,7 @@
                                 wire:loading.class="opacity-60"
                                 wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
                                 class="flex flex-col transition-opacity"
-                                style="border:2px dashed #4F6EF7; border-radius:14px 14px 0 14px; background:#F5F7FF; padding:14px 16px; gap:10px; margin-top:16px;">
+                                style="border:2px dashed var(--color-accent); border-radius:14px 14px 0 14px; background:var(--color-chat-soft-accent); padding:14px 16px; gap:10px; margin-top:16px;">
                                 {{-- Header --}}
                                 <div class="flex items-center" style="gap:8px;">
                                     <div class="flex items-center justify-center rounded-lg text-white font-bold" style="width:28px; height:28px; background:#4F6EF7; font-size:11px; flex-shrink:0;">ИИ</div>
@@ -692,6 +695,7 @@
                                         wire:click="acceptAiDraft({{ $draft->id }})"
                                         wire:loading.attr="disabled"
                                         wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
+                                        title="Принять ИИ-черновик"
                                         class="flex items-center gap-1.5 rounded-lg text-white text-xs font-semibold transition hover:opacity-90 disabled:opacity-50 disabled:cursor-wait"
                                         style="background:#10B981; padding:7px 14px; border:none; cursor:pointer;"
                                     >
@@ -703,8 +707,9 @@
                                         wire:click="editAiDraft({{ $draft->id }})"
                                         wire:loading.attr="disabled"
                                         wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
+                                        title="Изменить ИИ-черновик"
                                         class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80 disabled:opacity-50 disabled:cursor-wait"
-                                        style="background:#EEF2FF; color:#4F6EF7; padding:7px 14px; border:none; cursor:pointer;"
+                                        style="background:var(--color-chat-soft-accent); color:var(--color-text-link); padding:7px 14px; border:none; cursor:pointer;"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                                         Изменить
@@ -715,8 +720,9 @@
                                         wire:confirm="Отменить ИИ-черновик?"
                                         wire:loading.attr="disabled"
                                         wire:target="acceptAiDraft, editAiDraft, cancelAiDraft"
+                                        title="Отменить ИИ-черновик"
                                         class="flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80 disabled:opacity-50 disabled:cursor-wait"
-                                        style="background:#FEE2E2; color:#EF4444; padding:7px 14px; border:none; cursor:pointer;"
+                                        style="background:var(--color-chat-soft-danger); color:#F87171; padding:7px 14px; border:none; cursor:pointer;"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                                         Отмена
@@ -744,7 +750,7 @@
                                     wire:click="insertQuickReply(@js($autoReply->response))"
                                     title="{{ $autoReply->response }}"
                                     class="text-text-secondary transition hover:text-accent"
-                                    style="border-radius:16px; background:#F1F3F5; padding:6px 12px; font-size:12px; border:none; cursor:pointer;"
+                                    style="border-radius:16px; background:var(--color-chat-control-bg); padding:6px 12px; font-size:12px; border:none; cursor:pointer;"
                                 >{{ $autoReply->trigger }}</button>
                             @endforeach
                         </div>
@@ -768,7 +774,7 @@
                         {{-- Selected file chip --}}
                         @if($attachment)
                             <div wire:loading.remove wire:target="attachment" class="flex items-center mb-2" style="gap:8px;">
-                                <div class="flex items-center max-w-full" style="gap:8px; background:#EEF1FE; border:1px solid #D5DBF9; border-radius:8px; padding:6px 10px;">
+                                <div class="flex items-center max-w-full" style="gap:8px; background:var(--color-chat-soft-accent); border:1px solid var(--color-chat-control-border); border-radius:8px; padding:6px 10px;">
                                     <svg class="shrink-0 text-accent" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
                                     </svg>
@@ -821,12 +827,13 @@
                                 rows="1"
                                 placeholder="Напишите сообщение..."
                                 class="w-full resize-none text-sm text-text-primary placeholder-text-secondary outline-none border-none bg-transparent"
-                                style="background:#F1F3F5; border-radius:12px; padding:12px 16px; line-height:1.25; min-height:44px; max-height:160px; overflow-y:auto;"
+                                style="background:var(--color-chat-control-bg); border:1px solid var(--color-chat-control-border); border-radius:12px; padding:12px 16px; line-height:1.25; min-height:44px; max-height:160px; overflow-y:auto;"
                                 x-data="{ autosize() { this.$el.style.height = 'auto'; this.$el.style.height = Math.min(this.$el.scrollHeight, 160) + 'px'; } }"
                                 x-init="$nextTick(() => autosize()); $wire.$watch('replyText', () => $nextTick(() => autosize()))"
                                 x-on:input="autosize()"
                                 x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); if (! $el.value.trim()) return; $wire.sendReply(); }"
                                 aria-label="Текст сообщения"
+                                title="Введите текст сообщения"
                             ></textarea>
                             @error('replyText')
                                 <p class="mt-1 text-xs text-red-500">{{ $message }}</p>
@@ -841,6 +848,7 @@
                             class="flex shrink-0 items-center justify-center text-white transition hover:opacity-90 disabled:opacity-50"
                             style="width:44px; height:44px; border-radius:12px; background:#4F6EF7; border:none; cursor:pointer;"
                             aria-label="Отправить"
+                            title="Отправить сообщение"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="m3 3 3 9-3 9 19-9Z"/><path d="M6 12h16"/>
@@ -971,7 +979,7 @@
                             wire:loading.attr="disabled"
                             wire:target="unbanUser"
                             class="flex items-center transition hover:opacity-90 disabled:opacity-50"
-                            style="background:#DCFCE7; color:#16A34A; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
+                            style="background:var(--color-chat-soft-success); color:#22C55E; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
                             aria-label="Разблокировать пользователя"
                             title="Разблокировать пользователя"
                         >
@@ -988,7 +996,7 @@
                             wire:loading.attr="disabled"
                             wire:target="banUser"
                             class="flex items-center transition hover:opacity-90 disabled:opacity-50"
-                            style="background:#FEE2E2; color:#DC2626; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
+                            style="background:var(--color-chat-soft-danger); color:#F87171; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
                             aria-label="Заблокировать пользователя"
                             title="Блокировка пользователя"
                         >
@@ -1009,7 +1017,7 @@
                         wire:target="closeDialog"
                         @disabled($isClosed)
                         class="flex items-center transition hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
-                        style="background:#F1F3F5; color:#1A1D26; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
+                        style="background:var(--color-chat-control-bg); color:var(--color-text-primary); border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
                         aria-label="Закрыть диалог"
                         title="{{ $isClosed ? 'Диалог уже закрыт' : 'Закрыть тикет' }}"
                     >
@@ -1099,7 +1107,7 @@
 
             {{-- Divider --}}
             {{-- Design: node GxLQl — #E5E7EB height 1 --}}
-            <div class="w-full h-px shrink-0" style="background:#E5E7EB;"></div>
+            <div class="w-full h-px shrink-0 bg-border-light"></div>
 
             {{-- МЕДИАФАЙЛЫ section --}}
             {{-- Design: node m1qYAD — vertical gap 12; Media Row: gap 8, thumbs 72×72 rounded-8 --}}
@@ -1108,7 +1116,7 @@
 
                 {{-- Section heading --}}
                 {{-- Design: node IUhIo — 12/600 #6B7280 letter-spacing 1 --}}
-                <span class="font-semibold" style="font-size:12px; color:#6B7280; letter-spacing:0.07em;">МЕДИАФАЙЛЫ</span>
+                <span class="font-semibold text-text-secondary" style="font-size:12px; letter-spacing:0.07em;">МЕДИАФАЙЛЫ</span>
 
                 {{-- Thumbnail grid: images render as 72×72 thumbs, other files as a file card --}}
                 {{-- Design: node D0i1e — gap 8, row; thumbs 72×72 rounded-8 --}}
@@ -1136,12 +1144,12 @@
                                     target="_blank"
                                     title="{{ $attachment->file_name ?? $attachment->file_type }}"
                                     class="flex flex-col items-center justify-center hover:opacity-90 transition"
-                                    style="width:72px; height:72px; border-radius:8px; flex-shrink:0; background:#F3F4F6; padding:8px; text-decoration:none;"
+                                    style="width:72px; height:72px; border-radius:8px; flex-shrink:0; background:var(--color-chat-soft-neutral); padding:8px; text-decoration:none;"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="shrink-0" style="width:24px; height:24px; color:#6B7280;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="shrink-0" style="width:24px; height:24px; color:var(--color-text-secondary);" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                                     </svg>
-                                    <span class="truncate" style="font-size:10px; color:#6B7280; max-width:100%; margin-top:4px;">{{ $attachment->file_name ?? $attachment->file_type }}</span>
+                                    <span class="truncate" style="font-size:10px; color:var(--color-text-secondary); max-width:100%; margin-top:4px;">{{ $attachment->file_name ?? $attachment->file_type }}</span>
                                 </a>
                             @endif
                         @endforeach

@@ -5,6 +5,7 @@ namespace Tests\Unit\Modules\Ai\Jobs;
 use App\Models\AiMessage;
 use App\Models\BotUser;
 use App\Models\Message;
+use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
 use App\Modules\Ai\DTOs\AiResponseDto;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\AiAssistantService;
@@ -31,15 +32,21 @@ class SendAiReplyJobTest extends TestCase
 
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 77;
+        $this->botUser->preferred_language_code = 'en';
+        $this->botUser->preferred_language_name = 'English';
         $this->botUser->save();
 
         Queue::fake();
     }
 
-    public function test_delivers_without_supergroup_post_when_ai_bot_not_configured(): void
+    public function test_delivers_and_mirrors_to_supergroup_when_ai_bot_not_configured(): void
     {
-        // No AI bot token → supergroup posting skipped.
-        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', null);
+        // No AI bot token → use main bot mirror so support group still sees AI replies.
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('telegram_ai.token', null);
+        $settings->set('telegram.token', 'main_bot_token');
+        $settings->set('telegram.secret_key', 'secret');
+        $settings->set('telegram.group_id', '-100111222333');
         Http::fake();
 
         $replyText = 'Auto reply without AI bot';
@@ -55,7 +62,10 @@ class SendAiReplyJobTest extends TestCase
         );
 
         $aiService = $this->createMock(AiAssistantService::class);
-        $aiService->method('processMessage')->willReturn($aiResponse);
+        $aiService->expects($this->once())
+            ->method('processMessage')
+            ->with($this->callback(fn ($request): bool => $request->preferredLanguageName === 'English'))
+            ->willReturn($aiResponse);
 
         $updateDto = TelegramUpdateDtoMock::getDto();
         $job = new SendAiReplyJob($this->botUser->id, $updateDto, 'user question');
@@ -69,7 +79,7 @@ class SendAiReplyJobTest extends TestCase
             'status' => AiMessage::STATUS_ACCEPTED,
         ]);
 
-        // No HTTP calls to Telegram (AI bot not configured).
+        // No direct HTTP calls to Telegram AI bot (AI bot not configured).
         Http::assertNothingSent();
 
         // Outgoing message row persisted regardless of platform send outcome.
@@ -80,8 +90,17 @@ class SendAiReplyJobTest extends TestCase
             'text' => $replyText,
         ]);
 
-        // Simple job dispatched for user delivery (not the saving full job).
+        // Simple jobs dispatched for typing and user delivery.
+        Queue::assertPushed(SendTelegramSimpleQueryJob::class, function (SendTelegramSimpleQueryJob $job): bool {
+            return $job->queryParams->methodQuery === 'sendChatAction'
+                && $job->queryParams->action === 'typing';
+        });
         Queue::assertPushed(SendTelegramSimpleQueryJob::class);
+        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job) use ($replyText): bool {
+            return $job->botUserId === $this->botUser->id
+                && $job->text === $replyText
+                && $job->prefix === "🤖 Ответ ИИ:\n";
+        });
     }
 
     public function test_posts_to_supergroup_when_ai_bot_configured(): void

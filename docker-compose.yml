@@ -4,6 +4,12 @@ services:
         container_name: pet
         user: root
         restart: always
+        healthcheck:
+            test: ["CMD-SHELL", "php -v >/dev/null && php artisan about --only=environment >/dev/null"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
         depends_on:
             - pgdb
         env_file:
@@ -22,6 +28,12 @@ services:
         image: postgres
         tty: true
         restart: always
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
         environment:
             - POSTGRES_DB=${DB_DATABASE}
             - POSTGRES_USER=${DB_USERNAME}
@@ -37,6 +49,12 @@ services:
         image: nginx:latest
         container_name: nginx
         restart: unless-stopped
+        healthcheck:
+            test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 20s
         ports:
             - ${NGINX_PORT}
             - "443:443"
@@ -57,6 +75,12 @@ services:
         build: .
         container_name: laravel_queue
         restart: always
+        healthcheck:
+            test: ["CMD-SHELL", "php -v >/dev/null && php artisan about --only=environment >/dev/null"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
         depends_on:
             - app
         env_file:
@@ -75,6 +99,12 @@ services:
         build: .
         container_name: laravel_scheduler
         restart: always
+        healthcheck:
+            test: ["CMD-SHELL", "php -v >/dev/null && php artisan about --only=environment >/dev/null"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
         depends_on:
             - app
         env_file:
@@ -89,8 +119,28 @@ services:
             - 8.8.8.8
             - 1.1.1.1
 
+    telegram_poller:
+        build: .
+        container_name: telegram_poller
+        restart: always
+        depends_on:
+            - app
+            - nginx
+            - queue
+        env_file:
+            - .env
+        working_dir: /var/www
+        volumes:
+            - .:/var/www
+        command: php artisan telegram:poll-updates --sleep=1 --timeout=25
+        networks:
+            - pet
+        dns:
+            - 8.8.8.8
+            - 1.1.1.1
 volumes:
     pgdata:
 networks:
     pet:
         driver: bridge
+

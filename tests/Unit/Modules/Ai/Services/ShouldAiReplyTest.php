@@ -37,13 +37,15 @@ class ShouldAiReplyTest extends TestCase
         );
     }
 
-    private function makeBotUser(bool $banned = false, bool $closed = false): BotUser
+    private function makeBotUser(bool $banned = false, bool $closed = false, ?string $languageCode = 'ru'): BotUser
     {
         $botUser = new BotUser();
         $botUser->forceFill([
             'id' => 1,
             'is_banned' => $banned,
             'is_closed' => $closed,
+            'platform' => 'telegram',
+            'preferred_language_code' => $languageCode,
         ]);
 
         return $botUser;
@@ -140,6 +142,20 @@ class ShouldAiReplyTest extends TestCase
         $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
             $this->makeUpdate(),
             null,
+        );
+
+        $this->assertFalse($result);
+    }
+
+
+
+    public function test_returns_false_when_telegram_language_not_selected(): void
+    {
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
+
+        $result = (new ShouldAiReply())->shouldGenerateForUserMessage(
+            $this->makeUpdate(),
+            $this->makeBotUser(languageCode: null),
         );
 
         $this->assertFalse($result);

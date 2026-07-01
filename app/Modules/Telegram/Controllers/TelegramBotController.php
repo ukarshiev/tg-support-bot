@@ -14,13 +14,16 @@ use App\Modules\Telegram\Actions\BannedContactMessage;
 use App\Modules\Telegram\Actions\CloseTopic;
 use App\Modules\Telegram\Actions\SendAiAnswerMessage;
 use App\Modules\Telegram\Actions\SendBannedMessage;
+use App\Modules\Telegram\Actions\SelectLanguage;
 use App\Modules\Telegram\Actions\SendContactMessage;
+use App\Modules\Telegram\Actions\SendLanguageSelectionMessage;
 use App\Modules\Telegram\Actions\SendStartMessage;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Telegram\Services\Tg\TgEditMessageService;
+use App\Modules\Telegram\Services\SupportLanguageService;
 use App\Modules\Telegram\Services\Tg\TgMessageService;
 use App\Modules\Telegram\Services\TgExternal\TgExternalEditService;
 use App\Modules\Telegram\Services\TgExternal\TgExternalMessageService;
@@ -81,7 +84,9 @@ class TelegramBotController
         }
 
         if ($this->dataHook->typeQuery === 'callback_query') {
-            if (str_contains($this->dataHook->callbackData, 'topic_user_ban_')) {
+            if (app(SupportLanguageService::class)->isLanguageCallback($this->dataHook->callbackData)) {
+                app(SelectLanguage::class)->execute($this->botUser, $this->dataHook);
+            } elseif (str_contains($this->dataHook->callbackData, 'topic_user_ban_')) {
                 $banStatus = $this->dataHook->callbackData === 'topic_user_ban_true';
                 app(BannedContactMessage::class)->execute($this->botUser, $banStatus, $this->dataHook->messageId);
             } elseif ($this->dataHook->callbackData === 'close_topic') {
@@ -157,7 +162,7 @@ class TelegramBotController
             app(SendBannedMessage::class)->execute($this->botUser);
             return;
         } elseif ($this->dataHook->aiTechMessage) {
-            if (str_contains($this->dataHook->text, 'ai_message_edit_')) {
+            if (str_contains((string) $this->dataHook->text, 'ai_message_edit_')) {
                 app(EditAiMessage::class)->execute($this->dataHook);
             }
         } else {
@@ -165,7 +170,9 @@ class TelegramBotController
                 case 'message':
                     if ($this->dataHook->text === '/start' && !$this->isSupergroup()) {
                         app(SendStartMessage::class)->execute($this->dataHook);
-                    } elseif (str_contains($this->dataHook->text, '/ai_generate') && $this->isSupergroup()) {
+                    } elseif ($this->dataHook->typeSource === 'private' && empty($this->botUser->preferred_language_code)) {
+                        app(SendLanguageSelectionMessage::class)->execute($this->dataHook);
+                    } elseif (str_contains((string) $this->dataHook->text, '/ai_generate') && $this->isSupergroup()) {
                         app(SendAiAnswerMessage::class)->execute($this->dataHook);
                     } else {
                         $this->notifyIncomingMessage();
@@ -342,3 +349,5 @@ class TelegramBotController
         }
     }
 }
+
+

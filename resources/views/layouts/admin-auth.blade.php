@@ -14,7 +14,17 @@
 
     <style>[x-cloak]{display:none !important;}</style>
 </head>
-<body class="h-full bg-white font-sans text-text-primary antialiased">
+    <script>
+        (() => {
+            const key = 'tg-support-bot-admin-theme';
+            const saved = localStorage.getItem(key);
+            const theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+            document.documentElement.style.colorScheme = theme;
+        })();
+    </script>
+
+<body class="h-full bg-bg-secondary font-sans text-text-primary antialiased">
 
     {{ $slot }}
 

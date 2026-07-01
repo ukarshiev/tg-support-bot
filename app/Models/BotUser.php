@@ -39,6 +39,9 @@ class BotUser extends Model
         'chat_id',
         'topic_id',
         'platform',
+        'preferred_language_code',
+        'preferred_language_name',
+        'preferred_language_selected_at',
         'display_name',
         'username',
         'avatar_path',
@@ -53,6 +56,7 @@ class BotUser extends Model
     protected $casts = [
         'manager_last_read_at' => 'datetime',
         'profile_synced_at' => 'datetime',
+        'preferred_language_selected_at' => 'datetime',
     ];
 
     /**
@@ -353,3 +357,5 @@ class BotUser extends Model
         return $this->is_closed ?? false;
     }
 }
+
+

@@ -5,12 +5,14 @@ namespace App\Modules\Telegram\Actions;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Modules\Telegram\Services\SupportLanguageService;
 use App\Services\Settings\SettingsService;
 
 class SendContactMessage
 {
     public function __construct(
         private GetChat $getChat,
+        private SupportLanguageService $languages,
     ) {
     }
 
@@ -46,24 +48,37 @@ class SendContactMessage
      */
     private function buildText(BotUser $botUser): string
     {
-        $text = "<b>КОНТАКТНАЯ ИНФОРМАЦИЯ</b>\n";
-        $text .= "Источник: {$botUser->platform}\n";
-        $text .= "ID: <code>{$botUser->chat_id}</code>\n";
+        $chatData = [];
 
-        if ($botUser->platform !== 'telegram') {
-            return $text;
-        }
-
-        try {
-            $chat = $this->getChat->execute($botUser->chat_id);
-            $username = $chat->rawData['result']['username'] ?? null;
-
-            if ($username) {
-                $text .= "Пользователь: <code>{$username}</code>\n";
-                $text .= "Ссылка: https://telegram.me/{$username}\n";
+        if ($botUser->platform === 'telegram') {
+            try {
+                $chatData = $this->getChat->execute($botUser->chat_id)->rawData['result'] ?? [];
+            } catch (\Throwable) {
+                $chatData = [];
             }
-        } catch (\Throwable) {
         }
+
+        $username = $botUser->username ?: ($chatData['username'] ?? null);
+        $displayName = $botUser->display_name ?: trim(($chatData['first_name'] ?? '') . ' ' . ($chatData['last_name'] ?? ''));
+        $languageName = $this->languages->displayName(
+            $botUser->preferred_language_code,
+            $botUser->preferred_language_name
+        );
+        $telegramLanguageCode = $chatData['language_code'] ?? null;
+        $profileLink = $username ? 'https://telegram.me/' . $username : null;
+
+        $text = "<b>КОНТАКТНАЯ ИНФОРМАЦИЯ</b>\n";
+        $text .= 'Источник: ' . e($botUser->platform) . "\n";
+        $text .= "ID: <code>{$botUser->chat_id}</code>\n";
+        $text .= 'Имя: ' . e($displayName !== '' ? $displayName : 'не указано') . "\n";
+        $text .= 'Пользователь: ' . ($username ? '<code>' . e($username) . '</code>' : 'не указан') . "\n";
+        $text .= 'Ссылка: ' . ($profileLink ? e($profileLink) : 'не доступна') . "\n";
+        $text .= 'Выбранный язык: ' . e($languageName) . "\n";
+        $text .= 'Telegram language_code: ' . e($telegramLanguageCode ?: 'не доступен') . "\n";
+        $text .= "Телефон: не передан\n";
+        $text .= "Регион: не определён\n";
+        $text .= 'Первое обращение: ' . e(optional($botUser->created_at)->format('d.m.Y H:i') ?: 'неизвестно') . "\n";
+        $text .= 'Последняя активность: ' . e(optional($botUser->updated_at)->format('d.m.Y H:i') ?: 'неизвестно') . "\n";
 
         return $text;
     }

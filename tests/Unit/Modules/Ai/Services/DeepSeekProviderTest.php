@@ -94,7 +94,7 @@ class DeepSeekProviderTest extends TestCase
         $this->assertEquals($this->provider, $aiResponse->provider);
     }
 
-    public function test_payload_messages_have_system_first_history_then_current_message(): void
+    public function test_payload_messages_have_system_first_history_language_guard_then_current_message(): void
     {
         Http::fake([
             $this->baseProviderUrl => Http::response([
@@ -121,12 +121,14 @@ class DeepSeekProviderTest extends TestCase
 
         Http::assertSent(function ($request) {
             $messages = $request->data()['messages'] ?? [];
-            return count($messages) === 4
+            return count($messages) === 5
                 && $messages[0]['role'] === 'system'
                 && $messages[0]['content'] === 'System prompt'
                 && $messages[1] === ['role' => 'user', 'content' => 'Старое от пользователя']
                 && $messages[2] === ['role' => 'assistant', 'content' => 'Старый ответ']
-                && $messages[3] === ['role' => 'user', 'content' => 'Текущее сообщение'];
+                && $messages[3]['role'] === 'system'
+                && str_contains($messages[3]['content'], 'определи язык только по последнему сообщению пользователя')
+                && $messages[4] === ['role' => 'user', 'content' => 'Текущее сообщение'];
         });
     }
 }

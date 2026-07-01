@@ -113,17 +113,22 @@ class TopicCreateJob implements ShouldQueue
             // parsing template
             preg_match_all('/{([^}]+)}/', $templateTopicName, $matches);
             if (empty($matches[1])) {
-                throw new \Exception('Params template topic name not found');
+                return trim($templateTopicName);
             }
 
             $paramsParts = array_combine($matches[0], $matches[1]);
 
             $topicName = $templateTopicName;
             foreach ($paramsParts as $key => $param) {
-                if (empty($nameParts[$param])) {
-                    throw new \Exception('Params template topic name not found');
-                }
-                $topicName = str_replace($key, $nameParts[$param], $topicName);
+                $topicName = str_replace($key, (string) ($nameParts[$param] ?? ''), $topicName);
+            }
+
+            $topicName = preg_replace('/\(\s*\)/', '', $topicName) ?? $topicName;
+            $topicName = preg_replace('/\s+/', ' ', $topicName) ?? $topicName;
+            $topicName = trim($topicName);
+
+            if ($topicName === '') {
+                throw new \Exception('Topic name is empty');
             }
 
             return $topicName;

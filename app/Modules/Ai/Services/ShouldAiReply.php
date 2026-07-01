@@ -18,7 +18,8 @@ class ShouldAiReply
      * 2. Message arrived from a private chat with the main bot.
      * 3. Update type is a regular message (not callback, edited, etc.).
      * 4. Text is non-empty and not a slash-command (/start, /contact, etc.).
-     * 5. Bot user exists, is not banned, is not closed.
+     * 5. Telegram user has selected a support language.
+     * 6. Bot user exists, is not banned, is not closed.
      *
      * @param TelegramUpdateDto $update
      * @param BotUser|null      $botUser
@@ -49,6 +50,14 @@ class ShouldAiReply
         if (!$this->isReplyableText($update->text)) {
             $this->logSkip('empty_or_command_text', $update, $botUser, [
                 'text_preview' => $update->text === null ? null : mb_substr($update->text, 0, 50),
+            ]);
+            return false;
+        }
+
+        if (!$this->hasSelectedLanguage($botUser)) {
+            $this->logSkip('language_not_selected', $update, $botUser, [
+                'platform' => $botUser?->platform,
+                'preferred_language_code' => $botUser?->preferred_language_code,
             ]);
             return false;
         }
@@ -90,7 +99,6 @@ class ShouldAiReply
             ]);
             return false;
         }
-
         if (!$this->isUserActive($botUser)) {
             $this->logExternalSkip('user_inactive', $botUser, [
                 'bot_user_found' => $botUser !== null,
@@ -130,6 +138,27 @@ class ShouldAiReply
         }
 
         return !str_starts_with($trimmed, '/');
+    }
+
+    /**
+     * Telegram auto-reply is allowed only after the user selected a language.
+     * Other platforms keep the old behavior.
+     *
+     * @param BotUser|null $botUser
+     *
+     * @return bool
+     */
+    public function hasSelectedLanguage(?BotUser $botUser): bool
+    {
+        if ($botUser === null) {
+            return false;
+        }
+
+        if ($botUser->platform !== 'telegram') {
+            return true;
+        }
+
+        return !empty($botUser->preferred_language_code);
     }
 
     /**
@@ -187,3 +216,6 @@ class ShouldAiReply
         ], $extra));
     }
 }
+
+
+
