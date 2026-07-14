@@ -7,6 +7,7 @@ use App\Models\Message;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Services\SupportLanguageService;
 use App\Modules\Translation\Support\TelegramMarkupSanitizer;
 use Illuminate\Support\Facades\Cache;
@@ -49,7 +50,13 @@ class SelectLanguage
         $greeting = is_string($resolvedGreeting) && $resolvedGreeting !== ''
             ? $this->telegramMarkupSanitizer->toPlainText($resolvedGreeting)
             : null;
-        $lockKey = sprintf('telegram:language-flow:%d:%s', $botUser->id, $update->callbackId ?: $code);
+        // Все кнопки одного selector-сообщения должны сработать только один раз.
+        // Иначе пользователь может последовательно нажать два языка и получить
+        // несколько приветствий на разных языках из одной клавиатуры.
+        $selectorIdentity = $update->messageId > 0
+            ? 'message:' . $update->messageId
+            : 'callback:' . ($update->callbackId ?: $code);
+        $lockKey = sprintf('telegram:language-flow:%d:%s', $botUser->id, $selectorIdentity);
         if (!Cache::add($lockKey, true, now()->addMinute())) {
             Log::channel('app')->info('Telegram language callback skipped by callback lock', [
                 'source' => 'telegram_language_flow',
@@ -60,6 +67,15 @@ class SelectLanguage
             ]);
 
             return;
+        }
+
+        if ($update->messageId > 0) {
+            SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
+                'methodQuery' => 'editMessageReplyMarkup',
+                'chat_id' => $botUser->chat_id,
+                'message_id' => $update->messageId,
+                'reply_markup' => ['inline_keyboard' => []],
+            ]));
         }
 
         Log::channel('app')->info('Telegram language callback accepted', [

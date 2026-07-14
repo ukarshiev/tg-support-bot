@@ -1,4 +1,4 @@
-# Последняя редакция: 14.07.2026 03:57 UTC+3
+# Последняя редакция: 14.07.2026 05:40 UTC+3
 
 # Качество и эксплуатация
 
@@ -107,7 +107,7 @@ docker compose run --rm --no-deps -v ${PWD}:/work -w /work app php artisan test 
 docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Feature/Commands/TelegramPollUpdatesCommandTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php --filter="poller|start|language|selector|callback"
 ```
 
-## Служебный Telegram-диалог каждые 3 часа
+## Служебный Telegram-диалог каждые 24 часа
 
 Планировщик Laravel запускает команду:
 
@@ -207,8 +207,8 @@ docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Feature
 Проверяем цепочку `/start → выбор языка → контактная информация → welcome → текст клиента` полностью. Важные инварианты:
 
 - `/start` виден в истории для отладки;
-- повторный `/start` не создаёт второй selector;
-- повторный callback выбора языка не создаёт второй welcome;
+- повторный `/start` осознанно показывает новый selector для смены языка;
+- одно selector-сообщение принимает только первый callback языка, отключает клавиатуру и не создаёт второй welcome;
 - контактная карточка отправляется после выбора языка, чтобы `Выбранный язык` был заполнен;
 - outgoing bot-сообщения ждут создания topic, чтобы support-topic не терял bot-сообщения;
 - выбор языка отправляет полный системный welcome, а не короткий fallback из конфига;
@@ -280,4 +280,4 @@ docker compose exec -T queue php artisan horizon:status
 
 Служебный canary разрешено направлять только в отдельный тестовый Telegram-аккаунт. Команда не меняет имя, username и постоянный язык аккаунта, не удаляет историю и восстанавливает исходный язык после проверки. Личный рабочий аккаунт оператора использовать запрещено.
 
-Текущий выделенный canary-аккаунт: `@relaxa_support`. Проверка включена по расписанию каждые три часа для `/start`, `/lang` и welcome на PL/EN/AR.
+Текущий выделенный canary-аккаунт: `@relaxa_support`. Проверка включена один раз в сутки, в 00:00 по часовому поясу приложения (`Europe/Moscow`), для `/start`, `/lang` и welcome на PL/EN/AR.

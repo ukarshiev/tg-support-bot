@@ -11,6 +11,7 @@ use App\Modules\Telegram\Actions\SendStartMessage;
 use App\Modules\Telegram\Actions\ShowLanguageSelectionPage;
 use App\Modules\Telegram\Jobs\SendContactMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -355,7 +356,7 @@ class SendStartMessageTest extends TestCase
             && !isset($request['text']));
     }
 
-    public function test_two_distinct_language_callbacks_each_queue_a_welcome(): void
+    public function test_only_first_language_callback_from_same_selector_queues_a_welcome(): void
     {
         $dtoUpdateParams = TelegramUpdateDtoMock::getDtoParams();
         $dtoUpdateParams['callback_query'] = [
@@ -378,6 +379,7 @@ class SendStartMessageTest extends TestCase
         app(SelectLanguage::class)->execute($botUser, $firstDto);
 
         $dtoUpdateParams['callback_query']['id'] = 902;
+        $dtoUpdateParams['callback_query']['data'] = 'select_language:en';
         $secondDto = TelegramUpdateDtoMock::getDto($dtoUpdateParams);
         app(SelectLanguage::class)->execute($botUser->refresh(), $secondDto);
 
@@ -385,7 +387,13 @@ class SendStartMessageTest extends TestCase
         $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
         $welcomeJobs = collect($pushed)->filter(fn (array $payload): bool => $payload['job']->queryParams->text === $greeting);
 
-        $this->assertCount(2, $welcomeJobs);
+        $this->assertCount(1, $welcomeJobs);
+        $this->assertSame('pl', $botUser->refresh()->preferred_language_code);
+        Queue::assertPushed(SendTelegramSimpleQueryJob::class, function (SendTelegramSimpleQueryJob $job) use ($firstDto): bool {
+            return $job->queryParams->methodQuery === 'editMessageReplyMarkup'
+                && $job->queryParams->message_id === $firstDto->messageId
+                && $job->queryParams->reply_markup === ['inline_keyboard' => []];
+        });
         Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/answerCallbackQuery')
             && (string) $request['callback_query_id'] === '901'
             && !isset($request['text']));
