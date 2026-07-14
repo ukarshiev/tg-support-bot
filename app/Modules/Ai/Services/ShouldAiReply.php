@@ -10,6 +10,24 @@ use Illuminate\Support\Facades\Log;
 class ShouldAiReply
 {
     /**
+     * Слова и фразы, при которых автоответ клиенту запрещён.
+     * AI всё ещё может подготовить черновик для оператора, но не должен
+     * самостоятельно отвечать по деньгам, подпискам, доступам и компенсациям.
+     *
+     * @var array<int, string>
+     */
+    private const HUMAN_OPERATOR_KEYWORDS = [
+        'оплат', 'платеж', 'платёж', 'деньг', 'финанс', 'возврат', 'рефанд',
+        'refund', 'payment', 'paid', 'money', 'charge', 'charged', 'billing',
+        'подписк', 'тариф', 'продл', 'доступ', 'компенсац', 'бонус', 'скидк',
+        'subscription', 'subscribed', 'joined', 'access', 'extend', 'extension',
+        'compensation', 'bonus', 'discount',
+        'недоступ', 'не доступ', 'не работает', 'лежал', 'упал', 'жалоб', 'претензи',
+        'unavailable', 'not available', 'down', 'does not work', "doesn't work",
+        'complaint', 'unhappy', 'disappointed', 'frustrated', 'unfortunate',
+    ];
+
+    /**
      * Determine whether AI should generate a reply for an incoming user message
      * processed by the main Telegram bot.
      *
@@ -49,7 +67,7 @@ class ShouldAiReply
 
         if (!$this->isReplyableText($update->text)) {
             $this->logSkip('empty_or_command_text', $update, $botUser, [
-                'text_preview' => $update->text === null ? null : mb_substr($update->text, 0, 50),
+                'text_length' => mb_strlen((string) $update->text),
             ]);
             return false;
         }
@@ -95,10 +113,18 @@ class ShouldAiReply
 
         if (!$this->isReplyableText($text)) {
             $this->logExternalSkip('empty_or_command_text', $botUser, [
-                'text_preview' => $text === null ? null : mb_substr($text, 0, 50),
+                'text_length' => mb_strlen((string) $text),
             ]);
             return false;
         }
+
+        if (!$this->hasSelectedLanguage($botUser)) {
+            $this->logExternalSkip('language_not_selected', $botUser, [
+                'preferred_language_code' => $botUser?->preferred_language_code,
+            ]);
+            return false;
+        }
+
         if (!$this->isUserActive($botUser)) {
             $this->logExternalSkip('user_inactive', $botUser, [
                 'bot_user_found' => $botUser !== null,
@@ -107,6 +133,34 @@ class ShouldAiReply
             ]);
             return false;
         }
+
+        return true;
+    }
+
+    /**
+     * True means: do not send an AI answer to the client automatically.
+     * Instead, create an AI draft for a human operator.
+     *
+     * @param BotUser|null $botUser
+     * @param string|null  $text
+     *
+     * @return bool
+     */
+    public function shouldUseDraftOnly(?BotUser $botUser, ?string $text): bool
+    {
+        if (!$this->hasHumanOperatorRisk($text)) {
+            return false;
+        }
+
+        Log::channel('app')->info('ShouldAiReply: auto-reply forced to draft [human_operator_risk]', [
+            'source' => 'ai_auto_reply_forced_to_draft',
+            'reason' => 'human_operator_risk',
+            'bot_user_id' => $botUser?->id,
+            'platform' => $botUser?->platform,
+            'topic_id' => $botUser?->topic_id,
+            'text_length' => mb_strlen((string) $text),
+            'text_hash' => $text === null ? null : hash('sha256', $text),
+        ]);
 
         return true;
     }
@@ -141,8 +195,31 @@ class ShouldAiReply
     }
 
     /**
-     * Telegram auto-reply is allowed only after the user selected a language.
-     * Other platforms keep the old behavior.
+     * Detect risky commercial/support topics where only a human should answer.
+     *
+     * @param string|null $text
+     *
+     * @return bool
+     */
+    public function hasHumanOperatorRisk(?string $text): bool
+    {
+        if ($text === null || trim($text) === '') {
+            return false;
+        }
+
+        $normalized = mb_strtolower($text);
+
+        foreach (self::HUMAN_OPERATOR_KEYWORDS as $keyword) {
+            if (str_contains($normalized, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Автоответ разрешён только после явного выбора языка на любом канале.
      *
      * @param BotUser|null $botUser
      *
@@ -152,10 +229,6 @@ class ShouldAiReply
     {
         if ($botUser === null) {
             return false;
-        }
-
-        if ($botUser->platform !== 'telegram') {
-            return true;
         }
 
         return !empty($botUser->preferred_language_code);
@@ -216,6 +289,3 @@ class ShouldAiReply
         ], $extra));
     }
 }
-
-
-

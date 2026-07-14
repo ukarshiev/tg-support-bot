@@ -2,7 +2,6 @@
 
 namespace App\Modules\Telegram\Actions;
 
-use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 
 /**
@@ -11,7 +10,6 @@ use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 class SendStartMessage
 {
     public function __construct(
-        private TelegramMethods $telegramMethods,
         private SendLanguageSelectionMessage $sendLanguageSelectionMessage,
     ) {
     }
@@ -25,11 +23,11 @@ class SendStartMessage
      */
     public function execute(TelegramUpdateDto $update): void
     {
-        $this->telegramMethods->sendQueryTelegram('deleteMessage', [
-            'chat_id' => $update->chatId,
-            'message_id' => $update->messageId,
-        ]);
+        $this->sendLanguageSelectionMessage->execute($update, force: true);
+    }
 
-        $this->sendLanguageSelectionMessage->execute($update);
+    public function force(TelegramUpdateDto $update): void
+    {
+        $this->sendLanguageSelectionMessage->execute($update, force: true);
     }
 }

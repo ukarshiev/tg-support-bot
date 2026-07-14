@@ -3,6 +3,7 @@
 namespace App\Modules\Vk\Middleware;
 
 use App\Services\Settings\SettingsService;
+use App\Support\InboundWebhookLog;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -42,8 +43,9 @@ class VkQuery
      */
     private function logRequest(Request $request): void
     {
-        $dataRequest = json_encode($request->all());
-
-        Log::channel('app')->info($dataRequest, ['source' => 'vk_request']);
+        Log::channel('app')->info(
+            'VK webhook accepted',
+            InboundWebhookLog::summarize('vk', $request->all()),
+        );
     }
 }

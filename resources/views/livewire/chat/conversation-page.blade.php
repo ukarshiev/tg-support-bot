@@ -8,7 +8,7 @@
     Tablet   [Left 360px | Center flex-1 ]   (right panel hidden < lg)
     Mobile   list-only ↔ chat screen  (toggled by activeBotUserId)
     ─────────────────────────────────────────────────────────────────────────────
-    Polling: 5 s (wire:poll.5s → pollUpdates: refresh list + active thread)
+    Realtime: Reverb/Echo; polling 30 s remains as reconciliation fallback.
 --}}
 
 <div
@@ -16,11 +16,27 @@
     {{-- .keep-alive keeps polling while the tab is in the background, so desktop
          notifications / sound / favicon badge fire even when the operator is on
          another tab (Livewire pauses a plain wire:poll when the tab is hidden). --}}
-    wire:poll.5s.keep-alive="pollUpdates"
+    wire:poll.30s.keep-alive="pollUpdates"
     x-data="{
         lightboxSrc: '',
         lightboxOpen: false,
         infoPanelOpen: false,
+        infoPanelTab: 'details',
+        translationMobileView: 'both',
+        openInfoPanel() {
+            this.infoPanelTab = 'details';
+            this.infoPanelOpen = true;
+        },
+        closeInfoPanel() {
+            this.infoPanelOpen = false;
+        },
+        focusInfoPanelTab(direction) {
+            const tabs = ['details', 'subscriptions', 'history'];
+            const current = tabs.indexOf(this.infoPanelTab);
+            const next = tabs[(current + direction + tabs.length) % tabs.length];
+            this.infoPanelTab = next;
+            this.$nextTick(() => this.$refs['infoTab_' + next]?.focus());
+        },
         originalFavicon: null,
         originalFaviconType: null,
         pendingCount: 0,
@@ -127,6 +143,7 @@
                 x-on:click.stop="lightboxOpen = false"
                 class="fixed top-16 right-4 text-white text-4xl leading-none opacity-80 hover:opacity-100 bg-transparent border-none cursor-pointer z-[100001]"
                 aria-label="Закрыть"
+                title="Закрыть просмотр"
             >&times;</button>
             <img
                 :src="lightboxSrc"
@@ -155,6 +172,16 @@
         <div class="flex items-center justify-between w-full shrink-0">
             <span class="text-text-sidebar font-bold" style="font-size:20px; line-height:1.2;">TG Support</span>
             <div class="flex items-center shrink-0" style="gap:4px;">
+            <button
+                type="button"
+                wire:click="toggleAutoAi"
+                class="flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition {{ $autoAiEnabled ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' : 'bg-sidebar-active text-text-sidebar-secondary hover:bg-sidebar-hover hover:text-text-sidebar' }}"
+                aria-label="Включить или выключить автоответы AI"
+                title="Включить или выключить автоответы AI"
+            >
+                <span>Auto AI</span>
+                <span>{{ $autoAiEnabled ? 'ON' : 'OFF' }}</span>
+            </button>
             <a
                 href="{{ route('admin.settings.general') }}"
                 wire:navigate
@@ -194,6 +221,12 @@
             </form>
             </div>
         </div>
+
+        @if ($autoAiNotice)
+            <div class="rounded-lg border border-sidebar-active bg-sidebar-active px-3 py-2 text-xs text-text-sidebar" title="Статус Auto AI">
+                {{ $autoAiNotice }}
+            </div>
+        @endif
 
         {{-- Filter tabs: pill-style. Active = bg-accent text-white rounded-md 13/600 --}}
         {{-- Design: node YYO8P — gap 4; BitoF active pill bg-accent; others transparent text-sidebar-secondary --}}
@@ -320,6 +353,7 @@
                         wire:click="selectChat(0)"
                         class="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-secondary md:hidden shrink-0"
                         aria-label="Назад к списку"
+                        title="Вернуться к списку диалогов"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
@@ -343,8 +377,9 @@
 
                     {{-- Avatar + name — click opens the info panel (Telegram-style overlay) --}}
                     <div
-                        x-on:click="infoPanelOpen = true"
-                        x-on:keydown.enter="infoPanelOpen = true"
+                        x-on:click="openInfoPanel()"
+                        x-on:keydown.enter="openInfoPanel()"
+                        x-on:keydown.space.prevent="openInfoPanel()"
                         role="button"
                         tabindex="0"
                         class="flex items-center min-w-0 cursor-pointer rounded-lg px-2 -mx-2 py-1 transition hover:bg-bg-secondary"
@@ -385,6 +420,29 @@
                 {{-- Header Actions: more-actions dropdown --}}
                 {{-- Design: node r6DYj — gap 4, align center --}}
                 <div class="flex items-center" style="gap:4px;">
+                    {{-- Chat history translator — placed in the header so mobile composer stays compact. --}}
+                    <div class="relative shrink-0" title="{{ $this->chatTranslationTooltip() }}">
+                        <select
+                            wire:change="setChatTranslationLocale($event.target.value)"
+                            class="h-9 max-w-[112px] rounded-lg border border-border-light bg-bg-secondary px-2 text-xs font-semibold text-text-primary outline-none transition hover:border-accent sm:max-w-none"
+                            aria-label="Выбрать язык перевода диалога"
+                            title="Выбрать язык перевода диалога"
+                        >
+                            <option
+                                value=""
+                                @selected($chatTranslationLocale === null || $chatTranslationLocale === '')
+                                disabled
+                                title="Язык клиента не выбран"
+                            >Не выбран</option>
+                            @foreach($this->availableTranslationLanguages() as $language)
+                                <option
+                                    value="{{ $language['code'] }}"
+                                    @selected($chatTranslationLocale === $language['code'])
+                                    title="{{ $language['tooltip'] }}"
+                                >{{ $language['label'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
 
                     {{-- More actions (⋮) dropdown --}}
                     <div class="relative" x-data="{ menuOpen: false }">
@@ -395,6 +453,7 @@
                             class="flex items-center justify-center rounded-lg transition"
                             style="width:36px; height:36px; border:none; cursor:pointer; background:transparent;"
                             aria-label="Действия с чатом"
+                            title="Открыть действия с чатом"
                             aria-haspopup="true"
                             :aria-expanded="menuOpen"
                         >
@@ -507,16 +566,52 @@
                     </div>
                 @endif
 
-                @if($chatMessages->isEmpty())
-                    <div class="flex flex-1 items-center justify-center">
-                        <p class="text-sm text-text-secondary">Нет сообщений</p>
+                @if($chatHistoryTranslationActive)
+                    <div class="mb-3 flex shrink-0 gap-2 rounded-xl border border-border-light bg-bg-primary/80 p-1 text-xs text-text-secondary lg:hidden"
+                         title="Переключить вид переводов на мобильном">
+                        <button type="button"
+                                x-on:click="translationMobileView = 'both'"
+                                x-bind:class="translationMobileView === 'both' ? 'bg-accent text-white' : 'hover:bg-bg-secondary'"
+                                class="flex-1 rounded-lg px-3 py-2 font-medium transition"
+                                title="Показать оба текста">
+                            Оба
+                        </button>
+                        <button type="button"
+                                x-on:click="translationMobileView = 'ru'"
+                                x-bind:class="translationMobileView === 'ru' ? 'bg-accent text-white' : 'hover:bg-bg-secondary'"
+                                class="flex-1 rounded-lg px-3 py-2 font-medium transition"
+                                title="Показать русский текст">
+                            Русский
+                        </button>
+                        <button type="button"
+                                x-on:click="translationMobileView = 'client'"
+                                x-bind:class="translationMobileView === 'client' ? 'bg-accent text-white' : 'hover:bg-bg-secondary'"
+                                class="flex-1 rounded-lg px-3 py-2 font-medium transition"
+                                title="Показать язык клиента">
+                            Клиент
+                        </button>
                     </div>
-                @else
+                @endif
+
+                @if($chatHistoryTranslationHasPending)
+                    <div class="mb-3 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-text-secondary"
+                         title="Перевод истории обновляется автоматически">
+                        Перевод истории готовится. Экран обновится сам.
+                    </div>
+                @endif
+
                 {{-- mt-auto pins messages to the bottom when they don't fill the
                      viewport, while keeping the container a plain top-anchored
                      scroll area so overflow stays reachable (justify-end clips it). --}}
                 <div class="flex flex-col mt-auto w-full" style="gap:16px;">
+                    <?php $contactCardRendered = false; ?>
+                    <?php $shouldRenderContactCard = !empty($activeBotUser?->preferred_language_code); ?>
+                    @if($chatMessages->isEmpty() && $shouldRenderContactCard)
+                        <?php $contactCardRendered = true; ?>
+                        @include('livewire.chat.partials.contact-summary-card', ['hdrColor' => $hdrColor, 'hdrInitials' => $hdrInitials])
+                    @endif
                 @foreach($chatMessages as $message)
+                    @continue($this->shouldHideMessageFromHistory($message))
                     @php
                         $msgDate   = $message->created_at?->toDateString();
                         $prevDate  = $loop->first ? null : $chatMessages[$loop->index - 1]->created_at?->toDateString();
@@ -547,6 +642,34 @@
                     @php
                         $isOutgoing = $message->message_type === 'outgoing';
                         $messageText = $message->text ?? $message->externalMessage?->text;
+                        $currentLocale = $chatTranslationLocale ?: ($activeBotUser?->preferred_language_code ?: 'ru');
+                        $operatorToClientTranslation = $message->translations->first(function ($translation) use ($currentLocale) {
+                            return $translation->direction === 'operator_to_client'
+                                && $translation->source_locale === 'ru'
+                                && $translation->target_locale === $currentLocale;
+                        });
+                        $historyTranslation = $message->translations->first(function ($translation) use ($isOutgoing, $currentLocale) {
+                            return $translation->direction === ($isOutgoing ? 'system_to_operator' : 'client_to_operator')
+                                && $translation->source_locale === $currentLocale
+                                && $translation->target_locale === 'ru';
+                        });
+                        $messageTranslation = $isOutgoing
+                            ? ($historyTranslation ?? $operatorToClientTranslation)
+                            : ($historyTranslation ?? $operatorToClientTranslation);
+                        $translationPending = $messageTranslation && in_array($messageTranslation->status, ['queued', 'running'], true);
+                        $translationFailed = $messageTranslation && $messageTranslation->status === 'failed';
+                        $hasTwoZones = $messageTranslation || ($chatHistoryTranslationActive && filled($messageText));
+                        $operatorText = $messageText;
+                        $clientText = $messageText;
+                        if ($messageTranslation) {
+                            if ($messageTranslation->direction === 'operator_to_client') {
+                                $operatorText = $messageTranslation->source_text ?: $messageText;
+                                $clientText = $messageTranslation->translated_text ?: $messageText;
+                            } else {
+                                $operatorText = $messageTranslation->translated_text ?: null;
+                                $clientText = $messageTranslation->source_text ?: $messageText;
+                            }
+                        }
                     @endphp
 
                     @if($isOutgoing)
@@ -562,7 +685,27 @@
                                         :is-outgoing="true"
                                     />
                                 @endif
-                                @if($messageText)
+                                @if($hasTwoZones)
+                                    <div class="grid gap-2 lg:grid-cols-2">
+                                        <div class="rounded-lg bg-white/10 p-2"
+                                             x-show="!window.matchMedia('(max-width: 1023px)').matches || translationMobileView !== 'client'">
+                                            <div class="mb-1 text-[11px] font-semibold text-white opacity-70">RU</div>
+                                            @if($translationPending)
+                                                <div class="h-4 w-36 animate-pulse rounded bg-white/25" title="Перевод готовится"></div>
+                                            @elseif($translationFailed)
+                                                <p class="text-xs text-white opacity-80">Не удалось перевести</p>
+                                                <button type="button" wire:click="retryMessageTranslation({{ $message->id }})" class="mt-1 rounded bg-white/15 px-2 py-1 text-xs text-white" title="Повторить перевод сообщения">Повторить</button>
+                                            @else
+                                                <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $operatorText }}</p>
+                                            @endif
+                                        </div>
+                                        <div class="rounded-lg bg-white/10 p-2"
+                                             x-show="!window.matchMedia('(max-width: 1023px)').matches || translationMobileView !== 'ru'">
+                                            <div class="mb-1 text-[11px] font-semibold text-white opacity-70">Выбранный язык</div>
+                                            <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $clientText }}</p>
+                                        </div>
+                                    </div>
+                                @elseif($messageText)
                                     <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $messageText }}</p>
                                 @elseif($message->attachments->isEmpty())
                                     <p class="text-xs text-white opacity-70 italic">Вложение</p>
@@ -651,7 +794,27 @@
                                         :is-outgoing="false"
                                     />
                                 @endif
-                                @if($messageText)
+                                @if($hasTwoZones)
+                                    <div class="grid gap-2 lg:grid-cols-2">
+                                        <div class="rounded-lg bg-bg-primary/60 p-2"
+                                             x-show="!window.matchMedia('(max-width: 1023px)').matches || translationMobileView !== 'client'">
+                                            <div class="mb-1 text-[11px] font-semibold text-text-secondary">RU</div>
+                                            @if($translationPending)
+                                                <div class="h-4 w-36 animate-pulse rounded bg-bg-secondary" title="Перевод готовится"></div>
+                                            @elseif($translationFailed)
+                                                <p class="text-xs text-red-500">Не удалось перевести</p>
+                                                <button type="button" wire:click="retryMessageTranslation({{ $message->id }})" class="mt-1 rounded border border-border-light px-2 py-1 text-xs text-text-primary" title="Повторить перевод сообщения">Повторить</button>
+                                            @else
+                                                <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $operatorText ?: 'Перевод пока не готов' }}</p>
+                                            @endif
+                                        </div>
+                                        <div class="rounded-lg bg-bg-primary/60 p-2"
+                                             x-show="!window.matchMedia('(max-width: 1023px)').matches || translationMobileView !== 'ru'">
+                                            <div class="mb-1 text-[11px] font-semibold text-text-secondary">Выбранный язык</div>
+                                            <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $clientText }}</p>
+                                        </div>
+                                    </div>
+                                @elseif($messageText)
                                     <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $messageText }}</p>
                                 @elseif($message->attachments->isEmpty())
                                     <p class="text-xs text-text-secondary italic opacity-60">Вложение</p>
@@ -662,9 +825,20 @@
                             </div>
                         </div>
                     @endif
+                    @if(
+                        !$contactCardRendered
+                        && $shouldRenderContactCard
+                        && $message->message_type === 'outgoing'
+                        && app(\App\Modules\Telegram\Services\SupportLanguageService::class)->isSelectorText((string) $message->text)
+                    )
+                        <?php $contactCardRendered = true; ?>
+                        @include('livewire.chat.partials.contact-summary-card', ['hdrColor' => $hdrColor, 'hdrInitials' => $hdrInitials])
+                    @endif
                 @endforeach
+                    @if(!$contactCardRendered && $shouldRenderContactCard)
+                        @include('livewire.chat.partials.contact-summary-card', ['hdrColor' => $hdrColor, 'hdrInitials' => $hdrInitials])
+                    @endif
                 </div>
-                @endif
 
                 {{-- ── Pending AI drafts — shown in the admin workspace (always-both) ───── --}}
                 @if($pendingAiDrafts->isNotEmpty())
@@ -682,12 +856,24 @@
                                     <span class="text-xs font-semibold" style="color:#4F6EF7;">ИИ-черновик</span>
                                     <span class="text-xs" style="color:#9CA3AF; margin-left:auto;">{{ $draft->created_at?->format('H:i') }}</span>
                                 </div>
-                                {{-- Draft text --}}
-                                <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $draft->text_ai }}</p>
+                                {{-- Draft text: RU + выбранный язык клиента --}}
+                                <div class="grid gap-3 lg:grid-cols-2">
+                                    <div class="rounded-xl border border-border-light/70 bg-bg-primary/40 p-3">
+                                        <div class="mb-2 text-xs font-semibold text-text-secondary">RU</div>
+                                        <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $draft->text_source ?: $draft->text_ai }}</p>
+                                    </div>
+                                    <div class="rounded-xl border border-accent/40 bg-accent/10 p-3">
+                                        <div class="mb-2 flex items-center justify-between gap-2 text-xs font-semibold text-text-secondary">
+                                            <span>Выбранный язык</span>
+                                            <span>{{ $draft->translation_status }}</span>
+                                        </div>
+                                        <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $draft->text_translated ?: 'Перевод пока недоступен. Перед отправкой проверьте язык клиента или отредактируйте текст вручную.' }}</p>
+                                    </div>
+                                </div>
                                 {{-- Actions --}}
                                 <div class="flex items-center" style="gap:8px; flex-wrap:wrap;">
                                     {{-- All three actions disable each other while any one is
-                                         in flight (target by method name, not id) — the 5 s poll
+                                         in flight (target by method name, not id) — reconciliation
                                          can hold the request slot, so without this a click looks
                                          dead and a second click fires late / out of order. --}}
                                     <button
@@ -737,7 +923,11 @@
             {{-- Input area --}}
             {{-- Design: node zONmD — height 72, bg-primary, padding [12,24], gap 12, border-top --}}
             @if($this->shouldShowReplyForm())
-                <div class="shrink-0 bg-bg-primary border-t border-border-light" style="padding: 12px 24px;">
+                <div
+                    wire:key="reply-panel-{{ $activeBotUserId ?? 'empty' }}"
+                    class="shrink-0 bg-bg-primary border-t border-border-light"
+                    style="padding: 12px 24px;"
+                >
 
                     {{-- Auto-reply chips — active rules from the auto_replies table --}}
                     {{-- Design: mobile lo3D5 node bQdAT — chips row above input --}}
@@ -796,9 +986,37 @@
                         @enderror
                     @endif
 
+                    @if(trim($replyText) !== '')
+                        <div class="mb-2 rounded-xl border border-accent/30 bg-accent/10 p-3">
+                            <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
+                                <span>Русский → {{ $activeBotUser?->preferred_language_name ?: 'язык не выбран' }}</span>
+                                <span>{{ match($replyTranslationStatus) {
+                                    'ready' => 'Перевод готов',
+                                    'translating' => 'Перевожу…',
+                                    'error' => 'Ошибка перевода',
+                                    'language_not_selected' => 'Язык не выбран',
+                                    default => 'Ожидает перевода',
+                                } }}</span>
+                            </div>
+                            <div class="grid gap-2 lg:grid-cols-2">
+                                <div class="rounded-lg bg-bg-primary/50 p-2 text-sm text-text-primary" style="white-space:pre-wrap;">{{ $replyText }}</div>
+                                <div class="rounded-lg bg-bg-primary/50 p-2 text-sm text-text-primary" style="white-space:pre-wrap;">{{ $replyTranslatedText ?: ($replyTranslationError ?: 'Перевод появится здесь после паузы ввода.') }}</div>
+                            </div>
+                            <button type="button" wire:click="refreshReplyTranslation" title="Обновить перевод перед отправкой"
+                                class="mt-2 rounded-lg border border-border-light px-3 py-1.5 text-xs font-semibold text-text-primary">
+                                Обновить перевод
+                            </button>
+                        </div>
+                    @endif
+
                     {{-- Input row: attach + textarea + send --}}
                     {{-- Design: FEYxe (attach 40×40) + Euru3 (input, fill, bg-input, rounded-12) + K6yaRa (send 44×44 bg-accent rounded-12) --}}
-                    <form wire:submit.prevent="sendReply" class="flex items-end" style="gap:5px; align-items:flex-end;">
+                    <form
+                        wire:key="reply-form-{{ $activeBotUserId ?? 'empty' }}"
+                        wire:submit.prevent="sendReply"
+                        class="flex items-end"
+                        style="gap:5px; align-items:flex-end;"
+                    >
 
                         {{-- Attach button (telegram + vk only) --}}
                         @if($this->supportsAttachments())
@@ -819,18 +1037,18 @@
                         <div class="relative flex-1 flex">
                             {{-- Auto-growing textarea: 1 line by default, grows with
                                  content up to max-height, then scrolls. autosize() runs
-                                 on input (instant, client-side) and whenever replyText
-                                 changes programmatically (insertQuickReply / clear after
-                                 send) via $wire.$watch. --}}
+                                 on input (instant, client-side), whenever replyText changes
+                                 programmatically, and after Livewire polling morphs the DOM. --}}
                             <textarea
-                                wire:model.live="replyText"
+                                wire:model.live.debounce.1000ms="replyText"
                                 rows="1"
                                 placeholder="Напишите сообщение..."
                                 class="w-full resize-none text-sm text-text-primary placeholder-text-secondary outline-none border-none bg-transparent"
-                                style="background:var(--color-chat-control-bg); border:1px solid var(--color-chat-control-border); border-radius:12px; padding:12px 16px; line-height:1.25; min-height:44px; max-height:160px; overflow-y:auto;"
-                                x-data="{ autosize() { this.$el.style.height = 'auto'; this.$el.style.height = Math.min(this.$el.scrollHeight, 160) + 'px'; } }"
+                                style="background:var(--color-chat-control-bg); border:1px solid var(--color-chat-control-border); border-radius:12px; padding:12px 16px; line-height:20px; min-height:44px; max-height:124px; overflow-y:auto;"
+                                x-data="{ autosize() { const maxHeight = 124; this.$el.style.height = 'auto'; this.$el.style.height = Math.min(this.$el.scrollHeight, maxHeight) + 'px'; this.$el.style.overflowY = this.$el.scrollHeight > maxHeight ? 'auto' : 'hidden'; } }"
                                 x-init="$nextTick(() => autosize()); $wire.$watch('replyText', () => $nextTick(() => autosize()))"
                                 x-on:input="autosize()"
+                                x-on:chat-input-autosize.window="$nextTick(() => autosize())"
                                 x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); if (! $el.value.trim()) return; $wire.sendReply(); }"
                                 aria-label="Текст сообщения"
                                 title="Введите текст сообщения"
@@ -869,298 +1087,293 @@
         @endif
     </main>
 
-    {{-- ══ RIGHT PANEL — User info & media gallery ════════════════════════════ --}}
-    {{-- Design: node VdLTH — width 300, padding [24,20], gap 20, bg-primary, border-left --}}
+    {{-- ══ CONTACT DRAWER — User info, subscriptions and history ═══════════════ --}}
     @if($activeBotUser)
-        {{-- Centered modal: darkened backdrop centers the panel; click outside closes (Telegram-style) --}}
+        @php
+            $drawerColors = ['#6366F1','#E85D75','#34C759','#F5A623','#06B6D4','#10B981','#8B5CF6','#EF4444'];
+            $drawerIdx = abs(crc32((string) $activeBotUser->chat_id)) % 8;
+            $drawerColor = $drawerColors[$drawerIdx];
+            $drawerDisplayName = $activeBotUser->display_name ?? (string) $activeBotUser->chat_id;
+            $drawerInitials = strtoupper(substr($drawerDisplayName, 0, 2));
+            $drawerHandle = $activeBotUser->username;
+            $drawerPlatformLabel = match ($activeBotUser->platform) {
+                'telegram' => 'Telegram',
+                'vk'       => 'VK',
+                'max'      => 'Max',
+                default    => ucfirst($activeBotUser->platform),
+            };
+            $contactRows = $this->contactDetails();
+            $mediaAttachments = $this->getMediaAttachments();
+        @endphp
+
+        {{-- Drawer backdrop --}}
         <div
             x-show="infoPanelOpen"
             x-cloak
+            x-transition.opacity
+            x-on:click="closeInfoPanel()"
+            x-on:keydown.escape.window="closeInfoPanel()"
+            class="fixed inset-0 z-50 bg-black/40"
+            aria-hidden="true"
+            title="Закрыть карточку контакта"
+        ></div>
+
+        {{-- Drawer --}}
+        <section
+            id="contact-details-drawer"
+            x-show="infoPanelOpen"
+            x-cloak
             x-transition:enter="transition ease-out duration-200"
-            x-transition:enter-start="opacity-0"
-            x-transition:enter-end="opacity-100"
-            x-transition:leave="transition ease-in duration-200"
-            x-transition:leave-start="opacity-100"
-            x-transition:leave-end="opacity-0"
-            x-on:click="infoPanelOpen = false"
-            x-on:keydown.escape.window="infoPanelOpen = false"
-            class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
+            x-transition:enter-start="translate-x-full"
+            x-transition:enter-end="translate-x-0"
+            x-transition:leave="transition ease-in duration-150"
+            x-transition:leave-start="translate-x-0"
+            x-transition:leave-end="translate-x-full"
+            class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border-light bg-bg-primary shadow-2xl sm:w-[420px] xl:w-[480px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Карточка контакта"
         >
-            {{-- Info panel — narrow centered modal; clicks inside do not close --}}
-            <aside
-                x-show="infoPanelOpen"
-                x-cloak
-                x-on:click.stop
-                x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0 scale-95"
-                x-transition:enter-end="opacity-100 scale-100"
-                x-transition:leave="transition ease-in duration-150"
-                x-transition:leave-start="opacity-100 scale-100"
-                x-transition:leave-end="opacity-0 scale-95"
-                class="flex flex-col bg-bg-primary overflow-y-auto rounded-2xl border border-border-light shadow-2xl"
-                style="gap:20px; padding:24px 20px; width:440px; max-width:92vw; max-height:85vh;"
-            >
-
-            {{-- Header with close button (panel is always an overlay now) --}}
-            <div class="flex items-center justify-between">
-                <span class="text-text-secondary font-semibold tracking-wider" style="font-size:12px; letter-spacing:0.05em;">СВЕДЕНИЯ</span>
-                <button
-                    type="button"
-                    x-on:click="infoPanelOpen = false"
-                    class="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-secondary"
-                    style="cursor:pointer;"
-                    aria-label="Закрыть сведения"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M18 6 6 18M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-
-            {{-- Profile section --}}
-            {{-- Design: node KAbQg — vertical, gap 14, align center --}}
-            <div class="flex flex-col items-center" style="gap:14px;">
-
-                {{-- Large avatar 64×64 --}}
-                @php
-                    $rpColors = ['#6366F1','#E85D75','#34C759','#F5A623','#06B6D4','#10B981','#8B5CF6','#EF4444'];
-                    $rpIdx = abs(crc32((string) $activeBotUser->chat_id)) % 8;
-                    $rpColor = $rpColors[$rpIdx];
-                    $rpDisplayName = $activeBotUser->display_name ?? (string) $activeBotUser->chat_id;
-                    $rpInitials = strtoupper(substr($rpDisplayName, 0, 2));
-                    $rpHandle = $activeBotUser->username;
-                @endphp
-                @if($activeBotUser->avatar_path)
-                    <img
-                        src="{{ route('admin.bot-user-avatar', $activeBotUser->id) }}"
-                        alt="{{ $rpDisplayName }}"
-                        class="flex items-center justify-center rounded-full object-cover select-none shrink-0"
-                        style="width:64px; height:64px; border-radius:32px;"
-                        aria-hidden="true"
-                    >
-                @else
-                    <div
-                        class="flex items-center justify-center rounded-full text-white font-semibold select-none shrink-0"
-                        style="width:64px; height:64px; background:{{ $rpColor }}; font-size:22px; border-radius:32px;"
-                        aria-hidden="true"
-                    >{{ $rpInitials }}</div>
-                @endif
-
-                {{-- Name + handle --}}
-                {{-- Design: node wAn8z — vertical, gap 4, center --}}
-                <div class="flex flex-col items-center w-full" style="gap:4px;">
-                    <span class="text-text-primary font-semibold text-center" style="font-size:16px;">
-                        {{ $rpDisplayName }}
-                    </span>
-                    @php
-                        $rpPlatformLabel = match ($activeBotUser->platform) {
-                            'telegram' => 'Telegram',
-                            'vk'       => 'VK',
-                            'max'      => 'Max',
-                            default    => ucfirst($activeBotUser->platform),
-                        };
-                    @endphp
-                    <span class="text-text-secondary text-center" style="font-size:13px;">
-                        @if($rpHandle){{ '@' . $rpHandle }} · @endif{{ $rpPlatformLabel }}
-                    </span>
-                </div>
-
-                {{-- Action buttons: Блок + Закрыть --}}
-                {{-- Design: node uYnHt — gap 8 --}}
-                {{-- Block = bg #FEE2E2 text #DC2626; Close = bg bg-input text-primary --}}
-                <div class="flex" style="gap:8px;">
-                    {{-- Блок / Разблокировать — toggles via banUser()/unbanUser() --}}
-                    @php $isBanned = (bool) $activeBotUser->is_banned; @endphp
-                    @if($isBanned)
-                        <button
-                            type="button"
-                            wire:click="unbanUser"
-                            wire:confirm="Разблокировать пользователя? Он снова сможет писать в поддержку."
-                            wire:loading.attr="disabled"
-                            wire:target="unbanUser"
-                            class="flex items-center transition hover:opacity-90 disabled:opacity-50"
-                            style="background:var(--color-chat-soft-success); color:#22C55E; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
-                            aria-label="Разблокировать пользователя"
-                            title="Разблокировать пользователя"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-                            </svg>
-                            Разблокировать
-                        </button>
-                    @else
-                        <button
-                            type="button"
-                            wire:click="banUser"
-                            wire:confirm="Заблокировать пользователя? Его сообщения перестанут приниматься, а диалог будет закрыт."
-                            wire:loading.attr="disabled"
-                            wire:target="banUser"
-                            class="flex items-center transition hover:opacity-90 disabled:opacity-50"
-                            style="background:var(--color-chat-soft-danger); color:#F87171; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
-                            aria-label="Заблокировать пользователя"
-                            title="Блокировка пользователя"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>
-                            </svg>
-                            Блок
-                        </button>
-                    @endif
-
-                    {{-- Закрыть button — runs the canonical CloseTopic flow via closeDialog() --}}
-                    @php $isClosed = (bool) $activeBotUser->is_closed; @endphp
+            <header class="sticky top-0 z-10 border-b border-border-light bg-bg-primary px-4 py-4">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-text-secondary">Контакт</p>
+                        <h3 class="mt-1 truncate text-lg font-semibold text-text-primary">{{ $drawerDisplayName }}</h3>
+                        <p class="mt-0.5 truncate text-xs text-text-secondary">
+                            @if($drawerHandle){{ '@' . $drawerHandle }} · @endif{{ $drawerPlatformLabel }}
+                        </p>
+                    </div>
                     <button
                         type="button"
-                        wire:click="closeDialog"
-                        wire:confirm="Закрыть диалог? Пользователю придёт уведомление о закрытии и форма оценки."
-                        wire:loading.attr="disabled"
-                        wire:target="closeDialog"
-                        @disabled($isClosed)
-                        class="flex items-center transition hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
-                        style="background:var(--color-chat-control-bg); color:var(--color-text-primary); border-radius:8px; padding:6px 14px; font-size:12px; font-weight:500; gap:6px; border:none; cursor:pointer;"
-                        aria-label="Закрыть диалог"
-                        title="{{ $isClosed ? 'Диалог уже закрыт' : 'Закрыть тикет' }}"
+                        x-on:click="closeInfoPanel()"
+                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
+                        aria-label="Закрыть карточку контакта"
+                        title="Закрыть карточку контакта"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M18 6 6 18M6 6l12 12" />
                         </svg>
-                        {{ $isClosed ? 'Закрыто' : 'Закрыть' }}
                     </button>
                 </div>
-            </div>
 
-            {{-- Divider --}}
-            <div class="w-full h-px bg-border-light shrink-0"></div>
-
-            {{-- ИНФОРМАЦИЯ section --}}
-            {{-- Design: node RWpDk — vertical, gap 14 --}}
-            <div class="flex flex-col w-full" style="gap:14px;">
-
-                {{-- Section heading --}}
-                {{-- Design: node a2tax7 — 12/600 text-secondary --}}
-                <span class="text-text-secondary font-semibold tracking-wider" style="font-size:12px; letter-spacing:0.05em;">ИНФОРМАЦИЯ</span>
-
-                {{-- Info rows — each: icon (16×16, text-secondary) + vertical texts (label 11 text-secondary / value 13 text-primary) --}}
-
-                {{-- ID пользователя — hash icon --}}
-                {{-- Design: node x2teWd — gap 10, align center --}}
-                <div class="flex items-center w-full" style="gap:10px;">
-                    <svg class="shrink-0 text-text-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>
-                    </svg>
-                    <div class="flex flex-col" style="gap:2px;">
-                        <span class="text-text-secondary" style="font-size:11px;">ID пользователя</span>
-                        <span class="text-text-primary font-mono" style="font-size:13px;">{{ $activeBotUser->chat_id }}</span>
-                    </div>
+                <div class="mt-4 flex gap-1 rounded-xl bg-bg-secondary p-1" role="tablist" aria-label="Разделы карточки контакта">
+                    <button
+                        type="button"
+                        id="contact-tab-details-button"
+                        x-ref="infoTab_details"
+                        x-on:click="infoPanelTab = 'details'"
+                        x-on:keydown.arrow-right.prevent="focusInfoPanelTab(1)"
+                        x-on:keydown.arrow-left.prevent="focusInfoPanelTab(-1)"
+                        x-bind:aria-selected="infoPanelTab === 'details'"
+                        x-bind:tabindex="infoPanelTab === 'details' ? 0 : -1"
+                        role="tab"
+                        aria-controls="contact-tab-details"
+                        class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition"
+                        x-bind:class="infoPanelTab === 'details' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:bg-bg-primary hover:text-text-primary'"
+                        title="Показать сведения"
+                    >Сведения</button>
+                    <button
+                        type="button"
+                        id="contact-tab-subscriptions-button"
+                        x-ref="infoTab_subscriptions"
+                        x-on:click="infoPanelTab = 'subscriptions'"
+                        x-on:keydown.arrow-right.prevent="focusInfoPanelTab(1)"
+                        x-on:keydown.arrow-left.prevent="focusInfoPanelTab(-1)"
+                        x-bind:aria-selected="infoPanelTab === 'subscriptions'"
+                        x-bind:tabindex="infoPanelTab === 'subscriptions' ? 0 : -1"
+                        role="tab"
+                        aria-controls="contact-tab-subscriptions"
+                        class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition"
+                        x-bind:class="infoPanelTab === 'subscriptions' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:bg-bg-primary hover:text-text-primary'"
+                        title="Показать подписки"
+                    >Подписки</button>
+                    <button
+                        type="button"
+                        id="contact-tab-history-button"
+                        x-ref="infoTab_history"
+                        x-on:click="infoPanelTab = 'history'"
+                        x-on:keydown.arrow-right.prevent="focusInfoPanelTab(1)"
+                        x-on:keydown.arrow-left.prevent="focusInfoPanelTab(-1)"
+                        x-bind:aria-selected="infoPanelTab === 'history'"
+                        x-bind:tabindex="infoPanelTab === 'history' ? 0 : -1"
+                        role="tab"
+                        aria-controls="contact-tab-history"
+                        class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition"
+                        x-bind:class="infoPanelTab === 'history' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:bg-bg-primary hover:text-text-primary'"
+                        title="Показать историю"
+                    >История</button>
                 </div>
+            </header>
 
-                {{-- Платформа — send icon --}}
-                {{-- Design: node Kc4Ad --}}
-                <div class="flex items-center w-full" style="gap:10px;">
-                    <svg class="shrink-0 text-text-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
-                    </svg>
-                    <div class="flex flex-col" style="gap:2px;">
-                        <span class="text-text-secondary" style="font-size:11px;">Платформа</span>
-                        <span class="text-text-primary" style="font-size:13px;">{{ $rpPlatformLabel }}</span>
-                    </div>
-                </div>
+            <div class="flex-1 overflow-y-auto px-4 py-5">
+                <div
+                    id="contact-tab-details"
+                    x-show="infoPanelTab === 'details'"
+                    role="tabpanel"
+                    aria-labelledby="contact-tab-details-button"
+                    class="space-y-5"
+                >
+                    {{-- Profile summary --}}
+                    <div class="flex flex-col items-center rounded-2xl border border-border-light bg-bg-secondary/40 px-4 py-5" style="gap:14px;">
+                        @if($activeBotUser->avatar_path)
+                            <img
+                                src="{{ route('admin.bot-user-avatar', $activeBotUser->id) }}"
+                                alt="{{ $drawerDisplayName }}"
+                                class="h-16 w-16 shrink-0 rounded-full object-cover select-none"
+                                aria-hidden="true"
+                            >
+                        @else
+                            <div
+                                class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-[22px] font-semibold text-white select-none"
+                                style="background:{{ $drawerColor }};"
+                                aria-hidden="true"
+                            >{{ $drawerInitials }}</div>
+                        @endif
 
-                {{-- Ссылка на профиль — link icon (only when a profile URL can be built) --}}
-                @php $profileUrl = $this->profileUrl(); @endphp
-                @if($profileUrl)
-                    <div class="flex items-center w-full" style="gap:10px;">
-                        <svg class="shrink-0 text-text-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                        </svg>
-                        <div class="flex flex-col min-w-0 flex-1" style="gap:2px;">
-                            <span class="text-text-secondary" style="font-size:11px;">Ссылка на профиль</span>
-                            <a
-                                href="{{ $profileUrl }}"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="block truncate text-accent hover:underline"
-                                style="font-size:13px; cursor:pointer;"
-                                title="{{ $profileUrl }}"
-                            >{{ $profileUrl }}</a>
+                        <div class="min-w-0 text-center">
+                            <p class="truncate text-base font-semibold text-text-primary">{{ $drawerDisplayName }}</p>
+                            <p class="mt-1 truncate text-sm text-text-secondary">
+                                @if($drawerHandle){{ '@' . $drawerHandle }} · @endif{{ $drawerPlatformLabel }}
+                            </p>
+                        </div>
+
+                        <div class="flex flex-wrap justify-center gap-2">
+                            @php $isBanned = (bool) $activeBotUser->is_banned; @endphp
+                            @if($isBanned)
+                                <button
+                                    type="button"
+                                    wire:click="unbanUser"
+                                    wire:confirm="Разблокировать пользователя? Он снова сможет писать в поддержку."
+                                    wire:loading.attr="disabled"
+                                    wire:target="unbanUser"
+                                    class="inline-flex items-center rounded-lg px-3 py-2 text-xs font-medium transition hover:opacity-90 disabled:opacity-50"
+                                    style="background:var(--color-chat-soft-success); color:#22C55E;"
+                                    aria-label="Разблокировать пользователя"
+                                    title="Разблокировать пользователя"
+                                >Разблокировать</button>
+                            @else
+                                <button
+                                    type="button"
+                                    wire:click="banUser"
+                                    wire:confirm="Заблокировать пользователя? Его сообщения перестанут приниматься, а диалог будет закрыт."
+                                    wire:loading.attr="disabled"
+                                    wire:target="banUser"
+                                    class="inline-flex items-center rounded-lg px-3 py-2 text-xs font-medium transition hover:opacity-90 disabled:opacity-50"
+                                    style="background:var(--color-chat-soft-danger); color:#F87171;"
+                                    aria-label="Заблокировать пользователя"
+                                    title="Заблокировать пользователя"
+                                >Блок</button>
+                            @endif
+
+                            @php $isClosed = (bool) $activeBotUser->is_closed; @endphp
+                            <button
+                                type="button"
+                                wire:click="closeDialog"
+                                wire:confirm="Закрыть диалог? Пользователю придёт уведомление о закрытии и форма оценки."
+                                wire:loading.attr="disabled"
+                                wire:target="closeDialog"
+                                @disabled($isClosed)
+                                class="inline-flex items-center rounded-lg px-3 py-2 text-xs font-medium transition hover:opacity-90 disabled:cursor-default disabled:opacity-50"
+                                style="background:var(--color-chat-control-bg); color:var(--color-text-primary);"
+                                aria-label="Закрыть диалог"
+                                title="{{ $isClosed ? 'Диалог уже закрыт' : 'Закрыть тикет' }}"
+                            >{{ $isClosed ? 'Закрыто' : 'Закрыть' }}</button>
                         </div>
                     </div>
-                @endif
 
-                {{-- Первое обращение — calendar icon --}}
-                {{-- Design: node u4lnP --}}
-                <div class="flex items-center w-full" style="gap:10px;">
-                    <svg class="shrink-0 text-text-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>
-                    </svg>
-                    <div class="flex flex-col" style="gap:2px;">
-                        <span class="text-text-secondary" style="font-size:11px;">Первое обращение</span>
-                        <span class="text-text-primary" style="font-size:13px;">
-                            {{ $activeBotUser->created_at
-                                ? \Carbon\Carbon::parse($activeBotUser->created_at)->locale('ru')->isoFormat('D MMMM YYYY')
-                                : '—' }}
-                        </span>
-                    </div>
+                    {{-- Contact details --}}
+                    <section class="rounded-2xl border border-border-light bg-bg-primary p-4" aria-label="Контактная информация">
+                        <h4 class="text-xs font-semibold uppercase tracking-wide text-text-secondary">Контактная информация</h4>
+                        <dl class="mt-4 space-y-3">
+                            @foreach($contactRows as $row)
+                                <div class="grid grid-cols-[140px_minmax(0,1fr)] gap-3 border-b border-border-light/70 pb-3 last:border-b-0 last:pb-0">
+                                    <dt class="text-xs text-text-secondary">{{ $row['label'] }}</dt>
+                                    <dd class="min-w-0 text-sm text-text-primary">
+                                        @if(!empty($row['url']))
+                                            <a
+                                                href="{{ $row['url'] }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                class="block truncate text-accent hover:underline"
+                                                title="Открыть ссылку профиля"
+                                            >{{ $row['value'] }}</a>
+                                        @else
+                                            <span class="break-words" title="{{ $row['value'] }}">{{ $row['value'] }}</span>
+                                        @endif
+                                    </dd>
+                                </div>
+                            @endforeach
+                        </dl>
+                    </section>
+
+                    {{-- Media files --}}
+                    <section class="rounded-2xl border border-border-light bg-bg-primary p-4" aria-label="Медиафайлы контакта">
+                        <h4 class="text-xs font-semibold uppercase tracking-wide text-text-secondary">Медиафайлы</h4>
+                        @if($mediaAttachments->isNotEmpty())
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                @foreach($mediaAttachments as $attachment)
+                                    @php
+                                        $fileUrl = $activeBotUser->platform === 'telegram'
+                                            ? url('/api/files/' . $attachment->file_id)
+                                            : $attachment->file_id;
+                                        $isImage = in_array($attachment->file_type, ['photo', 'sticker']);
+                                    @endphp
+                                    @if($isImage)
+                                        <img
+                                            src="{{ $fileUrl }}"
+                                            alt="{{ $attachment->file_type }}"
+                                            class="h-[72px] w-[72px] shrink-0 cursor-zoom-in rounded-lg object-cover transition hover:opacity-90"
+                                            loading="lazy"
+                                            x-on:click="$dispatch('open-lightbox', { src: '{{ $fileUrl }}' })"
+                                            title="Открыть медиафайл"
+                                        >
+                                    @else
+                                        <a
+                                            href="{{ $fileUrl }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title="Открыть файл {{ $attachment->file_name ?? $attachment->file_type }}"
+                                            class="flex h-[72px] w-[72px] shrink-0 flex-col items-center justify-center rounded-lg p-2 transition hover:opacity-90"
+                                            style="background:var(--color-chat-soft-neutral); text-decoration:none;"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                            </svg>
+                                            <span class="mt-1 max-w-full truncate text-[10px] text-text-secondary">{{ $attachment->file_name ?? $attachment->file_type }}</span>
+                                        </a>
+                                    @endif
+                                @endforeach
+                            </div>
+                        @else
+                            <p class="mt-4 text-sm text-text-secondary">Нет файлов</p>
+                        @endif
+                    </section>
                 </div>
 
+                <div
+                    id="contact-tab-subscriptions"
+                    x-show="infoPanelTab === 'subscriptions'"
+                    role="tabpanel"
+                    aria-labelledby="contact-tab-subscriptions-button"
+                    class="rounded-2xl border border-dashed border-border-light bg-bg-secondary/40 p-5 text-sm text-text-secondary"
+                >
+                    <p class="font-medium text-text-primary">Подписки</p>
+                    <p class="mt-2">Интеграция с PostEditBot и Toosly будет добавлена позже.</p>
+                </div>
+
+                <div
+                    id="contact-tab-history"
+                    x-show="infoPanelTab === 'history'"
+                    role="tabpanel"
+                    aria-labelledby="contact-tab-history-button"
+                    class="rounded-2xl border border-dashed border-border-light bg-bg-secondary/40 p-5 text-sm text-text-secondary"
+                >
+                    <p class="font-medium text-text-primary">История</p>
+                    <p class="mt-2">История платежей и событий появится после интеграции с PostEditBot и Toosly.</p>
+                </div>
             </div>
-
-            {{-- Divider --}}
-            {{-- Design: node GxLQl — #E5E7EB height 1 --}}
-            <div class="w-full h-px shrink-0 bg-border-light"></div>
-
-            {{-- МЕДИАФАЙЛЫ section --}}
-            {{-- Design: node m1qYAD — vertical gap 12; Media Row: gap 8, thumbs 72×72 rounded-8 --}}
-            @php $mediaAttachments = $this->getMediaAttachments() @endphp
-            <div class="flex flex-col w-full" style="gap:12px;">
-
-                {{-- Section heading --}}
-                {{-- Design: node IUhIo — 12/600 #6B7280 letter-spacing 1 --}}
-                <span class="font-semibold text-text-secondary" style="font-size:12px; letter-spacing:0.07em;">МЕДИАФАЙЛЫ</span>
-
-                {{-- Thumbnail grid: images render as 72×72 thumbs, other files as a file card --}}
-                {{-- Design: node D0i1e — gap 8, row; thumbs 72×72 rounded-8 --}}
-                @if($mediaAttachments->isNotEmpty())
-                    <div class="flex flex-wrap" style="gap:8px;">
-                        @foreach($mediaAttachments as $attachment)
-                            @php
-                                $fileUrl = $activeBotUser->platform === 'telegram'
-                                    ? url('/api/files/' . $attachment->file_id)
-                                    : $attachment->file_id;
-                                $isImage = in_array($attachment->file_type, ['photo', 'sticker']);
-                            @endphp
-                            @if($isImage)
-                                <img
-                                    src="{{ $fileUrl }}"
-                                    alt="{{ $attachment->file_type }}"
-                                    class="object-cover cursor-zoom-in hover:opacity-90 transition"
-                                    style="width:72px; height:72px; border-radius:8px; flex-shrink:0;"
-                                    loading="lazy"
-                                    x-on:click="$dispatch('open-lightbox', { src: '{{ $fileUrl }}' })"
-                                >
-                            @else
-                                <a
-                                    href="{{ $fileUrl }}"
-                                    target="_blank"
-                                    title="{{ $attachment->file_name ?? $attachment->file_type }}"
-                                    class="flex flex-col items-center justify-center hover:opacity-90 transition"
-                                    style="width:72px; height:72px; border-radius:8px; flex-shrink:0; background:var(--color-chat-soft-neutral); padding:8px; text-decoration:none;"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="shrink-0" style="width:24px; height:24px; color:var(--color-text-secondary);" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                    </svg>
-                                    <span class="truncate" style="font-size:10px; color:var(--color-text-secondary); max-width:100%; margin-top:4px;">{{ $attachment->file_name ?? $attachment->file_type }}</span>
-                                </a>
-                            @endif
-                        @endforeach
-                    </div>
-                @else
-                    <p class="text-text-secondary" style="font-size:13px;">Нет файлов</p>
-                @endif
-            </div>
-
-            </aside>
-        </div>
+        </section>
     @endif
+
 
 </div>

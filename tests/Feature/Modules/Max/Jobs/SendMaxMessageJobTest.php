@@ -3,13 +3,12 @@
 namespace Tests\Feature\Modules\Max\Jobs;
 
 use App\Models\BotUser;
-use App\Models\Message;
 use App\Modules\Max\Api\MaxMethods;
 use App\Modules\Max\DTOs\MaxTextMessageDto;
 use App\Modules\Max\Jobs\SendMaxMessageJob;
-use App\Modules\Telegram\Actions\DeleteForumTopic;
-use App\Modules\Telegram\Jobs\TopicCreateJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use RuntimeException;
 use Tests\Mocks\Max\Answer\MaxAnswerDtoMock;
 use Tests\Mocks\Tg\TelegramUpdateDto_VKMock;
 use Tests\TestCase;
@@ -18,105 +17,52 @@ class SendMaxMessageJobTest extends TestCase
 {
     use RefreshDatabase;
 
-    private ?BotUser $botUser;
-
-    public function setUp(): void
+    public function test_successful_outgoing_message_is_saved(): void
     {
-        parent::setUp();
-
-        Message::truncate();
-
-        $chatId = time();
-        $this->botUser = BotUser::getUserByChatId($chatId, 'max');
-
-        $jobTopicCreate = new TopicCreateJob(
-            $this->botUser->id,
-        );
-        $jobTopicCreate->handle();
-
-        $this->botUser->refresh();
-    }
-
-    protected function tearDown(): void
-    {
-        if (isset($this->botUser->topic_id)) {
-            app(DeleteForumTopic::class)->execute($this->botUser);
-        }
-
-        parent::tearDown();
-    }
-
-    public function test_retries_on_attachment_not_ready_then_succeeds(): void
-    {
-        $dto = TelegramUpdateDto_VKMock::getDto();
-        $answerNotReady = MaxAnswerDtoMock::getDto([
-            'response_code' => 500,
-            'error_message' => 'Max sendFile failed: {"code":"attachment.not.ready","message":"Key: errors.process.attachment.file.not.processed"}',
-        ]);
-        $answerOk = MaxAnswerDtoMock::getDto();
-
-        /** @var MaxMethods&\Mockery\MockInterface $mockMaxMethods */
-        $mockMaxMethods = \Mockery::mock(MaxMethods::class);
-        /** @var \Mockery\Expectation $expectation */
-        $expectation = $mockMaxMethods->shouldReceive('sendQuery');
-        $expectation->times(3)->andReturn($answerNotReady, $answerNotReady, $answerOk);
-
-        $queryParams = MaxTextMessageDto::from([
-            'methodQuery' => 'sendFile',
-            'user_id' => $this->botUser->chat_id,
-            'file_token' => 'test_token',
-        ]);
-
+        Queue::fake();
+        $botUser = BotUser::getUserByChatId(30303, 'max');
+        $max = \Mockery::mock(MaxMethods::class);
+        $max->shouldReceive('sendQuery')->once()->andReturn(MaxAnswerDtoMock::getDto());
         $job = new SendMaxMessageJob(
-            $this->botUser->id,
-            $dto,
-            $queryParams,
-            $mockMaxMethods
+            $botUser->id,
+            TelegramUpdateDto_VKMock::getDto(),
+            MaxTextMessageDto::from([
+                'methodQuery' => 'sendMessage',
+                'user_id' => $botUser->chat_id,
+                'text' => 'Hello',
+            ]),
+            $max,
         );
 
-        // Override sleep to avoid real waiting in tests
         $job->handle();
 
         $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $this->botUser->id,
+            'bot_user_id' => $botUser->id,
             'message_type' => 'outgoing',
+            'text' => 'Hello',
         ]);
     }
 
-    public function test_send_message_for_user(): void
+    public function test_attachment_not_ready_is_retried_by_queue_without_sleeping_in_worker(): void
     {
-        try {
-            $typeMessage = 'outgoing';
-            $textMessage = 'Тестовое сообщение';
-            $dto = TelegramUpdateDto_VKMock::getDto();
-            $answerDto = MaxAnswerDtoMock::getDto();
+        $botUser = BotUser::getUserByChatId(30304, 'max');
+        $max = \Mockery::mock(MaxMethods::class);
+        $max->shouldReceive('sendQuery')->once()->andReturn(MaxAnswerDtoMock::getDto([
+            'response_code' => 500,
+            'error_message' => 'attachment.not.ready',
+        ]));
+        $job = new SendMaxMessageJob(
+            $botUser->id,
+            TelegramUpdateDto_VKMock::getDto(),
+            MaxTextMessageDto::from([
+                'methodQuery' => 'sendFile',
+                'user_id' => $botUser->chat_id,
+                'file_token' => 'token',
+            ]),
+            $max,
+        );
 
-            /** @var MaxMethods&\Mockery\MockInterface $mockMaxMethods */
-            $mockMaxMethods = \Mockery::mock(MaxMethods::class);
-            $mockMaxMethods->shouldReceive('sendQuery')->andReturn($answerDto);
-
-            $queryParams = MaxTextMessageDto::from([
-                'methodQuery' => 'sendMessage',
-                'user_id' => $this->botUser->chat_id,
-                'text' => $textMessage,
-            ]);
-
-            $job = new SendMaxMessageJob(
-                $this->botUser->id,
-                $dto,
-                $queryParams,
-                $mockMaxMethods
-            );
-            $job->handle();
-
-            $this->assertDatabaseHas('messages', [
-                'bot_user_id' => $this->botUser->id,
-                'message_type' => $typeMessage,
-            ]);
-        } finally {
-            if ($this->botUser->topic_id) {
-                app(DeleteForumTopic::class)->execute($this->botUser);
-            }
-        }
+        $this->expectException(RuntimeException::class);
+        $job->handle();
     }
 }

@@ -3,14 +3,12 @@
 namespace Tests\Feature\Modules\Vk\Jobs;
 
 use App\Models\BotUser;
-use App\Models\Message;
-use App\Modules\Telegram\Actions\DeleteForumTopic;
-use App\Modules\Telegram\DTOs\TelegramUpdateDto;
-use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Vk\Api\VkMethods;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use RuntimeException;
 use Tests\Mocks\Tg\TelegramUpdateDto_VKMock;
 use Tests\Mocks\Vk\Answer\VkAnswerDtoMock;
 use Tests\TestCase;
@@ -19,71 +17,53 @@ class SendVkMessageJobTest extends TestCase
 {
     use RefreshDatabase;
 
-    private TelegramUpdateDto $dto;
-
-    private ?BotUser $botUser;
-
-    public function setUp(): void
+    public function test_successful_outgoing_message_is_saved(): void
     {
-        parent::setUp();
-
-        Message::truncate();
-
-        $this->dto = TelegramUpdateDto_VKMock::getDto();
-
-        $chatId = time();
-        $this->botUser = BotUser::getUserByChatId($chatId, 'vk');
-
-        $jobTopicCreate = new TopicCreateJob(
-            $this->botUser->id,
-        );
-        $jobTopicCreate->handle();
-
-        $this->botUser->refresh();
-    }
-
-    protected function tearDown(): void
-    {
-        if (isset($this->botUser->topic_id)) {
-            app(DeleteForumTopic::class)->execute($this->botUser);
-        }
-
-        parent::tearDown();
-    }
-
-    public function test_send_message_for_user(): void
-    {
-        try {
-            $typeMessage = 'outgoing';
-            $textMessage = 'Тестовое сообщение';
-            $dto = VkAnswerDtoMock::getDto();
-
-            // Мокаем ответ от VK
-            $mockTelegramMethods = \Mockery::mock(VkMethods::class);
-            $mockTelegramMethods->shouldReceive('sendQueryVk')->andReturn($dto);
-
-            $queryParams = VkTextMessageDto::from([
+        Queue::fake();
+        $botUser = BotUser::getUserByChatId(40404, 'vk');
+        $vk = \Mockery::mock(VkMethods::class);
+        $vk->shouldReceive('sendQueryVk')->once()->andReturn(VkAnswerDtoMock::getDto());
+        $job = new SendVkMessageJob(
+            $botUser->id,
+            TelegramUpdateDto_VKMock::getDto(),
+            VkTextMessageDto::from([
                 'methodQuery' => 'messages.send',
-                'peer_id' => $this->botUser->chat_id,
-                'message' => $textMessage,
-            ]);
+                'peer_id' => $botUser->chat_id,
+                'message' => 'Hello',
+            ]),
+            $vk,
+        );
 
-            $job = new SendVkMessageJob(
-                $this->botUser->id,
-                $this->dto,
-                $queryParams,
-                $mockTelegramMethods
-            );
-            $job->handle();
+        $job->handle();
 
-            $this->assertDatabaseHas('messages', [
-                'bot_user_id' => $this->botUser->id,
-                'message_type' => $typeMessage,
-            ]);
-        } finally {
-            if ($this->botUser->topic_id) {
-                app(DeleteForumTopic::class)->execute($this->botUser);
-            }
-        }
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'text' => 'Hello',
+        ]);
+    }
+
+    public function test_transient_vk_error_is_not_swallowed(): void
+    {
+        $botUser = BotUser::getUserByChatId(40405, 'vk');
+        $vk = \Mockery::mock(VkMethods::class);
+        $vk->shouldReceive('sendQueryVk')->once()->andReturn(VkAnswerDtoMock::getDto([
+            'response_code' => 503,
+            'error_message' => 'upstream unavailable',
+            'response' => 0,
+        ]));
+        $job = new SendVkMessageJob(
+            $botUser->id,
+            TelegramUpdateDto_VKMock::getDto(),
+            VkTextMessageDto::from([
+                'methodQuery' => 'messages.send',
+                'peer_id' => $botUser->chat_id,
+                'message' => 'Hello',
+            ]),
+            $vk,
+        );
+
+        $this->expectException(RuntimeException::class);
+        $job->handle();
     }
 }

@@ -2,17 +2,17 @@
 
 namespace Tests\Unit\Modules\Ai\Actions;
 
-use App\Jobs\EnrichBotUserProfileJob;
+use App\Models\AiMessage;
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
 use App\Modules\Ai\Actions\DeliverAiAnswerToUser;
-use App\Modules\Max\Jobs\SendMaxMessageJob;
-use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
-use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
-use App\Modules\Vk\Jobs\SendVkMessageJob;
-use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
+use App\Modules\Ai\Jobs\DeliverAiMessageJob;
+use App\Modules\Max\Api\MaxMethods;
+use App\Modules\Max\DTOs\MaxAnswerDto;
+use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -23,190 +23,171 @@ class DeliverAiAnswerToUserTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        app(SettingsService::class)->set('telegram.token', 'main-token');
+        app(SettingsService::class)->set('telegram.group_id', null);
+    }
 
-        BotUser::truncate();
-        Message::truncate();
+    public function test_persists_outgoing_message_only_after_platform_confirmation(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 101, 'platform' => 'telegram']);
+        $aiMessage = AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'text_ai' => 'Ответ',
+            'text_source' => 'Ответ',
+            'status' => 'delivery_pending',
+        ]);
+        Http::fake(['*' => Http::response([
+            'ok' => true,
+            'result' => ['message_id' => 77, 'chat' => ['id' => 101]],
+        ])]);
+
+        $result = app(DeliverAiAnswerToUser::class)->execute($botUser, '<b>Hello</b>', null, $aiMessage);
+
+        $this->assertTrue($result);
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'text' => 'Hello',
+        ]);
+        $this->assertDatabaseHas('delivery_operations', [
+            'bot_user_id' => $botUser->id,
+            'operation' => 'ai-answer',
+            'status' => DeliveryOperation::STATUS_DELIVERED,
+            'external_message_id' => 77,
+        ]);
+    }
+
+    public function test_failed_api_attempt_is_observable_and_does_not_create_false_sent_message(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 102, 'platform' => 'telegram']);
+        $aiMessage = AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'text_ai' => 'Ответ',
+            'status' => 'delivery_pending',
+        ]);
+        Http::fake(['*' => Http::response([
+            'ok' => false,
+            'error_code' => 500,
+            'description' => 'Temporary failure',
+        ], 500)]);
+
+        $this->expectException(\RuntimeException::class);
+
+        try {
+            app(DeliverAiAnswerToUser::class)->execute($botUser, 'Hello', null, $aiMessage);
+        } finally {
+            $this->assertSame(0, Message::count());
+            $this->assertDatabaseHas('delivery_operations', [
+                'operation' => 'ai-answer',
+                'status' => DeliveryOperation::STATUS_RETRYING,
+            ]);
+        }
+    }
+
+    public function test_failed_vk_attempt_does_not_create_false_sent_message(): void
+    {
+        app(SettingsService::class)->set('vk.token', 'vk-token');
+        $botUser = BotUser::create(['chat_id' => 202, 'platform' => 'vk']);
+        $aiMessage = AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'text_ai' => 'Ответ',
+            'status' => 'delivery_pending',
+        ]);
+        Http::fake(['https://api.vk.com/*' => Http::response([
+            'error' => ['error_msg' => 'Temporary failure'],
+        ], 200)]);
+
+        $this->expectException(\RuntimeException::class);
+
+        try {
+            app(DeliverAiAnswerToUser::class)->execute($botUser, 'Hello', null, $aiMessage);
+        } finally {
+            $this->assertSame(0, Message::count());
+            $this->assertDatabaseHas('delivery_operations', [
+                'operation' => 'ai-answer',
+                'status' => DeliveryOperation::STATUS_RETRYING,
+            ]);
+        }
+    }
+
+    public function test_failed_max_attempt_does_not_create_false_sent_message(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 203, 'platform' => 'max']);
+        $aiMessage = AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'text_ai' => 'Ответ',
+            'status' => 'delivery_pending',
+        ]);
+        $max = \Mockery::mock(MaxMethods::class);
+        $max->shouldReceive('sendQuery')->once()->andReturn(new MaxAnswerDto(500, 'Temporary failure', null));
+        app()->instance(MaxMethods::class, $max);
+
+        $this->expectException(\RuntimeException::class);
+
+        try {
+            app(DeliverAiAnswerToUser::class)->execute($botUser, 'Hello', null, $aiMessage);
+        } finally {
+            $this->assertSame(0, Message::count());
+            $this->assertDatabaseHas('delivery_operations', [
+                'operation' => 'ai-answer',
+                'status' => DeliveryOperation::STATUS_RETRYING,
+            ]);
+        }
+    }
+
+    public function test_foreign_client_gets_safe_english_not_russian_when_translation_is_invalid(): void
+    {
         Queue::fake();
-    }
-
-    public function test_dispatches_simple_telegram_job_for_telegram_user_and_persists_plain_text(): void
-    {
-        $botUser = BotUser::getUserByChatId(time(), 'telegram');
-        $botUser->topic_id = 123;
-        $botUser->save();
-
-        $htmlText = '<b>Здравствуйте!</b>';
-
-        $result = (new DeliverAiAnswerToUser())->execute($botUser, $htmlText);
-
-        $this->assertTrue($result);
-
-        // Simple (non-saving) job dispatched — NOT the full saving job.
-        Queue::assertPushed(SendTelegramSimpleQueryJob::class);
-        Queue::assertNotPushed(SendTelegramMessageJob::class);
-
-        /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
-        $this->assertCount(1, $pushed);
-
-        $job = $pushed[0]['job'];
-        // The send job receives PLAIN text and NO parse_mode — identical to the
-        // manager reply path. Sending raw AI HTML with parse_mode=html made Telegram
-        // reject it ("can't parse entities") so the answer never reached the user.
-        $this->assertEquals($botUser->chat_id, $job->queryParams->chat_id);
-        $this->assertEquals('sendMessage', $job->queryParams->methodQuery);
-        $this->assertEquals('Здравствуйте!', $job->queryParams->text);
-        $this->assertNull($job->queryParams->parse_mode);
-
-        // The persisted messages row stores plain text (no HTML tags).
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $botUser->id,
+        $botUser = BotUser::create([
+            'chat_id' => 103,
             'platform' => 'telegram',
-            'message_type' => 'outgoing',
-            'text' => 'Здравствуйте!',
+            'preferred_language_code' => 'fr',
+        ]);
+        $aiMessage = AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'text_ai' => 'Русский ответ',
+            'text_source' => 'Русский ответ',
+            'text_translated' => '',
+            'translation_status' => 'error',
+            'status' => 'delivery_pending',
+        ]);
+        Http::fake(['*' => Http::response([
+            'ok' => true,
+            'result' => ['message_id' => 78, 'chat' => ['id' => 103]],
+        ])]);
+
+        (new DeliverAiMessageJob($aiMessage->id, mirrorAfterDelivery: false))
+            ->handle(app(DeliverAiAnswerToUser::class));
+
+        $message = Message::firstOrFail();
+        $this->assertSame('A support agent will reply shortly. We could not prepare a safe localized answer.', $message->text);
+        $this->assertStringNotContainsString('Русский', (string) $message->text);
+        $this->assertSame(AiMessage::STATUS_ACCEPTED, $aiMessage->fresh()->status);
+    }
+
+    public function test_terminal_job_failure_marks_ai_message_and_operation_failed(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 104, 'platform' => 'telegram']);
+        $aiMessage = AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'text_ai' => 'Ответ',
+            'status' => 'delivery_pending',
+        ]);
+        DeliveryOperation::create([
+            'operation_key' => hash('sha256', 'ai-delivery:' . $aiMessage->id),
+            'bot_user_id' => $botUser->id,
+            'trace_id' => 'test',
+            'destination' => 'telegram-client',
+            'operation' => 'ai-answer',
+            'status' => DeliveryOperation::STATUS_RETRYING,
         ]);
 
-        $this->assertEquals(1, Message::where('bot_user_id', $botUser->id)->count());
-    }
+        (new DeliverAiMessageJob($aiMessage->id))->failed(new \RuntimeException('network down'));
 
-    public function test_telegram_plain_text_stored_when_no_html_tags(): void
-    {
-        $botUser = BotUser::getUserByChatId(time(), 'telegram');
-        $botUser->topic_id = 123;
-        $botUser->save();
-
-        $plainText = 'Добрый день! Чем могу помочь?';
-
-        (new DeliverAiAnswerToUser())->execute($botUser, $plainText);
-
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $botUser->id,
-            'message_type' => 'outgoing',
-            'text' => $plainText,
-        ]);
-    }
-
-    public function test_dispatches_simple_vk_job_for_vk_user_and_persists_plain_text(): void
-    {
-        $botUser = BotUser::getUserByChatId(time(), 'vk');
-        $botUser->topic_id = 200;
-        $botUser->save();
-
-        $htmlText = '<b>Здравствуйте!</b>';
-
-        $result = (new DeliverAiAnswerToUser())->execute($botUser, $htmlText);
-
-        $this->assertTrue($result);
-
-        Queue::assertPushed(SendVkSimpleMessageJob::class);
-        Queue::assertNotPushed(SendVkMessageJob::class);
-
-        /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendVkSimpleMessageJob::class] ?? [];
-        $this->assertCount(1, $pushed);
-
-        $job = $pushed[0]['job'];
-        $this->assertEquals('messages.send', $job->queryParams->methodQuery);
-        $this->assertEquals($botUser->chat_id, $job->queryParams->peer_id);
-        // VK receives plain text (HTML stripped).
-        $this->assertEquals('Здравствуйте!', $job->queryParams->message);
-
-        // Outgoing row persisted with plain text.
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $botUser->id,
-            'platform' => 'vk',
-            'message_type' => 'outgoing',
-            'text' => 'Здравствуйте!',
-        ]);
-
-        $this->assertEquals(1, Message::where('bot_user_id', $botUser->id)->count());
-    }
-
-    public function test_dispatches_simple_max_job_for_max_user_and_persists_plain_text(): void
-    {
-        $botUser = BotUser::getUserByChatId(time(), 'max');
-        $botUser->topic_id = 300;
-        $botUser->save();
-
-        $htmlText = '<b>Здравствуйте</b>';
-
-        $result = (new DeliverAiAnswerToUser())->execute($botUser, $htmlText);
-
-        $this->assertTrue($result);
-
-        Queue::assertPushed(SendMaxSimpleMessageJob::class);
-        Queue::assertNotPushed(SendMaxMessageJob::class);
-
-        /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendMaxSimpleMessageJob::class] ?? [];
-        $this->assertCount(1, $pushed);
-
-        $job = $pushed[0]['job'];
-        $this->assertEquals('sendMessage', $job->queryParams->methodQuery);
-        $this->assertEquals($botUser->chat_id, $job->queryParams->user_id);
-        // Max receives plain text.
-        $this->assertEquals('Здравствуйте', $job->queryParams->text);
-
-        // Outgoing row persisted with plain text.
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $botUser->id,
-            'platform' => 'max',
-            'message_type' => 'outgoing',
-            'text' => 'Здравствуйте',
-        ]);
-
-        $this->assertEquals(1, Message::where('bot_user_id', $botUser->id)->count());
-    }
-
-    public function test_no_duplicate_messages_row_on_repeated_calls(): void
-    {
-        $botUser = BotUser::getUserByChatId(time(), 'vk');
-        $botUser->save();
-
-        (new DeliverAiAnswerToUser())->execute($botUser, 'First message');
-        (new DeliverAiAnswerToUser())->execute($botUser, 'Second message');
-
-        $this->assertEquals(2, Message::where('bot_user_id', $botUser->id)->count());
-    }
-
-    public function test_returns_false_for_unsupported_platform_and_dispatches_nothing(): void
-    {
-        $botUser = BotUser::getUserByChatId(time(), 'unknown_platform');
-        $botUser->topic_id = 400;
-        $botUser->save();
-
-        $result = (new DeliverAiAnswerToUser())->execute($botUser, 'some text');
-
-        $this->assertFalse($result);
-
-        // getUserByChatId() dispatches EnrichBotUserProfileJob — that's fine.
-        // Verify no platform send jobs were dispatched for unsupported platforms.
-        Queue::assertNotPushed(SendTelegramSimpleQueryJob::class);
-        Queue::assertNotPushed(SendTelegramMessageJob::class);
-        Queue::assertNotPushed(SendVkSimpleMessageJob::class);
-        Queue::assertNotPushed(SendVkMessageJob::class);
-        Queue::assertNotPushed(SendMaxSimpleMessageJob::class);
-        Queue::assertNotPushed(SendMaxMessageJob::class);
-
-        // No messages row created for unsupported platform.
-        $this->assertEquals(0, Message::where('bot_user_id', $botUser->id)->count());
-    }
-
-    public function test_message_persisted_even_when_send_would_fail(): void
-    {
-        // The simple job is dispatched to the queue but never actually executed here
-        // (Queue::fake()), simulating a scenario where the underlying API call would
-        // fail at runtime. The messages row must already exist before the job runs.
-        $botUser = BotUser::getUserByChatId(time(), 'telegram');
-        $botUser->save();
-
-        (new DeliverAiAnswerToUser())->execute($botUser, 'Hello!');
-
-        // Row exists regardless of job execution outcome.
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $botUser->id,
-            'message_type' => 'outgoing',
-            'text' => 'Hello!',
+        $this->assertSame('delivery_failed', $aiMessage->fresh()->status);
+        $this->assertDatabaseHas('delivery_operations', [
+            'operation' => 'ai-answer',
+            'status' => DeliveryOperation::STATUS_FAILED,
         ]);
     }
 }

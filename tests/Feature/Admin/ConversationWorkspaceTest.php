@@ -10,7 +10,9 @@ use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Modules\Admin\Actions\DeleteBotUser;
 use App\Modules\Admin\Actions\SendReplyAction;
-use App\Modules\Admin\Jobs\SendAdminDocumentJob;
+use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -51,6 +53,32 @@ class ConversationWorkspaceTest extends TestCase
     {
         Livewire::test(ConversationPage::class)
             ->assertSuccessful();
+    }
+
+    public function test_auto_ai_toggle_is_rendered_with_tooltip(): void
+    {
+        app(SettingsService::class)->set('ai.auto_reply', false);
+
+        Livewire::test(ConversationPage::class)
+            ->assertSee('Auto AI')
+            ->assertSee('OFF')
+            ->assertSeeHtml('title="Включить или выключить автоответы AI"');
+    }
+
+    public function test_auto_ai_toggle_updates_setting_immediately(): void
+    {
+        app(SettingsService::class)->set('ai.auto_reply', false);
+
+        Livewire::test(ConversationPage::class)
+            ->assertSet('autoAiEnabled', false)
+            ->call('toggleAutoAi')
+            ->assertSet('autoAiEnabled', true)
+            ->assertSet('autoAiNotice', 'Auto AI включён: AI отвечает клиентам сам.')
+            ->call('toggleAutoAi')
+            ->assertSet('autoAiEnabled', false)
+            ->assertSet('autoAiNotice', 'Auto AI выключен: AI пишет только внутренние подсказки.');
+
+        $this->assertFalse((bool) app(SettingsService::class)->get('ai.auto_reply'));
     }
 
     public function test_page_shows_empty_state_when_no_dialog_selected(): void
@@ -258,6 +286,109 @@ class ConversationWorkspaceTest extends TestCase
             });
     }
 
+    public function test_contact_drawer_renders_tabs_and_contact_details(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => '1259859161',
+            'platform' => 'telegram',
+            'display_name' => 'Bi-doo',
+            'username' => 'bi_doo1',
+            'preferred_language_code' => 'ru',
+            'preferred_language_name' => 'Русский',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('contact-details-drawer')
+            ->assertSee('Сведения')
+            ->assertSee('Подписки')
+            ->assertSee('История')
+            ->assertSee('Контактная информация')
+            ->assertSee('Источник')
+            ->assertSee('telegram')
+            ->assertSee('1259859161')
+            ->assertSee('Bi-doo')
+            ->assertSee('bi_doo1')
+            ->assertSee('https://telegram.me/bi_doo1')
+            ->assertSee('Telegram language_code')
+            ->assertSee('не доступен')
+            ->assertSee('Телефон')
+            ->assertSee('не передан')
+            ->assertSee('Регион')
+            ->assertSee('не определён');
+    }
+
+    public function test_contact_summary_is_rendered_as_virtual_message_without_db_duplicate(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => '2099781047',
+            'platform' => 'telegram',
+            'display_name' => 'Borz Wish',
+            'username' => 'BorzWish',
+            'preferred_language_code' => 'ru',
+            'preferred_language_name' => 'Русский',
+        ]);
+
+        $this->assertSame(0, Message::count());
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('КОНТАКТНАЯ ИНФОРМАЦИЯ')
+            ->assertSee('Источник: telegram')
+            ->assertSee('ID: 2099781047')
+            ->assertSee('Имя: Borz Wish')
+            ->assertSee('Пользователь: BorzWish')
+            ->assertSee('Ссылка: https://telegram.me/BorzWish')
+            ->assertSee('Выбранный язык: Русский')
+            ->assertSee('Telegram language_code: не доступен')
+            ->assertSee('Телефон: не передан')
+            ->assertSee('Регион: не определён')
+            ->assertSeeHtml('title="Краткая контактная информация"');
+
+        $this->assertSame(0, Message::count());
+    }
+
+    public function test_contact_drawer_renders_subscription_and_history_placeholders(): void
+    {
+        $botUser = BotUser::create(['chat_id' => '910', 'platform' => 'telegram']);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Интеграция с PostEditBot и Toosly будет добавлена позже')
+            ->assertSee('История платежей и событий появится после интеграции с PostEditBot и Toosly');
+    }
+
+    public function test_reply_textarea_is_deferred_and_limited_to_five_rows(): void
+    {
+        $botUser = BotUser::create(['chat_id' => '911', 'platform' => 'telegram']);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSeeHtml('wire:model.live.debounce.1000ms="replyText"')
+            ->assertSeeHtml('max-height:124px')
+            ->assertSee('const maxHeight = 124')
+            ->assertSee('chat-input-autosize')
+            ->assertSee('Введите текст сообщения');
+    }
+
+    public function test_mobile_translation_switch_is_rendered_for_non_russian_dialog(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => '912',
+            'platform' => 'telegram',
+            'preferred_language_code' => 'en',
+            'preferred_language_name' => 'English',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Оба')
+            ->assertSee('Русский')
+            ->assertSee('Клиент')
+            ->assertSeeHtml('translationMobileView =');
+    }
+
     // ── Polling ────────────────────────────────────────────────────────────────
 
     public function test_poll_updates_loads_new_messages_for_active_dialog(): void
@@ -324,7 +455,7 @@ class ConversationWorkspaceTest extends TestCase
     {
         Queue::fake();
 
-        $botUser = BotUser::create(['chat_id' => '1000', 'platform' => 'telegram']);
+        $botUser = BotUser::create(['chat_id' => '1000', 'platform' => 'telegram', 'preferred_language_code' => 'ru']);
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
@@ -344,7 +475,7 @@ class ConversationWorkspaceTest extends TestCase
     {
         Queue::fake();
 
-        $botUser = BotUser::create(['chat_id' => '1001', 'platform' => 'telegram']);
+        $botUser = BotUser::create(['chat_id' => '1001', 'platform' => 'telegram', 'preferred_language_code' => 'ru']);
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
@@ -375,7 +506,7 @@ class ConversationWorkspaceTest extends TestCase
     {
         Queue::fake();
 
-        $botUser = BotUser::create(['chat_id' => '1004', 'platform' => 'telegram']);
+        $botUser = BotUser::create(['chat_id' => '1004', 'platform' => 'telegram', 'preferred_language_code' => 'ru']);
         $file = UploadedFile::fake()->create('report.pdf', 120, 'application/pdf');
 
         Livewire::test(ConversationPage::class)
@@ -392,7 +523,7 @@ class ConversationWorkspaceTest extends TestCase
             'text' => 'See attached',
         ]);
 
-        Queue::assertPushed(SendAdminDocumentJob::class);
+        Queue::assertPushedWithChain(SendTelegramSimpleQueryJob::class, [MirrorAdminReplyToGroupJob::class]);
     }
 
     public function test_send_reply_allows_file_only_message(): void
@@ -415,7 +546,7 @@ class ConversationWorkspaceTest extends TestCase
             'text' => null,
         ]);
 
-        Queue::assertPushed(SendAdminDocumentJob::class);
+        Queue::assertPushedWithChain(SendTelegramSimpleQueryJob::class, [MirrorAdminReplyToGroupJob::class]);
     }
 
     public function test_supports_attachments_for_telegram_vk_and_max(): void
@@ -490,6 +621,7 @@ class ConversationWorkspaceTest extends TestCase
         $botUser = BotUser::create([
             'chat_id' => '1011',
             'platform' => 'telegram',
+            'preferred_language_code' => 'ru',
             'is_closed' => true,
             'closed_at' => now()->subDay(),
         ]);
@@ -618,6 +750,7 @@ class ConversationWorkspaceTest extends TestCase
         $botUser = BotUser::create([
             'chat_id' => '1025',
             'platform' => 'telegram',
+            'preferred_language_code' => 'ru',
             'is_closed' => true,
             'closed_at' => now()->subDay(),
         ]);
@@ -753,7 +886,7 @@ class ConversationWorkspaceTest extends TestCase
         Queue::fake();
 
         $operator = User::factory()->create(['name' => 'Operator Masha']);
-        $botUser = BotUser::create(['chat_id' => '6000', 'platform' => 'telegram']);
+        $botUser = BotUser::create(['chat_id' => '6000', 'platform' => 'telegram', 'preferred_language_code' => 'ru']);
 
         Livewire::actingAs($operator)
             ->test(ConversationPage::class)

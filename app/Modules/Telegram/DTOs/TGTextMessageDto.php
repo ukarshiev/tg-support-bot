@@ -29,7 +29,8 @@ use Spatie\LaravelData\Data;
  * @property float|null  $latitude
  * @property float|null  $longitude
  * @property string|null $action
- * @property string|null $callback_query_id
+     * @property string|null $callback_query_id
+ * @property string|null $messageKind       Internal kind; never sent to Telegram API
  */
 class TGTextMessageDto extends Data
 {
@@ -60,6 +61,7 @@ class TGTextMessageDto extends Data
         public ?string        $action = null,
         public ?string        $callback_query_id = null,
         public int|string|null         $icon_custom_emoji_id = null,
+        public ?string        $messageKind = null,
     ) {
     }
 
@@ -68,18 +70,28 @@ class TGTextMessageDto extends Data
      */
     public function toArray(): array
     {
-        $dataMessage = array_filter(parent::toArray(), fn ($value) => !is_null($value));
-        unset($dataMessage['methodQuery']);
+        $methodQuery = $this->methodQuery;
+        $dataMessage = array_filter(parent::toArray(), fn ($value) => ! is_null($value));
+        unset($dataMessage['methodQuery'], $dataMessage['messageKind']);
 
-        if (!empty($dataMessage['typeSource'])) {
+        if (! empty($dataMessage['typeSource'])) {
             unset($dataMessage['typeSource']);
         }
 
-        if (!empty($dataMessage['token'])) {
+        if (! empty($dataMessage['token'])) {
             unset($dataMessage['token']);
         }
 
-        if (!empty($dataMessage['media'])) {
+        if ($methodQuery === 'answerCallbackQuery') {
+            unset(
+                $dataMessage['chat_id'],
+                $dataMessage['message_id'],
+                $dataMessage['message_thread_id'],
+                $dataMessage['parse_mode']
+            );
+        }
+
+        if (! empty($dataMessage['media'])) {
             $dataMessage = array_merge($dataMessage, $this->prepareMedia($dataMessage['media']));
         }
 
@@ -87,7 +99,7 @@ class TGTextMessageDto extends Data
             'reply_markup',
         ];
         foreach ($jsonParams as $jsonParam) {
-            if (!empty($dataMessage[$jsonParam])) {
+            if (! empty($dataMessage[$jsonParam])) {
                 if (is_array($dataMessage[$jsonParam])) {
                     $dataMessage[$jsonParam] = json_encode($dataMessage[$jsonParam]);
                 }
@@ -118,4 +130,3 @@ class TGTextMessageDto extends Data
         return $mediaData;
     }
 }
-

@@ -3,16 +3,17 @@
 namespace App\Modules\Max\Services;
 
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\ShouldAiReply;
 use App\Modules\Max\DTOs\MaxUpdateDto;
+use App\Modules\Max\Jobs\MirrorMaxIncomingMessageJob;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendMaxTelegramMessageJob;
 use App\Modules\Telegram\Services\ActionService\Send\ToTgMessageService;
 use App\Services\Settings\SettingsService;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class MaxMessageService extends ToTgMessageService
 {
@@ -31,335 +32,135 @@ class MaxMessageService extends ToTgMessageService
         parent::__construct($update);
     }
 
-    /**
-     * Handle an incoming Max update and route it to the appropriate send method.
-     *
-     * When the Telegram supergroup is configured, the message is forwarded to the
-     * user's forum topic and persisted via SendMaxTelegramMessageJob::saveMessage().
-     * When the group is NOT configured, the message is persisted directly so the
-     * admin workspace always shows incoming Max messages (group-OFF path).
-     * The two branches are mutually exclusive: no duplicate rows are created.
-     *
-     * @return void
-     *
-     * @throws \Exception
-     */
     public function handleUpdate(): void
     {
-        try {
-            if ($this->update->type !== 'message_created') {
-                throw new \Exception('Unknown event type', 1);
-            }
+        if ($this->update->type !== 'message_created') {
+            throw new \InvalidArgumentException('Unsupported MAX event type: ' . $this->update->type);
+        }
 
-            Log::channel('app')->info('MaxMessageService: incoming update', [
-                'text' => $this->update->text,
-                'listFileUrl' => $this->update->listFileUrl,
-                'listAttachments' => $this->update->listAttachments,
-                'rawAttachments' => $this->update->rawData['message']['body']['attachments'] ?? [],
-            ]);
+        $message = $this->persistIncomingMessage();
 
-            // When the Telegram supergroup is configured, forward to the group topic;
-            // the job persists the row after the API call succeeds.
-            if (!empty((string) app(SettingsService::class)->get('telegram.group_id'))) {
-                if (!empty($this->update->listAttachments)) {
-                    $this->sendAttachments();
-                } elseif (!empty($this->update->text)) {
-                    $this->sendMessage();
-                }
-            } else {
-                // Group-OFF path: persist directly so the admin workspace shows the message.
-                $this->persistIncomingMaxMessage();
-                if (!empty($this->update->text)) {
-                    $this->maybeDispatchAi($this->update->text);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::channel('app')->log(
-                $e->getCode() === 1 ? 'warning' : 'error',
-                $e->getMessage(),
-                ['file' => $e->getFile(), 'line' => $e->getLine()]
+        if (!empty((string) app(SettingsService::class)->get('telegram.group_id')) && $this->hasDeliverableContent()) {
+            MirrorMaxIncomingMessageJob::dispatch(
+                $this->botUser->id,
+                $message->id,
+                $this->update->event_id,
+                $this->update->id,
             );
         }
+
+        $this->maybeDispatchAi($this->update->text, !empty($this->update->listAttachments));
     }
 
-    /**
-     * Persist an incoming Max message directly to the `messages` table without
-     * routing it through the Telegram supergroup.
-     *
-     * Called only when no telegram.group_id is configured. The group-ON path
-     * persists via SendMaxTelegramMessageJob::saveMessage() instead.
-     *
-     * @return void
-     */
-    protected function persistIncomingMaxMessage(): void
+    private function persistIncomingMessage(): Message
     {
-        $message = Message::create([
-            'bot_user_id' => $this->botUser->id,
-            'platform' => $this->botUser->platform,
-            'message_type' => 'incoming',
-            'from_id' => $this->update->from_id ?? 0,
-            'to_id' => 0,
-            'text' => $this->update->text ?? null,
-        ]);
+        return DB::transaction(function (): Message {
+            BotUser::whereKey($this->botUser->id)->lockForUpdate()->firstOrFail();
 
-        foreach ($this->update->listAttachments as $attachment) {
-            $message->attachments()->create([
-                'file_id' => $attachment['file_id'],
-                'file_type' => $attachment['type'],
-                'file_name' => $attachment['file_name'] ?? null,
+            $message = Message::firstOrCreateForSourceEvent('max', $this->update->id, [
+                'bot_user_id' => $this->botUser->id,
+                'message_type' => 'incoming',
+                'message_kind' => Message::KIND_CHAT,
+                'delivery_status' => Message::DELIVERY_DELIVERED,
+                'from_id' => $this->update->persistenceId(),
+                'to_id' => 0,
+                'text' => $this->update->text,
             ]);
-        }
-    }
 
-    /**
-     * Dispatch a separate job for each attachment.
-     * The text caption is attached to the first attachment only.
-     *
-     * @return void
-     */
-    protected function sendAttachments(): void
-    {
-        $caption = $this->update->text ?? '';
-        $isFirst = true;
-
-        foreach ($this->update->listAttachments as $attachment) {
-            $type = $attachment['type'] ?? null;
-            $url = $attachment['file_id'] ?? null;
-
-            if (empty($url) || empty($type)) {
-                continue;
+            foreach ($this->update->listAttachments as $attachment) {
+                $message->attachments()->firstOrCreate([
+                    'file_id' => $attachment['file_id'],
+                    'file_type' => $attachment['type'],
+                ], [
+                    'file_name' => $attachment['file_name'] ?? null,
+                ]);
             }
 
-            $currentCaption = $isFirst ? $caption : '';
-            $isFirst = false;
+            $message->load('attachments');
 
-            switch ($type) {
-                case 'photo':
-                    $this->dispatchPhoto($url, $currentCaption);
-                    break;
-
-                case 'document':
-                    $this->dispatchDocument($url, $currentCaption, $attachment['file_name'] ?? null);
-                    break;
-
-                case 'voice':
-                    $this->dispatchVoice($url);
-                    break;
-
-                case 'video':
-                    // Telegram Bot API sendVideo does not support direct URL uploads;
-                    // forward as a document instead so the file is delivered.
-                    $this->dispatchDocument($url, $currentCaption, $attachment['file_name'] ?? null);
-                    break;
-
-                default:
-                    Log::channel('app')->warning('MaxMessageService: unsupported attachment type', [
-                        'type' => $type,
-                        'url' => $url,
-                    ]);
-                    break;
-            }
-        }
+            return $message;
+        });
     }
 
-    /**
-     * Dispatch a photo to the Telegram group topic.
-     *
-     * @param string $url
-     * @param string $caption
-     *
-     * @return void
-     */
-    protected function dispatchPhoto(string $url, string $caption = ''): void
+    private function maybeDispatchAi(?string $text, bool $hasMedia): void
     {
-        $dto = TGTextMessageDto::from([
-            'methodQuery' => 'sendPhoto',
-            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-            'message_thread_id' => $this->botUser->topic_id,
-            'photo' => $url,
-            'caption' => $caption !== '' ? $caption : null,
-        ]);
-
-        Log::channel('app')->info('MaxMessageService: dispatchPhoto', [
-            'photo' => $url,
-            'caption' => $caption,
-        ]);
-
-        SendMaxTelegramMessageJob::dispatch(
-            $this->botUser->id,
-            $this->update,
-            $dto,
-        );
-    }
-
-    /**
-     * Dispatch a document (or video forwarded as document) to the Telegram group topic.
-     *
-     * @param string      $url
-     * @param string      $caption
-     * @param string|null $fileName
-     *
-     * @return void
-     */
-    protected function dispatchDocument(string $url, string $caption = '', ?string $fileName = null): void
-    {
-        $dto = TGTextMessageDto::from([
-            'methodQuery' => 'sendDocument',
-            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-            'message_thread_id' => $this->botUser->topic_id,
-            'document' => $url,
-            'caption' => $caption !== '' ? $caption : null,
-        ]);
-
-        Log::channel('app')->info('MaxMessageService: dispatchDocument', [
-            'document' => $url,
-            'caption' => $caption,
-            'fileName' => $fileName,
-        ]);
-
-        SendMaxTelegramMessageJob::dispatch(
-            $this->botUser->id,
-            $this->update,
-            $dto,
-        );
-    }
-
-    /**
-     * Dispatch a voice message to the Telegram group topic.
-     *
-     * @param string $url
-     *
-     * @return void
-     */
-    protected function dispatchVoice(string $url): void
-    {
-        $dto = TGTextMessageDto::from([
-            'methodQuery' => 'sendVoice',
-            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-            'message_thread_id' => $this->botUser->topic_id,
-            'voice' => $url,
-        ]);
-
-        Log::channel('app')->info('MaxMessageService: dispatchVoice', [
-            'voice' => $url,
-        ]);
-
-        SendMaxTelegramMessageJob::dispatch(
-            $this->botUser->id,
-            $this->update,
-            $dto,
-        );
-    }
-
-    /**
-     * Send a plain text message to the Telegram group topic.
-     *
-     * @return void
-     */
-    protected function sendMessage(): void
-    {
-        $dto = TGTextMessageDto::from([
-            'methodQuery' => 'sendMessage',
-            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-            'message_thread_id' => $this->botUser->topic_id,
-            'text' => $this->update->text,
-        ]);
-
-        SendMaxTelegramMessageJob::dispatch(
-            $this->botUser->id,
-            $this->update,
-            $dto,
-        );
-
-        $this->maybeDispatchAi($this->update->text);
-    }
-
-    /**
-     * Trigger AI generation for an incoming Max text message, when gating allows.
-     *
-     * The draft/auto-reply job is dispatched without a TelegramUpdateDto — the
-     * jobs derive the platform from BotUser and assemble the supergroup post
-     * and the platform-specific user delivery themselves.
-     *
-     * @param string|null $text
-     *
-     * @return void
-     */
-    protected function maybeDispatchAi(?string $text): void
-    {
-        if ($this->botUser === null) {
+        if ($this->botUser === null || empty($this->botUser->preferred_language_code)) {
             return;
         }
 
+        $mediaOnly = ($text === null || trim($text) === '') && $hasMedia;
+        $aiText = $mediaOnly ? 'Пользователь отправил медиафайл без подписи.' : $text;
         $shouldAiReply = app(ShouldAiReply::class);
-        if (!$shouldAiReply->shouldGenerateForBotUserText($this->botUser, $text)) {
+        if (!$shouldAiReply->shouldGenerateForBotUserText($this->botUser, $aiText)) {
             return;
         }
 
-        if ((bool) app(SettingsService::class)->get('ai.auto_reply')) {
-            SendAiReplyJob::dispatch($this->botUser->id, null, (string) $text);
-        } else {
-            SendAiDraftJob::dispatch($this->botUser->id, null, (string) $text);
+        $operation = DeliveryOperation::firstOrCreate(
+            ['operation_key' => hash('sha256', 'max-ai|' . $this->botUser->id . '|' . $this->update->id)],
+            [
+                'bot_user_id' => $this->botUser->id,
+                'trace_id' => $this->update->event_id,
+                'destination' => 'ai-support',
+                'operation' => $mediaOnly ? 'draft-media' : 'generate-reply',
+                'status' => DeliveryOperation::STATUS_PENDING,
+            ],
+        );
+        if (!$operation->wasRecentlyCreated && $operation->status === DeliveryOperation::STATUS_DELIVERED) {
+            return;
+        }
+
+        try {
+            if ($mediaOnly) {
+                SendAiDraftJob::dispatch($this->botUser->id, null, $aiText);
+            } elseif (
+                (bool) app(SettingsService::class)->get('ai.auto_reply')
+                && !$shouldAiReply->shouldUseDraftOnly($this->botUser, $aiText)
+            ) {
+                SendAiReplyJob::dispatch($this->botUser->id, null, (string) $aiText);
+            } else {
+                SendAiDraftJob::dispatch($this->botUser->id, null, (string) $aiText);
+            }
+            $operation->update(['status' => DeliveryOperation::STATUS_DELIVERED, 'delivered_at' => now()]);
+        } catch (\Throwable $e) {
+            $operation->update(['status' => DeliveryOperation::STATUS_RETRYING, 'last_error' => $e::class]);
+            throw $e;
         }
     }
 
-    /**
-     * Not used for Max → TG direction (Max sends photos via listAttachments).
-     *
-     * @return void
-     */
+    private function hasDeliverableContent(): bool
+    {
+        return trim((string) $this->update->text) !== '' || !empty($this->update->listAttachments);
+    }
+
     protected function sendPhoto(): void
     {
-        //
     }
 
-    /**
-     * Not used for Max → TG direction (Max sends documents via listAttachments).
-     *
-     * @return void
-     */
     protected function sendDocument(): void
     {
-        //
     }
 
-    /**
-     * @return void
-     */
-    protected function sendSticker(): void
-    {
-        //
-    }
-
-    /**
-     * @return void
-     */
-    protected function sendContact(): void
-    {
-        //
-    }
-
-    /**
-     * @return void
-     */
-    protected function sendVideoNote(): void
-    {
-        //
-    }
-
-    /**
-     * @return void
-     */
-    protected function sendVoice(): void
-    {
-        //
-    }
-
-    /**
-     * @return void
-     */
     protected function sendLocation(): void
     {
-        //
+    }
+
+    protected function sendVoice(): void
+    {
+    }
+
+    protected function sendSticker(): void
+    {
+    }
+
+    protected function sendVideoNote(): void
+    {
+    }
+
+    protected function sendContact(): void
+    {
+    }
+
+    protected function sendMessage(): void
+    {
     }
 }

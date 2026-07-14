@@ -10,5 +10,6 @@ return [
     'telegram' => [
         // use IPv4 only to connect to Telegram API — infra flag, stays in .env
         'force_ipv4' => (bool) env('TELEGRAM_FORCE_IPV4', false),
+        'ingress_mode' => env('TELEGRAM_INGRESS_MODE', 'polling'),
     ],
 ];

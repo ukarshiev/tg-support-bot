@@ -3,6 +3,7 @@
 namespace App\Modules\Admin\Jobs;
 
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
@@ -45,7 +46,10 @@ class MirrorAdminReplyToGroupJob implements ShouldQueue
         public readonly int $botUserId,
         public readonly string $text,
         public readonly string $prefix = "👤 Ответ из админки:\n",
+        public readonly ?int $sourceMessageId = null,
+        public readonly bool $mirrorEnabled = true,
     ) {
+        $this->onQueue($this->mirrorEnabled ? 'telegram-mirror' : 'default');
     }
 
     /**
@@ -56,6 +60,12 @@ class MirrorAdminReplyToGroupJob implements ShouldQueue
     public function handle(): void
     {
         try {
+            $this->confirmClientDelivery();
+
+            if (!$this->mirrorEnabled) {
+                return;
+            }
+
             $botUser = BotUser::find($this->botUserId);
             if ($botUser === null) {
                 Log::channel('app')->warning('MirrorAdminReplyToGroupJob: BotUser not found', [
@@ -90,18 +100,53 @@ class MirrorAdminReplyToGroupJob implements ShouldQueue
             ]);
 
             if (!$response->ok) {
-                Log::channel('app')->warning('MirrorAdminReplyToGroupJob: Telegram API error', [
-                    'source' => 'mirror_admin_reply_error',
-                    'bot_user_id' => $botUser->id,
-                    'response' => (array) $response,
-                ]);
+                throw new \RuntimeException(
+                    'Telegram mirror rejected, response_code=' . ($response->response_code ?? 0)
+                );
             }
         } catch (\Throwable $e) {
-            Log::channel('app')->error($e->getMessage(), [
+            Log::channel('app')->warning('Admin reply mirror attempt failed', [
                 'source' => 'mirror_admin_reply_exception',
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
+                'bot_user_id' => $this->botUserId,
+                'attempt' => $this->attempts(),
+                'error_class' => $e::class,
+                'error' => $e->getMessage(),
             ]);
+
+            throw $e;
         }
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        Log::channel('app')->error('Admin reply mirror permanently failed', [
+            'source' => 'mirror_admin_reply_failed_terminal',
+            'bot_user_id' => $this->botUserId,
+            'error_class' => $exception::class,
+            'error' => $exception->getMessage(),
+        ]);
+    }
+
+    private function confirmClientDelivery(): void
+    {
+        if ($this->sourceMessageId === null) {
+            return;
+        }
+
+        DeliveryOperation::query()
+            ->where('operation_key', hash('sha256', 'admin-reply:' . $this->sourceMessageId))
+            ->update([
+                'status' => DeliveryOperation::STATUS_DELIVERED,
+                'attempts' => 1,
+                'last_error' => null,
+                'started_at' => now(),
+                'delivered_at' => now(),
+            ]);
+
+        Log::channel('app')->info('Admin reply client delivery confirmed', [
+            'source' => 'admin_reply_delivery_confirmed',
+            'message_id' => $this->sourceMessageId,
+            'bot_user_id' => $this->botUserId,
+        ]);
     }
 }

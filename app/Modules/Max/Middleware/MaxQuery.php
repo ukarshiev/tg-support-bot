@@ -3,6 +3,7 @@
 namespace App\Modules\Max\Middleware;
 
 use App\Services\Settings\SettingsService;
+use App\Support\InboundWebhookLog;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -41,8 +42,9 @@ class MaxQuery
      */
     private function logRequest(Request $request): void
     {
-        $dataRequest = json_encode($request->all());
-
-        Log::channel('app')->info($dataRequest, ['source' => 'max_request']);
+        Log::channel('app')->info(
+            'MAX webhook accepted',
+            InboundWebhookLog::summarize('max', $request->all()),
+        );
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Modules\Telegram\Middleware;
 
 use App\Services\Settings\SettingsService;
+use App\Support\InboundWebhookLog;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -46,6 +47,9 @@ class TelegramQuery
      */
     private function logRequest(Request $request): void
     {
-        Log::channel('app')->info(json_encode($request->all()), ['source' => 'tg_request']);
+        Log::channel('app')->info(
+            'Telegram webhook accepted',
+            InboundWebhookLog::summarize('telegram', $request->all()),
+        );
     }
 }

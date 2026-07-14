@@ -12,7 +12,7 @@ class AiHelperTest extends TestCase
         $managerText = 'Сделай это';
         $aiText = 'Готово';
 
-        $expected = "📄 Инструкция: \nСделай это  \n\n🤖 Ответ от AI: \nГотово \n\n";
+        $expected = "📄 Инструкция: \nСделай это  \n\n🧠 AI-подсказка, клиент не видит: \nГотово \n\n";
 
         $this->assertEquals($expected, AiHelper::preparedAiAnswer($managerText, $aiText));
     }
@@ -21,7 +21,7 @@ class AiHelperTest extends TestCase
     {
         $aiText = 'Готово';
 
-        $expected = "🤖 Ответ от AI: \nГотово \n\n";
+        $expected = "🧠 AI-подсказка, клиент не видит: \nГотово \n\n";
 
         $this->assertEquals($expected, AiHelper::preparedAiAnswer('', $aiText));
     }
@@ -39,14 +39,12 @@ class AiHelperTest extends TestCase
                         'callback_data' => 'ai_message_send_123',
                     ],
                     [
+                        'text' => '✏️ Изменить',
+                        'callback_data' => 'ai_message_edit_123',
+                    ],
+                    [
                         'text' => '❌ Отменить',
                         'callback_data' => 'ai_message_cancel_123',
-                    ],
-                ],
-                [
-                    [
-                        'text' => '📝 Редактировать ответ',
-                        'switch_inline_query_current_chat' => "ai_message_edit_123 \n\nГотово",
                     ],
                 ],
             ],

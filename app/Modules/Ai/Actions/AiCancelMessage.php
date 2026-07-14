@@ -6,7 +6,7 @@ use App\Models\AiMessage;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
@@ -38,18 +38,15 @@ class AiCancelMessage extends AiAction
             }
 
             if ($messageData->message_id !== null) {
-                SendTelegramMessageJob::dispatch(
-                    $botUser->id,
-                    $update,
+                SendTelegramSimpleQueryJob::dispatch(
                     TGTextMessageDto::from([
                         'token' => (string) app(SettingsService::class)->get('telegram_ai.token'),
                         'methodQuery' => 'deleteMessage',
                         'typeSource' => 'private',
-                        'chat_id' => $update->chatId,
+                        'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                         'message_thread_id' => $update->messageThreadId,
                         'message_id' => $messageData->message_id,
                     ]),
-                    'outgoing',
                 );
             }
 
@@ -79,15 +76,7 @@ class AiCancelMessage extends AiAction
             $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
 
             if ($botUser !== null && $token !== '' && $groupId !== '') {
-                $emptyUpdate = new TelegramUpdateDto(
-                    updateId: 0,
-                    typeQuery: 'message',
-                    aiTechMessage: false,
-                    typeSource: 'private',
-                );
-                SendTelegramMessageJob::dispatch(
-                    $botUser->id,
-                    $emptyUpdate,
+                SendTelegramSimpleQueryJob::dispatch(
                     TGTextMessageDto::from([
                         'token' => $token,
                         'methodQuery' => 'deleteMessage',
@@ -96,7 +85,6 @@ class AiCancelMessage extends AiAction
                         'message_id' => $aiMessage->message_id,
                         'message_thread_id' => $botUser->topic_id,
                     ]),
-                    'outgoing',
                 );
             }
         }

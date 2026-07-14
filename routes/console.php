@@ -13,3 +13,8 @@ Artisan::command('inspire', function () {
 // otherwise wire a cron (`* * * * * php artisan schedule:run`) or run
 // `php artisan telescope:prune` manually.
 Schedule::command('telescope:prune --hours=24')->daily();
+Schedule::command('horizon:snapshot')->everyFiveMinutes();
+Schedule::command('telegram:support-flow-check')
+    ->everyThreeHours()
+    ->withoutOverlapping()
+    ->runInBackground();

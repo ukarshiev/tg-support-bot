@@ -15,6 +15,7 @@ use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
+use App\Modules\Translation\Support\TelegramMarkupSanitizer;
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
@@ -91,8 +92,22 @@ abstract class AbstractSendMessageJob implements ShouldQueue
         }
 
         if ($response->response_code === 400 && $response->type_error === 'MARKDOWN_ERROR') {
-            Log::channel('app')->warning('MARKDOWN_ERROR -> switching parse_mode to HTML');
-            $this->queryParams->parse_mode = 'html';
+            Log::channel('app')->warning('MARKDOWN_ERROR -> switching message to plain text', [
+                'job' => static::class,
+                'bot_user_id' => $this->botUserId,
+                'type_message' => $this->typeMessage,
+                'parse_mode' => $this->queryParams->parse_mode ?? null,
+            ]);
+
+            if (is_string($this->queryParams->text ?? null)) {
+                $this->queryParams->text = app(TelegramMarkupSanitizer::class)->toPlainText($this->queryParams->text);
+            }
+
+            if (is_string($this->queryParams->caption ?? null)) {
+                $this->queryParams->caption = app(TelegramMarkupSanitizer::class)->toPlainText($this->queryParams->caption);
+            }
+
+            $this->queryParams->parse_mode = null;
             $this->release(1);
             return;
         }
@@ -128,7 +143,22 @@ abstract class AbstractSendMessageJob implements ShouldQueue
             return;
         }
 
-        $description = $response->rawData['description'] ?? null;
+        if (($response->response_code ?? 0) >= 500) {
+            $delay = min(30, 2 ** max(1, $this->attempts()));
+
+            Log::channel('app')->warning('Transient Telegram API error -> retrying job', [
+                'job' => static::class,
+                'bot_user_id' => $this->botUserId,
+                'type_message' => $this->typeMessage,
+                'response_code' => $response->response_code,
+                'type_error' => $response->type_error,
+                'retry_delay_seconds' => $delay,
+                'attempt' => $this->attempts(),
+            ]);
+
+            $this->release($delay);
+            return;
+        }
 
         Log::channel('app')->error(
             sprintf(
@@ -142,10 +172,8 @@ abstract class AbstractSendMessageJob implements ShouldQueue
                 'type_message' => $this->typeMessage,
                 'response_code' => $response->response_code,
                 'type_error' => $response->type_error,
-                'description' => $description,
                 'message_thread_id' => $response->message_thread_id,
                 'chat_id' => $response->chat_id,
-                'raw_response' => $response->rawData,
             ],
         );
     }

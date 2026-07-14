@@ -5,7 +5,6 @@ namespace App\Modules\Telegram\Jobs;
 use App\Models\BotUser;
 use App\Models\ExternalUser;
 use App\Modules\Telegram\Actions\GetChat;
-use App\Modules\Telegram\Actions\SendContactMessage;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
@@ -13,8 +12,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Mockery\Exception;
+use RuntimeException;
 
 class TopicCreateJob implements ShouldQueue
 {
@@ -38,6 +38,7 @@ class TopicCreateJob implements ShouldQueue
         TelegramMethods $telegramMethods = null,
     ) {
         $this->botUserId = $botUserId;
+        $this->onQueue('telegram-interactive');
 
         $this->telegramMethods = $telegramMethods ?? new TelegramMethods();
     }
@@ -48,37 +49,87 @@ class TopicCreateJob implements ShouldQueue
     public function handle(): void
     {
         try {
-            $this->botUser = BotUser::find($this->botUserId);
+            $lock = Cache::lock("telegram:topic-create:bot-user:{$this->botUserId}", 30);
 
-            $topicName = $this->generateNameTopic($this->botUser);
+            $lock->block(10, function (): void {
+                $botUser = BotUser::find($this->botUserId);
 
-            $response = $this->telegramMethods->sendQueryTelegram('createForumTopic', [
-                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-                'name' => $topicName,
-                'icon_custom_emoji_id' => __('icons.incoming'),
-            ]);
+                if ($botUser === null) {
+                    Log::channel('app')->warning('TopicCreateJob: bot user not found', [
+                        'bot_user_id' => $this->botUserId,
+                    ]);
+                    return;
+                }
 
-            if ($response->ok === true) {
-                $this->botUser->topic_id = $response->message_thread_id;
-                $this->botUser->save();
+                $this->botUser = $botUser;
 
-                app(SendContactMessage::class)->execute($this->botUser);
-                return;
-            }
+                if (!empty($this->botUser->topic_id)) {
+                    Log::channel('app')->info('TopicCreateJob: topic already exists, skipped duplicate create', [
+                        'bot_user_id' => $this->botUser->id,
+                        'topic_id' => $this->botUser->topic_id,
+                    ]);
+                    return;
+                }
 
-            if ($response->response_code === 429) {
-                $retryAfter = $response->parameters->retry_after ?? 3;
-                Log::warning("429 Too Many Requests. Retry after {$retryAfter} sec.");
-                $this->release($retryAfter);
-                return;
-            }
+                $topicName = $this->generateNameTopic($this->botUser);
 
-            Log::error('TopicCreateJob: unknown error', [
-                'response' => (array)$response,
-            ]);
+                $response = $this->telegramMethods->sendQueryTelegram('createForumTopic', [
+                    'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
+                    'name' => $topicName,
+                    'icon_custom_emoji_id' => __('icons.incoming'),
+                ]);
+
+                if ($response->ok === true) {
+                    $this->botUser->topic_id = $response->message_thread_id;
+                    $this->botUser->save();
+
+                    return;
+                }
+
+                if ($response->response_code === 429) {
+                    $retryAfter = (int) ($response->rawData['parameters']['retry_after'] ?? 3);
+                    Log::channel('app')->warning('TopicCreateJob: Telegram rate limit, retrying', [
+                        'bot_user_id' => $this->botUserId,
+                        'retry_after' => $retryAfter,
+                    ]);
+                    $this->release($retryAfter);
+
+                    return;
+                }
+
+                $error = sprintf(
+                    'TopicCreateJob failed: code=%s type=%s',
+                    $response->response_code,
+                    $response->type_error,
+                );
+
+                if (($response->response_code ?? 0) >= 500) {
+                    throw new RuntimeException($error);
+                }
+
+                Log::channel('app')->error($error, [
+                    'source' => 'telegram_topic_create_permanent_error',
+                    'bot_user_id' => $this->botUserId,
+                ]);
+
+                // Цепочка не должна продолжаться без topic_id: иначе следующий
+                // job снова запустит создание темы и образует бесконечный цикл.
+                throw new RuntimeException($error);
+            });
         } catch (\Throwable $e) {
             Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+
+            throw $e;
         }
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        Log::channel('app')->error('TopicCreateJob permanently failed', [
+            'source' => 'telegram_topic_create_failed',
+            'bot_user_id' => $this->botUserId,
+            'error_class' => $exception::class,
+        ]);
     }
 
     /**
@@ -167,7 +218,7 @@ class TopicCreateJob implements ShouldQueue
                 'username',
             ];
             return array_intersect_key($chatData, array_flip($neededKeys));
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             return [];
         }
     }

@@ -93,7 +93,7 @@ class AiKnowledgeService
         $normalized = mb_strtolower($message);
         preg_match_all('/[\p{L}\p{N}_-]{3,}/u', $normalized, $matches);
 
-        return array_values(array_unique($matches[0] ?? []));
+        return array_values(array_unique($matches[0]));
     }
 
     /**

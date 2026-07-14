@@ -4,7 +4,9 @@ namespace Tests\Unit\Modules\Feedback\Actions;
 
 use App\Models\BotUser;
 use App\Models\Feedback;
+use App\Models\Message;
 use App\Modules\Feedback\Actions\HandleFeedbackRating;
+use App\Modules\Feedback\Jobs\DeliverFeedbackThankYouJob;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,14 +61,11 @@ class HandleFeedbackRatingTest extends TestCase
             chatId: (int) $botUser->chat_id,
         );
 
-        /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
-        $this->assertCount(1, $pushed);
-
-        $job = $pushed[0]['job'];
-        $this->assertEquals('editMessageText', $job->queryParams->methodQuery);
-        $this->assertEquals(9988, $job->queryParams->message_id);
-        $this->assertEquals($botUser->chat_id, $job->queryParams->chat_id);
+        Queue::assertPushed(DeliverFeedbackThankYouJob::class, function ($job) use ($feedback, $botUser): bool {
+            return $job->feedbackId === $feedback->id
+                && $job->telegramMessageId === 9988
+                && $job->telegramChatId === (int) $botUser->chat_id;
+        });
     }
 
     public function test_does_not_dispatch_edit_message_when_message_id_is_null(): void
@@ -82,7 +81,7 @@ class HandleFeedbackRatingTest extends TestCase
 
         (new HandleFeedbackRating())->execute(callbackData: $callbackData);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(DeliverFeedbackThankYouJob::class, fn ($job): bool => $job->feedbackId === $feedback->id);
     }
 
     public function test_does_nothing_for_invalid_callback_data(): void
@@ -100,6 +99,78 @@ class HandleFeedbackRatingTest extends TestCase
 
         (new HandleFeedbackRating())->execute($callbackData);
 
+        Queue::assertNothingPushed();
+    }
+
+    public function test_rejects_callback_when_feedback_belongs_to_another_user(): void
+    {
+        $owner = BotUser::create(['chat_id' => 10041, 'platform' => 'telegram']);
+        $attacker = BotUser::create(['chat_id' => 10042, 'platform' => 'telegram']);
+        $feedback = Feedback::create([
+            'bot_user_id' => $owner->id,
+            'status' => 'awaiting_rating',
+            'closed_at' => now(),
+        ]);
+
+        (new HandleFeedbackRating())->execute("feedback_rate_{$attacker->id}_{$feedback->id}_5");
+
+        $feedback->refresh();
+        $this->assertNull($feedback->rating);
+        $this->assertSame('awaiting_rating', $feedback->status);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_vk_rating_dispatches_localized_thank_you_message(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 10043, 'platform' => 'vk', 'preferred_language_code' => 'en']);
+        $feedback = Feedback::create([
+            'bot_user_id' => $botUser->id,
+            'status' => 'awaiting_rating',
+            'closed_at' => now(),
+        ]);
+
+        (new HandleFeedbackRating())->execute("feedback_rate_{$botUser->id}_{$feedback->id}_5");
+
+        Queue::assertPushed(DeliverFeedbackThankYouJob::class, function ($job) use ($feedback): bool {
+            return $job->feedbackId === $feedback->id
+                && $job->text === 'Thank you for your feedback! Your rating has been recorded.';
+        });
+    }
+
+    public function test_duplicate_rating_callback_is_ignored_atomically(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 10044, 'platform' => 'vk', 'preferred_language_code' => 'en']);
+        $feedback = Feedback::create([
+            'bot_user_id' => $botUser->id,
+            'status' => 'awaiting_rating',
+            'closed_at' => now(),
+        ]);
+        $handler = new HandleFeedbackRating();
+
+        $handler->execute("feedback_rate_{$botUser->id}_{$feedback->id}_4", actor: $botUser);
+        $handler->execute("feedback_rate_{$botUser->id}_{$feedback->id}_1", actor: $botUser);
+
+        $this->assertSame(4, $feedback->fresh()->rating);
+        $this->assertSame(1, Message::query()->where('bot_user_id', $botUser->id)->count());
+        Queue::assertPushed(DeliverFeedbackThankYouJob::class, 1);
+    }
+
+    public function test_callback_from_another_actual_actor_is_rejected(): void
+    {
+        $owner = BotUser::create(['chat_id' => 10045, 'platform' => 'vk']);
+        $actor = BotUser::create(['chat_id' => 10046, 'platform' => 'vk']);
+        $feedback = Feedback::create([
+            'bot_user_id' => $owner->id,
+            'status' => 'awaiting_rating',
+            'closed_at' => now(),
+        ]);
+
+        (new HandleFeedbackRating())->execute(
+            "feedback_rate_{$owner->id}_{$feedback->id}_5",
+            actor: $actor,
+        );
+
+        $this->assertNull($feedback->fresh()->rating);
         Queue::assertNothingPushed();
     }
 

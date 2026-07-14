@@ -4,8 +4,8 @@ namespace Tests\Feature\Modules\Telegram;
 
 use App\Models\BotUser;
 use App\Models\Feedback;
+use App\Modules\Feedback\Jobs\DeliverFeedbackFormJob;
 use App\Modules\Telegram\Actions\CloseTopic;
-use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -36,7 +36,7 @@ class CloseTopicFeedbackTest extends TestCase
 
         $this->assertDatabaseHas('feedbacks', [
             'bot_user_id' => $botUser->id,
-            'status' => 'awaiting_rating',
+            'status' => 'delivery_pending',
             'rating' => null,
         ]);
     }
@@ -52,23 +52,8 @@ class CloseTopicFeedbackTest extends TestCase
 
         app(CloseTopic::class)->execute($botUser);
 
-        // SendFeedbackForm dispatches SendTelegramSimpleQueryJob for the rating form
-        // CloseTopic itself dispatches editForumTopic + closeForumTopic + close message + feedback form
-        /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
-
-        // At minimum: editForumTopic, closeForumTopic, close message to user, feedback form
-        $this->assertGreaterThanOrEqual(3, count($pushed));
-
-        // The last job dispatched should be the feedback form (sendMessage to user's chat_id)
-        /** @phpstan-ignore-next-line */
-        $feedbackJob = collect($pushed)->firstWhere(
-            fn ($item) => $item['job']->queryParams->chat_id === $botUser->chat_id
-            && $item['job']->queryParams->methodQuery === 'sendMessage'
-            && isset($item['job']->queryParams->reply_markup['inline_keyboard'])
-        );
-
-        $this->assertNotNull($feedbackJob, 'Feedback form job was not dispatched');
+        Queue::assertPushed(DeliverFeedbackFormJob::class, fn (DeliverFeedbackFormJob $job): bool =>
+            Feedback::whereKey($job->feedbackId)->where('bot_user_id', $botUser->id)->exists());
     }
 
     public function test_close_topic_does_not_create_feedback_when_already_closed(): void

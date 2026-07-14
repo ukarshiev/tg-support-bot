@@ -4,14 +4,14 @@ namespace App\Modules\Ai\Jobs;
 
 use App\Models\AiMessage;
 use App\Models\BotUser;
-use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
-use App\Modules\Admin\Services\ChannelStatusService;
-use App\Modules\Ai\Actions\DeliverAiAnswerToUser;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiBotApi;
+use App\Modules\Ai\Services\RussianOperatorTextService;
 use App\Modules\Telegram\Actions\SendTypingAction;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
+use App\Modules\Translation\DTOs\TranslationRequest;
+use App\Modules\Translation\Services\TranslationService;
 use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -42,6 +42,7 @@ class SendAiReplyJob implements ShouldQueue
         public readonly ?TelegramUpdateDto $updateDto,
         public readonly string $userMessage,
     ) {
+        $this->onQueue('ai');
     }
 
     /**
@@ -61,24 +62,6 @@ class SendAiReplyJob implements ShouldQueue
                 throw new \RuntimeException('BotUser not found: ' . $this->botUserId, 1);
             }
 
-            $aiBotToken = (string) app(SettingsService::class)->get('telegram_ai.token');
-            $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
-            $telegramConnected = app(ChannelStatusService::class)->telegram()['connected']
-                && $groupId !== '';
-            $aiBotConfigured = $aiBotToken !== '' && $telegramConnected;
-
-            // When the supergroup will be used, the topic must exist first.
-            if ($aiBotConfigured && empty($botUser->topic_id)) {
-                Log::channel('app')->info('SendAiReplyJob: topic_id not ready, releasing', [
-                    'source' => 'send_ai_reply_topic_pending',
-                    'bot_user_id' => $botUser->id,
-                    'platform' => $botUser->platform,
-                ]);
-                $this->release(5);
-
-                return;
-            }
-
             app(SendTypingAction::class)->execute($botUser);
 
             $aiRequest = new AiRequestDto(
@@ -87,8 +70,9 @@ class SendAiReplyJob implements ShouldQueue
                 platform: $botUser->platform ?? 'telegram',
                 provider: (string) app(SettingsService::class)->get('ai.default_provider'),
                 forceEscalation: false,
-                preferredLanguageCode: $botUser->preferred_language_code,
-                preferredLanguageName: $botUser->preferred_language_name
+                // Источник AI-ответа всегда русский; доставка клиенту переводится отдельно.
+                preferredLanguageCode: 'ru',
+                preferredLanguageName: 'Русский'
             );
 
             $aiResponse = $aiService->processMessage($aiRequest);
@@ -96,67 +80,32 @@ class SendAiReplyJob implements ShouldQueue
                 throw new \RuntimeException('AI provider returned empty response', 1);
             }
 
-            $replyText = $aiResponse->response;
+            $sourceReplyText = app(RussianOperatorTextService::class)->normalize($aiResponse->response);
+            [$targetLocale, $replyText, $translationProvider, $translationStatus] = $this->translateReply($botUser, $sourceReplyText);
 
-            if ($aiBotConfigured) {
-                $supergroupResponse = $aiBotApi->send('sendMessage', [
-                    'chat_id' => $groupId,
-                    'message_thread_id' => $botUser->topic_id,
-                    'text' => $replyText,
-                    'parse_mode' => 'html',
-                ]);
+            $aiMessage = AiMessage::create([
+                'bot_user_id' => $botUser->id,
+                'message_id' => null,
+                'text_ai' => $sourceReplyText,
+                'text_source' => $sourceReplyText,
+                'text_translated' => $replyText,
+                'source_locale' => 'ru',
+                'target_locale' => $targetLocale,
+                'translation_provider' => $translationProvider,
+                'translation_status' => $translationStatus,
+                'source_hash' => hash('sha256', trim($sourceReplyText)),
+                'text_manager' => $sourceReplyText,
+                'status' => 'delivery_pending',
+            ]);
 
-                if ($supergroupResponse->ok !== true) {
-                    throw new \RuntimeException('Telegram API error posting AI reply to supergroup: ' . json_encode((array) $supergroupResponse), 1);
-                }
+            DeliverAiMessageJob::dispatch($aiMessage->id, $this->updateDto);
 
-                AiMessage::create([
-                    'bot_user_id' => $botUser->id,
-                    'message_id' => $supergroupResponse->message_id,
-                    'text_ai' => $replyText,
-                    'text_manager' => $replyText,
-                    'status' => AiMessage::STATUS_ACCEPTED,
-                ]);
-
-                Log::channel('app')->info('SendAiReplyJob: AI reply posted to supergroup', [
-                    'source' => 'ai_reply_supergroup',
-                    'bot_user_id' => $botUser->id,
-                    'supergroup_message_id' => $supergroupResponse->message_id,
-                ]);
-            } else {
-                // Supergroup not configured: record auto-reply for admin panel only.
-                AiMessage::create([
-                    'bot_user_id' => $botUser->id,
-                    'message_id' => null,
-                    'text_ai' => $replyText,
-                    'text_manager' => $replyText,
-                    'status' => AiMessage::STATUS_ACCEPTED,
-                ]);
-
-                if ($telegramConnected) {
-                    $plainReplyText = trim(html_entity_decode(strip_tags($replyText), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-
-                    if ($plainReplyText !== '') {
-                        MirrorAdminReplyToGroupJob::dispatch($botUser->id, $plainReplyText, "🤖 Ответ ИИ:\n");
-
-                        Log::channel('app')->info('SendAiReplyJob: AI reply mirror queued for supergroup', [
-                            'source' => 'ai_reply_supergroup_mirror',
-                            'bot_user_id' => $botUser->id,
-                        ]);
-                    }
-                }
-            }
-
-            app(SendTypingAction::class)->execute($botUser);
-            $delivered = app(DeliverAiAnswerToUser::class)->execute($botUser, $replyText, $this->updateDto);
-            if (!$delivered) {
-                throw new \RuntimeException('AI auto-reply delivery skipped: unsupported platform', 1);
-            }
-
-            Log::channel('app')->info('SendAiReplyJob: AI reply delivered', [
-                'source' => 'ai_reply_sent',
+            Log::channel('app')->info('SendAiReplyJob: AI reply queued for confirmed delivery', [
+                'source' => 'ai_reply_delivery_queued',
+                'ai_message_id' => $aiMessage->id,
                 'bot_user_id' => $botUser->id,
                 'platform' => $botUser->platform,
+                'locale' => $targetLocale,
             ]);
         } catch (\Throwable $e) {
             Log::channel('app')->log(
@@ -164,7 +113,69 @@ class SendAiReplyJob implements ShouldQueue
                 $e->getMessage(),
                 ['source' => 'send_ai_reply_error', 'file' => $e->getFile(), 'line' => $e->getLine()]
             );
+
+            throw $e;
         }
     }
-}
 
+    public function failed(\Throwable $exception): void
+    {
+        Log::channel('app')->critical('AI reply generation permanently failed', [
+            'source' => 'send_ai_reply_failed_terminal',
+            'bot_user_id' => $this->botUserId,
+            'error_class' => $exception::class,
+            'error' => $exception->getMessage(),
+        ]);
+    }
+
+    /**
+     * @return array{string|null, string|null, string|null, string}
+     */
+    private function translateReply(BotUser $botUser, string $sourceText): array
+    {
+        $targetLocale = $botUser->preferred_language_code;
+        if ($targetLocale === 'ru') {
+            return [
+                $targetLocale,
+                $sourceText,
+                'same_locale',
+                'ready',
+            ];
+        }
+
+        if ($targetLocale === null || $targetLocale === '') {
+            return [null, $this->safeEnglishFallback(), 'builtin_safe_english', 'ready'];
+        }
+
+        $result = app(TranslationService::class)->translate(new TranslationRequest(
+            sourceLocale: 'ru',
+            targetLocale: $targetLocale,
+            text: $sourceText,
+            purpose: 'ai_auto_reply',
+        ));
+
+        if ($result->success && trim((string) $result->text) !== '') {
+            return [$targetLocale, $result->text, $result->provider, 'ready'];
+        }
+
+        if ($targetLocale !== 'en') {
+            $english = app(TranslationService::class)->translate(new TranslationRequest(
+                sourceLocale: 'ru',
+                targetLocale: 'en',
+                text: $sourceText,
+                purpose: 'ai_auto_reply_english_fallback',
+            ));
+
+            if ($english->success && trim((string) $english->text) !== '') {
+                return [$targetLocale, $english->text, 'english_fallback:' . $english->provider, 'ready'];
+            }
+        }
+
+        return [$targetLocale, $this->safeEnglishFallback(), 'builtin_safe_english', 'ready'];
+    }
+
+    private function safeEnglishFallback(): string
+    {
+        return 'A support agent will reply shortly. We could not prepare a safe localized answer.';
+    }
+}

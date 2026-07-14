@@ -64,6 +64,16 @@
 :root[data-theme='dark'] {
     color-scheme: dark;
 
+    /*
+        Палитра тёмной темы админки:
+        - sidebar: левое меню и мобильный верхний бар.
+        - bg-primary: карточки, таблицы, drawer, модальные окна.
+        - bg-secondary: основной фон страницы.
+        - bg-input: поля ввода и тихие внутренние панели.
+        - border-light: рамки карточек, таблиц и форм.
+        - accent/text-link: основные действия, ссылки и активные вкладки.
+        - semantic surfaces: мягкие статусы без белых плашек.
+    */
     --color-sidebar: #0F172A;
     --color-sidebar-active: #1E293B;
     --color-sidebar-hover: #172033;
@@ -90,6 +100,31 @@
 
     --color-accent: #6382FF;
     --color-text-link: #8EA2FF;
+
+    --admin-success-bg: #12352D;
+    --admin-success-bg-hover: #174838;
+    --admin-success-border: #1F6B56;
+    --admin-success-text: #6EE7B7;
+
+    --admin-warning-bg: #3A2D12;
+    --admin-warning-bg-hover: #4A3A16;
+    --admin-warning-border: #A16207;
+    --admin-warning-text: #FBBF24;
+
+    --admin-danger-bg: #3A1E28;
+    --admin-danger-bg-hover: #4A2530;
+    --admin-danger-border: #7F1D1D;
+    --admin-danger-text: #FCA5A5;
+
+    --admin-info-bg: #1D2A4A;
+    --admin-info-bg-hover: #24365F;
+    --admin-info-border: #314A86;
+    --admin-info-text: #93C5FD;
+
+    --admin-neutral-bg: #182235;
+    --admin-neutral-bg-hover: #1E293B;
+    --admin-neutral-border: #334155;
+    --admin-neutral-text: #CBD5E1;
 }
 
 :root[data-theme='dark'] .admin-muted-surface {
@@ -130,9 +165,159 @@
 
 :root[data-theme='dark'] .bg-red-50,
 :root[data-theme='dark'] .bg-green-50,
+:root[data-theme='dark'] .bg-emerald-50,
 :root[data-theme='dark'] .bg-blue-50,
-:root[data-theme='dark'] .bg-yellow-50 {
-    background-color: rgba(30, 41, 59, 0.86) !important;
+:root[data-theme='dark'] .bg-yellow-50,
+:root[data-theme='dark'] .bg-amber-50,
+:root[data-theme='dark'] .bg-gray-50,
+:root[data-theme='dark'] .bg-gray-100,
+:root[data-theme='dark'] .bg-slate-50,
+:root[data-theme='dark'] .bg-slate-100 {
+    background-color: var(--admin-neutral-bg) !important;
+}
+
+:root[data-theme='dark'] .bg-green-50,
+:root[data-theme='dark'] .bg-green-100,
+:root[data-theme='dark'] .bg-emerald-50,
+:root[data-theme='dark'] .bg-emerald-100,
+:root[data-theme='dark'] .hover\:bg-green-50:hover,
+:root[data-theme='dark'] .hover\:bg-green-100:hover,
+:root[data-theme='dark'] .hover\:bg-emerald-50:hover,
+:root[data-theme='dark'] .hover\:bg-emerald-100:hover {
+    background-color: var(--admin-success-bg) !important;
+}
+
+:root[data-theme='dark'] .hover\:bg-green-50:hover,
+:root[data-theme='dark'] .hover\:bg-green-100:hover,
+:root[data-theme='dark'] .hover\:bg-emerald-50:hover,
+:root[data-theme='dark'] .hover\:bg-emerald-100:hover {
+    background-color: var(--admin-success-bg-hover) !important;
+}
+
+:root[data-theme='dark'] .bg-yellow-50,
+:root[data-theme='dark'] .bg-yellow-100,
+:root[data-theme='dark'] .bg-amber-50,
+:root[data-theme='dark'] .bg-amber-100,
+:root[data-theme='dark'] .hover\:bg-yellow-50:hover,
+:root[data-theme='dark'] .hover\:bg-yellow-100:hover,
+:root[data-theme='dark'] .hover\:bg-amber-50:hover,
+:root[data-theme='dark'] .hover\:bg-amber-100:hover {
+    background-color: var(--admin-warning-bg) !important;
+}
+
+:root[data-theme='dark'] .hover\:bg-yellow-50:hover,
+:root[data-theme='dark'] .hover\:bg-yellow-100:hover,
+:root[data-theme='dark'] .hover\:bg-amber-50:hover,
+:root[data-theme='dark'] .hover\:bg-amber-100:hover {
+    background-color: var(--admin-warning-bg-hover) !important;
+}
+
+:root[data-theme='dark'] .bg-red-50,
+:root[data-theme='dark'] .bg-red-100,
+:root[data-theme='dark'] .hover\:bg-red-50:hover,
+:root[data-theme='dark'] .hover\:bg-red-100:hover {
+    background-color: var(--admin-danger-bg) !important;
+}
+
+:root[data-theme='dark'] .hover\:bg-red-50:hover,
+:root[data-theme='dark'] .hover\:bg-red-100:hover {
+    background-color: var(--admin-danger-bg-hover) !important;
+}
+
+:root[data-theme='dark'] .bg-blue-50,
+:root[data-theme='dark'] .bg-blue-100,
+:root[data-theme='dark'] .hover\:bg-blue-50:hover,
+:root[data-theme='dark'] .hover\:bg-blue-100:hover {
+    background-color: var(--admin-info-bg) !important;
+}
+
+:root[data-theme='dark'] .hover\:bg-blue-50:hover,
+:root[data-theme='dark'] .hover\:bg-blue-100:hover {
+    background-color: var(--admin-info-bg-hover) !important;
+}
+
+:root[data-theme='dark'] .hover\:bg-gray-50:hover,
+:root[data-theme='dark'] .hover\:bg-gray-100:hover,
+:root[data-theme='dark'] .hover\:bg-slate-50:hover,
+:root[data-theme='dark'] .hover\:bg-slate-100:hover {
+    background-color: var(--admin-neutral-bg-hover) !important;
+}
+
+:root[data-theme='dark'] .border-green-200,
+:root[data-theme='dark'] .border-emerald-200 {
+    border-color: var(--admin-success-border) !important;
+}
+
+:root[data-theme='dark'] .border-yellow-200,
+:root[data-theme='dark'] .border-amber-200 {
+    border-color: var(--admin-warning-border) !important;
+}
+
+:root[data-theme='dark'] .border-red-200 {
+    border-color: var(--admin-danger-border) !important;
+}
+
+:root[data-theme='dark'] .border-blue-200 {
+    border-color: var(--admin-info-border) !important;
+}
+
+:root[data-theme='dark'] .border-gray-200,
+:root[data-theme='dark'] .border-slate-200 {
+    border-color: var(--admin-neutral-border) !important;
+}
+
+:root[data-theme='dark'] .text-green-700,
+:root[data-theme='dark'] .text-green-800,
+:root[data-theme='dark'] .text-green-900,
+:root[data-theme='dark'] .text-emerald-600,
+:root[data-theme='dark'] .text-emerald-700,
+:root[data-theme='dark'] .text-emerald-800 {
+    color: var(--admin-success-text) !important;
+}
+
+:root[data-theme='dark'] .text-yellow-700,
+:root[data-theme='dark'] .text-yellow-800,
+:root[data-theme='dark'] .text-amber-600,
+:root[data-theme='dark'] .text-amber-700,
+:root[data-theme='dark'] .text-amber-800 {
+    color: var(--admin-warning-text) !important;
+}
+
+:root[data-theme='dark'] .text-red-600,
+:root[data-theme='dark'] .text-red-700,
+:root[data-theme='dark'] .text-red-800 {
+    color: var(--admin-danger-text) !important;
+}
+
+:root[data-theme='dark'] .text-blue-700,
+:root[data-theme='dark'] .text-blue-800 {
+    color: var(--admin-info-text) !important;
+}
+
+:root[data-theme='dark'] .text-gray-500,
+:root[data-theme='dark'] .text-gray-700,
+:root[data-theme='dark'] .text-slate-500,
+:root[data-theme='dark'] .text-slate-700 {
+    color: var(--admin-neutral-text) !important;
+}
+
+/*
+    Livewire иногда показывает iframe с ошибкой после долгого простоя
+    страницы. Сам iframe создаётся пакетом, поэтому держим его в палитре
+    админки, чтобы не появлялся большой белый блок поверх чата.
+*/
+:root[data-theme='dark'] dialog#livewire-error,
+:root[data-theme='dark'] dialog#livewire-error iframe {
+    background: #17161a !important;
+}
+
+:root[data-theme='dark'] dialog#livewire-error::backdrop {
+    background: rgba(15, 23, 42, 0.62) !important;
+}
+
+:root[data-theme='dark'] dialog#livewire-error {
+    border: 1px solid var(--color-border-light) !important;
+    color: var(--color-text-primary) !important;
 }
 
 /* ── Slim scrollbar for the chat dialog list (dark sidebar) ──────────────── */

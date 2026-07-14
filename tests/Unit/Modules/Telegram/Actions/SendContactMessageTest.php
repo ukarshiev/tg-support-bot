@@ -4,7 +4,7 @@ namespace Tests\Unit\Modules\Telegram\Actions;
 
 use App\Models\BotUser;
 use App\Modules\Telegram\Actions\SendContactMessage;
-use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Modules\Telegram\Jobs\SendContactMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -44,17 +44,30 @@ class SendContactMessageTest extends TestCase
     {
         app(SendContactMessage::class)->execute($this->botUser);
 
-        /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
-        $this->assertCount(1, $pushed);
+        Queue::assertPushed(SendContactMessageJob::class, fn (SendContactMessageJob $job): bool =>
+            $job->botUserId === $this->botUser->id
+            && $job->queue === 'telegram-mirror');
+    }
 
-        $job = $pushed[0]['job'];
+    public function test_contact_card_always_contains_topic_id(): void
+    {
+        $this->botUser->update(['topic_id' => 777]);
 
-        // Assert
-        $this->assertEquals('-100000000000', $job->queryParams->chat_id);
-        $this->assertEquals('sendMessage', $job->queryParams->methodQuery);
-        $this->assertStringContainsString('Выбранный язык: English', $job->queryParams->text);
-        $this->assertStringContainsString('Телефон: не передан', $job->queryParams->text);
-        $this->assertStringContainsString('Регион: не определён', $job->queryParams->text);
+        $dto = app(SendContactMessage::class)->getQueryParams($this->botUser);
+
+        $this->assertEquals('-100000000000', $dto->chat_id);
+        $this->assertSame(777, $dto->message_thread_id);
+        $this->assertEquals('sendMessage', $dto->methodQuery);
+        $this->assertStringContainsString('Выбранный язык: English', $dto->text);
+        $this->assertStringContainsString('Телефон: не передан', $dto->text);
+        $this->assertStringContainsString('Регион: не определён', $dto->text);
+    }
+
+    public function test_contact_card_cannot_be_built_for_general_topic(): void
+    {
+        $this->botUser->update(['topic_id' => null]);
+
+        $this->expectException(\RuntimeException::class);
+        app(SendContactMessage::class)->getQueryParams($this->botUser);
     }
 }

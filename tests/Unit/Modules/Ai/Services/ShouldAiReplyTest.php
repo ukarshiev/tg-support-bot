@@ -147,8 +147,6 @@ class ShouldAiReplyTest extends TestCase
         $this->assertFalse($result);
     }
 
-
-
     public function test_returns_false_when_telegram_language_not_selected(): void
     {
         app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
@@ -207,5 +205,39 @@ class ShouldAiReplyTest extends TestCase
         );
 
         $this->assertFalse($result);
+    }
+
+    public function test_external_channel_waits_for_language_selection_too(): void
+    {
+        app(\App\Services\Settings\SettingsService::class)->set('ai.enabled', true);
+        $botUser = $this->makeBotUser(languageCode: null);
+        $botUser->platform = 'vk';
+
+        $this->assertFalse((new ShouldAiReply())->shouldGenerateForBotUserText($botUser, 'hello'));
+    }
+
+    public function test_financial_or_subscription_complaint_forces_draft_only(): void
+    {
+        $service = new ShouldAiReply();
+
+        $this->assertTrue($service->shouldUseDraftOnly(
+            $this->makeBotUser(),
+            'it was down for most of my subscription',
+        ));
+
+        $this->assertTrue($service->shouldUseDraftOnly(
+            $this->makeBotUser(),
+            'верните деньги, доступ к платному каналу не работает',
+        ));
+    }
+
+    public function test_regular_support_question_does_not_force_draft_only(): void
+    {
+        $service = new ShouldAiReply();
+
+        $this->assertFalse($service->shouldUseDraftOnly(
+            $this->makeBotUser(),
+            'подскажи ссылку на группу RelaxaClub Gallery',
+        ));
     }
 }

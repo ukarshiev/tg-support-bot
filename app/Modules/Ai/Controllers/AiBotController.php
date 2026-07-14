@@ -4,6 +4,7 @@ namespace App\Modules\Ai\Controllers;
 
 use App\Modules\Ai\Actions\AiAcceptMessage;
 use App\Modules\Ai\Actions\AiCancelMessage;
+use App\Modules\Ai\Actions\AiEditHintMessage;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -73,6 +74,12 @@ class AiBotController
                 'callback_data' => $callbackData,
             ]);
             app(AiAcceptMessage::class)->execute($updateDto);
+        } elseif (preg_match('/^ai_message_edit_[0-9]+$/', $callbackData)) {
+            Log::channel('app')->info('AiBotController: edit hint callback', [
+                'source' => 'ai_callback_edit_hint',
+                'callback_data' => $callbackData,
+            ]);
+            app(AiEditHintMessage::class)->execute($updateDto);
         } elseif (preg_match('/^ai_message_cancel_[0-9]+$/', $callbackData)) {
             Log::channel('app')->info('AiBotController: cancel callback', [
                 'source' => 'ai_callback_cancel',

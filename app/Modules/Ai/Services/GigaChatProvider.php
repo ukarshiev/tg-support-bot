@@ -107,7 +107,7 @@ class GigaChatProvider extends BaseAiProvider
         ]);
 
         if (!$response->successful()) {
-            throw new \Exception('Failed to obtain GigaChat token: ' . $response->body());
+            throw new \Exception('Failed to obtain GigaChat token: HTTP ' . $response->status());
         }
 
         $data = $response->json();
@@ -143,7 +143,7 @@ class GigaChatProvider extends BaseAiProvider
         ]);
 
         if (!$response->successful()) {
-            throw new \Exception('GigaChat API request failed: ' . $response->body());
+            throw new \Exception('GigaChat API request failed: HTTP ' . $response->status());
         }
 
         return $response->json();

@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Livewire\Chat;
 
+use App\Jobs\TranslateMessageHistoryJob;
 use App\Models\AiMessage;
 use App\Models\AutoReply;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Models\MessageTranslation;
+use App\Models\TranslationJob;
 use App\Models\User;
 use App\Modules\Admin\Actions\BanBotUser;
 use App\Modules\Admin\Actions\ClearBotUserHistory;
@@ -18,11 +21,18 @@ use App\Modules\Admin\Actions\UnbanBotUser;
 use App\Modules\Ai\Actions\AiAcceptMessage;
 use App\Modules\Ai\Actions\AiCancelMessage;
 use App\Modules\Telegram\Actions\CloseTopic;
+use App\Modules\Telegram\Services\ContactSummaryFormatter;
+use App\Modules\Translation\DTOs\TranslationRequest;
+use App\Modules\Translation\Services\SupportLanguageSettings;
+use App\Modules\Translation\Services\TranslationService;
+use App\Services\AutoReplies\AutoReplyVariableRenderer;
+use App\Services\Settings\SettingsService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -33,7 +43,7 @@ use Livewire\WithFileUploads;
  * Uses a minimal full-screen layout (no Filament chrome).
  *
  * Data / logic is identical to the old Filament ConversationPage — the same
- * $dialogList, $activeBotUser, $chatMessages, search, statusFilter, 5 s polling,
+ * $dialogList, $activeBotUser, $chatMessages, search, statusFilter, realtime events,
  * sendReply, insertQuickReply, shouldShowReplyForm, getMediaAttachments are kept.
  */
 #[Layout('layouts.admin-chat')]
@@ -88,6 +98,22 @@ class ConversationPage extends Component
 
     public string $replyText = '';
 
+    public ?string $replyTranslatedText = null;
+
+    public string $replyTranslationStatus = 'empty';
+
+    public ?string $replyTranslationError = null;
+
+    public bool $autoAiEnabled = false;
+
+    public ?string $autoAiNotice = null;
+
+    public ?string $chatTranslationLocale = null;
+
+    public bool $chatHistoryTranslationActive = false;
+
+    public bool $chatHistoryTranslationHasPending = false;
+
     /**
      * Optional file to attach to the manager reply.
      *
@@ -120,8 +146,19 @@ class ConversationPage extends Component
         $this->dialogList = collect();
         $this->chatMessages = collect();
         $this->pendingAiDrafts = collect();
+        $this->autoAiEnabled = (bool) (app(SettingsService::class)->get('ai.auto_reply') ?? false);
         $this->lastSeenMessageId = (int) Message::max('id');
         $this->loadDialogList();
+    }
+
+    public function toggleAutoAi(): void
+    {
+        $this->autoAiEnabled = ! $this->autoAiEnabled;
+        app(SettingsService::class)->set('ai.auto_reply', $this->autoAiEnabled);
+
+        $this->autoAiNotice = $this->autoAiEnabled
+            ? 'Auto AI включён: AI отвечает клиентам сам.'
+            : 'Auto AI выключен: AI пишет только внутренние подсказки.';
     }
 
     /**
@@ -131,7 +168,7 @@ class ConversationPage extends Component
      */
     public function getPollingInterval(): ?string
     {
-        return '5s';
+        return '30s';
     }
 
     // ── Dialog list ────────────────────────────────────────────────────────────
@@ -298,10 +335,14 @@ class ConversationPage extends Component
             $this->activeBotUserId = null;
             $this->activeBotUser = null;
             $this->chatMessages = collect();
+            $this->resetComposerState();
+            $this->resetChatTranslationState();
 
             return;
         }
 
+        $this->resetComposerState();
+        $this->resetChatTranslationState();
         $this->activeBotUserId = $botUserId;
         $this->activeBotUser = BotUser::with(['externalUser'])->find($botUserId);
 
@@ -313,10 +354,31 @@ class ConversationPage extends Component
 
         $this->loadMessages();
         $this->loadPendingAiDrafts();
+        $this->syncChatTranslationState();
+        $this->queueVisibleHistoryTranslations();
+        $this->reloadLoadedMessages();
         $this->loadDialogList();
 
         // Always scroll to the bottom when opening a dialog.
         $this->dispatch('messages-updated');
+        $this->dispatch('chat-selected', botUserId: $botUserId);
+    }
+
+    private function resetComposerState(): void
+    {
+        $this->replyText = '';
+        $this->replyTranslatedText = null;
+        $this->replyTranslationStatus = 'empty';
+        $this->replyTranslationError = null;
+        $this->attachment = null;
+        $this->resetValidation(['replyText', 'attachment']);
+    }
+
+    private function resetChatTranslationState(): void
+    {
+        $this->chatTranslationLocale = null;
+        $this->chatHistoryTranslationActive = false;
+        $this->chatHistoryTranslationHasPending = false;
     }
 
     /**
@@ -353,7 +415,7 @@ class ConversationPage extends Component
     }
 
     /**
-     * Combined 5 s poll entry point (wire:poll): refresh the dialog list and,
+     * Reconciliation poll entry point: refresh the dialog list and,
      * when a dialog is open, the message thread too.
      *
      * Only scrolls to the bottom and bumps the read marker when new messages
@@ -378,11 +440,46 @@ class ConversationPage extends Component
         // any older history the manager scrolled up to load.
         $added = $this->loadNewerMessages();
         $this->loadPendingAiDrafts();
+        if ($this->chatHistoryTranslationHasPending) {
+            $this->reloadLoadedMessages();
+        }
 
         if ($added > 0) {
             $this->markConversationRead($this->activeBotUser);
             $this->dispatch('messages-updated');
         }
+
+        // Livewire polling morphs the chat DOM every few seconds. The textarea
+        // height is calculated on the client, so ask Alpine to restore autosize
+        // after each poll response and keep the draft field from collapsing.
+        $this->dispatch('chat-input-autosize');
+    }
+
+    #[On('support-message-committed')]
+    public function handleRealtimeMessage(int $messageId, int $conversationId, string $traceId = ''): void
+    {
+        if ($messageId <= 0 || $conversationId <= 0) {
+            return;
+        }
+
+        $this->pollUpdates();
+    }
+
+    private function reloadLoadedMessages(): void
+    {
+        $ids = $this->chatMessages->pluck('id')->all();
+        if ($ids === []) {
+            return;
+        }
+
+        $messages = Message::whereIn('id', $ids)
+            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        $this->chatMessages = $messages->values();
+        $this->refreshHistoryTranslationPendingState();
     }
 
     /**
@@ -460,7 +557,7 @@ class ConversationPage extends Component
         // Most recent page only — older messages are pulled in on scroll-up.
         // Fetch one extra row to detect whether more history exists.
         $batch = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments', 'sender'])
+            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::MESSAGES_PER_PAGE + 1)
@@ -471,6 +568,8 @@ class ConversationPage extends Component
         $this->chatMessages = $batch->take(self::MESSAGES_PER_PAGE)
             ->reverse()
             ->values();
+
+        $this->refreshHistoryTranslationPendingState();
     }
 
     /**
@@ -491,7 +590,7 @@ class ConversationPage extends Component
         $oldest = $this->chatMessages->first();
 
         $batch = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments', 'sender'])
+            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
             ->where(function ($q) use ($oldest): void {
                 $q->where('created_at', '<', $oldest->created_at)
                     ->orWhere(function ($q2) use ($oldest): void {
@@ -511,6 +610,8 @@ class ConversationPage extends Component
             ->values();
 
         $this->chatMessages = $older->concat($this->chatMessages)->values();
+        $this->queueVisibleHistoryTranslations($older);
+        $this->reloadLoadedMessages();
     }
 
     /**
@@ -529,7 +630,7 @@ class ConversationPage extends Component
         $newest = $this->chatMessages->last();
 
         $query = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments', 'sender'])
+            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
             ->orderBy('created_at')
             ->orderBy('id');
 
@@ -547,6 +648,7 @@ class ConversationPage extends Component
 
         if ($new->isNotEmpty()) {
             $this->chatMessages = $this->chatMessages->concat($new)->values();
+            $this->queueVisibleHistoryTranslations($new);
         }
 
         return $new->count();
@@ -581,11 +683,51 @@ class ConversationPage extends Component
             'attachment' => ['nullable', 'file', 'max:20480'],
         ]);
 
+        $targetLocale = strtolower(trim((string) $this->activeBotUser->preferred_language_code));
+        if (trim($this->replyText) !== '' && $targetLocale !== 'ru') {
+            if ($targetLocale === '') {
+                $this->toast('Клиент ещё не выбрал язык. Текст не отправлен.', 'error');
+
+                return;
+            }
+
+            if ($this->replyTranslationStatus !== 'ready' || trim((string) $this->replyTranslatedText) === '') {
+                $this->toast('Перевод ещё не готов. Текст не отправлен.', 'error');
+
+                return;
+            }
+        }
+
+        $sourceText = $this->replyText;
+        $textToSend = app(AutoReplyVariableRenderer::class)->render(
+            $this->replyTranslatedText ?: $this->replyText,
+            $this->activeBotUser,
+        )[0];
+
         /** @var \App\Models\User $operator */
         $operator = Auth::user();
-        SendReplyAction::execute($this->activeBotUser, $this->replyText, $file, $operator);
+        $message = SendReplyAction::execute($this->activeBotUser, $textToSend, $file, $operator);
+
+        if (trim($sourceText) !== '' && $textToSend !== $sourceText) {
+            MessageTranslation::create([
+                'message_id' => $message->id,
+                'source_locale' => 'ru',
+                'target_locale' => $this->activeBotUser->preferred_language_code,
+                'source_text' => $sourceText,
+                'translated_text' => $textToSend,
+                'direction' => 'operator_to_client',
+                'status' => 'ready',
+                'source' => 'auto',
+                'provider' => 'translation_core',
+                'source_hash' => hash('sha256', trim($sourceText)),
+                'translated_at' => now(),
+            ]);
+        }
 
         $this->replyText = '';
+        $this->replyTranslatedText = null;
+        $this->replyTranslationStatus = 'empty';
+        $this->replyTranslationError = null;
         $this->attachment = null;
         $this->loadMessages();
         $this->loadDialogList();
@@ -610,12 +752,7 @@ class ConversationPage extends Component
     /**
      * Public profile URL for the active user, or null when none can be built.
      *
-     * Only VK exposes an addressable web profile from the data we store —
-     * `https://vk.com/id{chat_id}` (numeric VK user id). Telegram is intentionally
-     * excluded: a working profile link needs a public `@username` (which we do not
-     * store) — a numeric id cannot be resolved (`tg://user?id=` does not open an
-     * arbitrary user; Telegram requires a username or internal access_hash). All
-     * other platforms / non-numeric ids return null, hiding the «Ссылка на профиль» row.
+     * Telegram requires a public username. VK can be opened by numeric id.
      *
      * @return string|null
      */
@@ -627,16 +764,87 @@ class ConversationPage extends Component
             return null;
         }
 
-        $chatId = trim((string) $user->chat_id);
-
-        if ($chatId === '' || ! ctype_digit($chatId)) {
-            return null;
-        }
-
         return match ($user->platform) {
-            'vk' => "https://vk.com/id{$chatId}",
+            'telegram' => $user->username
+                ? 'https://telegram.me/' . ltrim((string) $user->username, '@')
+                : null,
+            'vk' => ctype_digit(trim((string) $user->chat_id))
+                ? 'https://vk.com/id' . trim((string) $user->chat_id)
+                : null,
             default => null,
         };
+    }
+
+    /**
+     * Rows for the contact details drawer.
+     *
+     * Only already stored data is used here. We intentionally do not call Telegram
+     * getChat while opening the drawer, so the operator UI stays fast.
+     *
+     * @return array<int, array{label: string, value: string, url?: string}>
+     */
+    public function contactDetails(): array
+    {
+        $user = $this->activeBotUser;
+
+        if ($user === null) {
+            return [];
+        }
+
+        $platformLabel = match ($user->platform) {
+            'telegram' => 'Telegram',
+            'vk' => 'VK',
+            'max' => 'Max',
+            default => ucfirst((string) $user->platform),
+        };
+
+        $rows = [
+            ['label' => 'Платформа', 'value' => $platformLabel],
+            ...app(ContactSummaryFormatter::class)->rows($user),
+            ['label' => 'Статус диалога', 'value' => $user->is_closed ? 'закрыт' : 'открыт'],
+            ['label' => 'Статус блокировки', 'value' => $user->is_banned ? 'заблокирован' : 'активен'],
+            ['label' => 'Topic ID', 'value' => $user->topic_id ? (string) $user->topic_id : 'не назначен'],
+        ];
+
+        if ($user->preferred_language_selected_at !== null) {
+            $rows[] = [
+                'label' => 'Язык выбран',
+                'value' => $this->formatContactDate($user->preferred_language_selected_at),
+            ];
+        }
+
+        if ($user->profile_synced_at !== null) {
+            $rows[] = [
+                'label' => 'Профиль обновлён',
+                'value' => $this->formatContactDate($user->profile_synced_at),
+            ];
+        }
+
+        if ($user->externalUser !== null) {
+            $rows[] = ['label' => 'Внешний источник', 'value' => (string) $user->externalUser->source];
+            $rows[] = ['label' => 'Внешний ID', 'value' => (string) $user->externalUser->external_id];
+        }
+
+        return $rows;
+    }
+
+    public function contactSummaryText(): string
+    {
+        if ($this->activeBotUser === null) {
+            return '';
+        }
+
+        return app(ContactSummaryFormatter::class)->toPlainText($this->activeBotUser);
+    }
+
+    /**
+     * @param mixed $date
+     *
+     * @return string
+     */
+    private function formatContactDate(mixed $date): string
+    {
+        return $date ? Carbon::parse($date)->format('d.m.Y H:i') : 'неизвестно';
     }
 
     /**
@@ -681,12 +889,13 @@ class ConversationPage extends Component
      * the admin-chat layout (replaces the former Filament notifications).
      *
      * @param string $message
+     * @param string $type
      *
      * @return void
      */
-    private function toast(string $message): void
+    private function toast(string $message, string $type = 'success'): void
     {
-        $this->dispatch('admin-toast', message: $message, type: 'success');
+        $this->dispatch('admin-toast', message: $message, type: $type);
     }
 
     /**
@@ -827,6 +1036,326 @@ class ConversationPage extends Component
     public function insertQuickReply(string $text): void
     {
         $this->replyText = $text;
+        $this->refreshReplyTranslation();
+    }
+
+    public function updatedReplyText(): void
+    {
+        if (mb_strlen(trim($this->replyText)) < 3) {
+            $this->replyTranslatedText = null;
+            $this->replyTranslationStatus = 'empty';
+            $this->replyTranslationError = null;
+            return;
+        }
+
+        $this->refreshReplyTranslation();
+    }
+
+    public function refreshReplyTranslation(): void
+    {
+        if (!$this->activeBotUser || trim($this->replyText) === '') {
+            return;
+        }
+
+        $targetLocale = $this->activeBotUser->preferred_language_code;
+        if ($targetLocale === null || $targetLocale === '') {
+            $this->replyTranslationStatus = 'language_not_selected';
+            $this->replyTranslatedText = null;
+            $this->replyTranslationError = 'Клиент ещё не выбрал язык.';
+            return;
+        }
+
+        if ($targetLocale === 'ru') {
+            $this->replyTranslationStatus = 'ready';
+            $this->replyTranslatedText = $this->replyText;
+            $this->replyTranslationError = null;
+            return;
+        }
+
+        $this->replyTranslationStatus = 'translating';
+        $result = app(TranslationService::class)->translate(new TranslationRequest(
+            sourceLocale: 'ru',
+            targetLocale: $targetLocale,
+            text: $this->replyText,
+            purpose: 'operator_reply',
+        ));
+
+        if ($result->success) {
+            $this->replyTranslationStatus = 'ready';
+            $this->replyTranslatedText = $result->text;
+            $this->replyTranslationError = null;
+            return;
+        }
+
+        $this->replyTranslationStatus = 'error';
+        $this->replyTranslatedText = null;
+        $this->replyTranslationError = $result->errorMessage ?? 'Перевод не выполнен.';
+    }
+
+    /**
+     * Языки для dropdown переводчика диалога.
+     *
+     * @return array<int, array{code: string, label: string, tooltip: string}>
+     */
+    public function availableTranslationLanguages(): array
+    {
+        $languages = app(SupportLanguageSettings::class)->enabledLanguages();
+
+        return collect($languages)
+            ->map(fn (array $language): array => [
+                'code' => (string) $language['code'],
+                'label' => $this->languageFlag((string) $language['code']) . ' ' . mb_strtoupper((string) $language['code']),
+                'tooltip' => (string) $language['name'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    public function chatTranslationButtonLabel(): string
+    {
+        if ($this->chatTranslationLocale === null || $this->chatTranslationLocale === '') {
+            return 'Не выбран';
+        }
+
+        return $this->languageFlag($this->chatTranslationLocale) . ' ' . mb_strtoupper($this->chatTranslationLocale);
+    }
+
+    public function chatTranslationTooltip(): string
+    {
+        if ($this->chatTranslationLocale === null || $this->chatTranslationLocale === '') {
+            return 'Язык клиента не выбран';
+        }
+
+        if ($this->chatTranslationLocale === 'ru') {
+            return 'Русский язык — перевод не требуется';
+        }
+
+        return 'Перевод диалога включён';
+    }
+
+    public function setChatTranslationLocale(string $locale): void
+    {
+        if (!$this->activeBotUser) {
+            return;
+        }
+
+        $enabled = collect($this->availableTranslationLanguages())->pluck('code')->all();
+        if (!in_array($locale, $enabled, true)) {
+            return;
+        }
+
+        $this->activeBotUser->update([
+            'chat_translation_locale' => $locale,
+            'chat_translation_locale_selected_at' => now(),
+        ]);
+        $this->activeBotUser->refresh();
+        $this->syncChatTranslationState();
+        $this->queueVisibleHistoryTranslations();
+        $this->loadMessages();
+        $this->toast($locale === 'ru' ? 'Перевод истории выключен' : 'Перевод истории запущен');
+    }
+
+    public function retryMessageTranslation(int $messageId): void
+    {
+        if (!$this->activeBotUser || !$this->chatHistoryTranslationActive) {
+            return;
+        }
+
+        $message = Message::where('id', $messageId)
+            ->where('bot_user_id', $this->activeBotUser->id)
+            ->first();
+
+        if ($message === null) {
+            return;
+        }
+
+        $this->queueTranslationForMessage($message, force: true);
+        $this->loadMessages();
+        $this->toast('Повторный перевод поставлен в очередь');
+    }
+
+    private function syncChatTranslationState(): void
+    {
+        if (!$this->activeBotUser) {
+            $this->chatTranslationLocale = null;
+            $this->chatHistoryTranslationActive = false;
+            $this->chatHistoryTranslationHasPending = false;
+
+            return;
+        }
+
+        $enabled = collect($this->availableTranslationLanguages())->pluck('code')->all();
+        $locale = $this->resolveChatTranslationLocale($this->activeBotUser);
+
+        if ($locale !== null && !in_array($locale, $enabled, true)) {
+            $locale = null;
+        }
+
+        if ($locale !== null && $this->activeBotUser->chat_translation_locale !== $locale) {
+            $this->activeBotUser->forceFill([
+                'chat_translation_locale' => $locale,
+                'chat_translation_locale_selected_at' => $this->activeBotUser->chat_translation_locale_selected_at ?: now(),
+            ])->save();
+            $this->activeBotUser->refresh();
+        }
+
+        $this->chatTranslationLocale = $locale;
+        $this->chatHistoryTranslationActive = $locale !== null && $locale !== 'ru';
+        $this->refreshHistoryTranslationPendingState();
+    }
+
+    private function resolveChatTranslationLocale(BotUser $botUser): ?string
+    {
+        $chatLocale = $botUser->chat_translation_locale;
+
+        if (
+            $chatLocale !== null
+            && $chatLocale !== ''
+            && $botUser->chat_translation_locale_selected_at !== null
+            && (
+                $botUser->preferred_language_selected_at === null
+                || $botUser->chat_translation_locale_selected_at->greaterThanOrEqualTo($botUser->preferred_language_selected_at)
+            )
+        ) {
+            return $chatLocale;
+        }
+
+        if ($botUser->preferred_language_selected_at !== null && filled($botUser->preferred_language_code)) {
+            return $botUser->preferred_language_code;
+        }
+
+        return null;
+    }
+
+    private function queueVisibleHistoryTranslations(?Collection $messages = null): void
+    {
+        if (!$this->activeBotUser || !$this->chatHistoryTranslationActive) {
+            $this->refreshHistoryTranslationPendingState();
+
+            return;
+        }
+
+        ($messages ?? $this->chatMessages)
+            ->reject(fn (Message $message): bool => $this->isLanguageSelectorMessage($message))
+            ->filter(fn (Message $message): bool => trim((string) ($message->text ?? $message->externalMessage?->text)) !== '')
+            ->take(-self::MESSAGES_PER_PAGE)
+            ->each(function (Message $message): void {
+                $this->queueTranslationForMessage($message);
+            });
+
+        $this->refreshHistoryTranslationPendingState();
+    }
+
+    public function shouldHideMessageFromHistory(Message $message): bool
+    {
+        return $message->message_kind === Message::KIND_LANGUAGE_SELECTOR
+            || app(\App\Modules\Telegram\Services\SupportLanguageService::class)
+                ->isSelectorText($message->text ?? $message->externalMessage?->text);
+    }
+
+    private function isLanguageSelectorMessage(Message $message): bool
+    {
+        return $this->shouldHideMessageFromHistory($message);
+    }
+
+    private function queueTranslationForMessage(Message $message, bool $force = false): void
+    {
+        $locale = $this->chatTranslationLocale ?: 'ru';
+        if ($locale === 'ru') {
+            return;
+        }
+
+        $sourceText = trim((string) ($message->text ?? $message->externalMessage?->text));
+        if ($sourceText === '') {
+            return;
+        }
+
+        $direction = $message->message_type === 'incoming' ? 'client_to_operator' : 'system_to_operator';
+        $sourceLocale = $locale;
+        $targetLocale = 'ru';
+
+        /** @var MessageTranslation|null $existing */
+        $existing = $message->translations()
+            ->where('direction', $direction)
+            ->where('source_locale', $sourceLocale)
+            ->where('target_locale', $targetLocale)
+            ->where('source_hash', TranslationService::sourceHash($sourceText))
+            ->first();
+
+        if ($existing !== null && !$force && in_array($existing->status, ['queued', 'running', 'ready'], true)) {
+            return;
+        }
+
+        $messageTranslation = MessageTranslation::updateOrCreate(
+            [
+                'message_id' => $message->id,
+                'direction' => $direction,
+                'source_locale' => $sourceLocale,
+                'target_locale' => $targetLocale,
+                'source_hash' => TranslationService::sourceHash($sourceText),
+            ],
+            [
+                'source_text' => $sourceText,
+                'translated_text' => $force ? null : ($existing?->translated_text),
+                'status' => 'queued',
+                'source' => 'auto',
+                'provider' => null,
+                'error_message' => null,
+            ]
+        );
+
+        $monitor = TranslationJob::create([
+            'job_type' => TranslationJob::TYPE_MESSAGE_HISTORY,
+            'subject_type' => Message::class,
+            'subject_id' => $message->id,
+            'subject_label' => 'Сообщение #' . $message->id,
+            'source_locale' => $sourceLocale,
+            'target_locale' => $targetLocale,
+            'status' => TranslationJob::STATUS_QUEUED,
+            'characters' => mb_strlen($sourceText),
+            'queued_at' => now(),
+            'meta' => [
+                'bot_user_id' => $message->bot_user_id,
+                'direction' => $direction,
+                'message_translation_id' => $messageTranslation->id,
+            ],
+        ]);
+
+        TranslateMessageHistoryJob::dispatch($message->id, $messageTranslation->id, $monitor->id);
+    }
+
+    private function refreshHistoryTranslationPendingState(): void
+    {
+        $ids = $this->chatMessages->pluck('id')->filter()->all();
+        if ($ids === []) {
+            $this->chatHistoryTranslationHasPending = false;
+
+            return;
+        }
+
+        $this->chatHistoryTranslationHasPending = MessageTranslation::whereIn('message_id', $ids)
+            ->whereIn('status', ['queued', 'running'])
+            ->exists();
+    }
+
+    private function languageFlag(string $code): string
+    {
+        return [
+            'ru' => '🇷🇺',
+            'en' => '🇺🇸',
+            'uk' => '🇺🇦',
+            'it' => '🇮🇹',
+            'de' => '🇩🇪',
+            'es' => '🇪🇸',
+            'pl' => '🇵🇱',
+            'ro' => '🇷🇴',
+            'fr' => '🇫🇷',
+            'tg' => '🇹🇯',
+            'az' => '🇦🇿',
+            'tr' => '🇹🇷',
+            'kk' => '🇰🇿',
+            'uz' => '🇺🇿',
+        ][$code] ?? '🌐';
     }
 
     // ── Media gallery ──────────────────────────────────────────────────────────
@@ -855,7 +1384,10 @@ class ConversationPage extends Component
      */
     public function getAutoReplies(): Collection
     {
-        return AutoReply::where('enabled', true)->orderBy('id')->get();
+        return AutoReply::where('type', AutoReply::TYPE_REGULAR)
+            ->where('enabled', true)
+            ->orderBy('id')
+            ->get();
     }
 
     /**
@@ -879,6 +1411,51 @@ class ConversationPage extends Component
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
+
+        $this->pendingAiDrafts->each(function (AiMessage $draft): void {
+            $this->ensureAiDraftOperatorTextIsRussian($draft);
+        });
+    }
+
+    private function ensureAiDraftOperatorTextIsRussian(AiMessage $draft): void
+    {
+        $targetLocale = (string) ($draft->target_locale ?: $this->chatTranslationLocale ?: $this->activeBotUser?->preferred_language_code ?: 'ru');
+        if ($targetLocale === 'ru') {
+            return;
+        }
+
+        $operatorText = trim((string) ($draft->text_source ?: ''));
+        $clientText = trim((string) ($draft->text_translated ?: $draft->text_ai ?: ''));
+        if ($clientText === '') {
+            return;
+        }
+
+        $sourceLooksLikeClientText = $operatorText === ''
+            || $operatorText === trim((string) $draft->text_translated)
+            || $operatorText === trim((string) $draft->text_ai);
+
+        if (!$sourceLooksLikeClientText) {
+            return;
+        }
+
+        $result = app(TranslationService::class)->translate(new TranslationRequest(
+            sourceLocale: $targetLocale,
+            targetLocale: 'ru',
+            text: $clientText,
+            purpose: 'ai_draft_operator_preview',
+        ));
+
+        if (!$result->success || !is_string($result->text) || trim($result->text) === '') {
+            return;
+        }
+
+        $draft->forceFill([
+            'text_source' => $result->text,
+            'source_locale' => 'ru',
+            'translation_provider' => $draft->translation_provider ?: $result->provider,
+            'translation_status' => $draft->translation_status ?: 'ready',
+            'translated_at' => $draft->translated_at ?: now(),
+        ])->save();
     }
 
     /**

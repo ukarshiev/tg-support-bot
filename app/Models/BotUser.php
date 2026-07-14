@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use phpDocumentor\Reflection\Exception;
 
 /**
@@ -17,6 +18,7 @@ use phpDocumentor\Reflection\Exception;
  * @property int                             $topic_id
  * @property int                             $chat_id
  * @property string                          $platform
+ * @property string|null                     $identity_key
  * @property string|null                     $display_name
  * @property string|null                     $username
  * @property string|null                     $avatar_path
@@ -33,6 +35,8 @@ class BotUser extends Model
 {
     use HasFactory;
 
+    private static bool $identityKeyColumnConfirmed = false;
+
     protected $table = 'bot_users';
 
     protected $fillable = [
@@ -42,6 +46,8 @@ class BotUser extends Model
         'preferred_language_code',
         'preferred_language_name',
         'preferred_language_selected_at',
+        'chat_translation_locale',
+        'chat_translation_locale_selected_at',
         'display_name',
         'username',
         'avatar_path',
@@ -57,6 +63,11 @@ class BotUser extends Model
         'manager_last_read_at' => 'datetime',
         'profile_synced_at' => 'datetime',
         'preferred_language_selected_at' => 'datetime',
+        'chat_translation_locale_selected_at' => 'datetime',
+        'is_banned' => 'boolean',
+        'is_closed' => 'boolean',
+        'banned_at' => 'datetime',
+        'closed_at' => 'datetime',
     ];
 
     /**
@@ -80,7 +91,53 @@ class BotUser extends Model
      */
     public function messages(): HasMany
     {
-        return $this->hasMany(Message::class, 'id', 'bot_user_id');
+        return $this->hasMany(Message::class, 'bot_user_id', 'id');
+    }
+
+    /**
+     * Стабильный ключ пользователя внутри конкретной платформы.
+     */
+    public static function identityKey(string $platform, string|int $chatId): string
+    {
+        return hash('sha256', strtolower(trim($platform)) . "\0" . (string) $chatId);
+    }
+
+    /**
+     * Возвращает каноническую запись, не удаляя старые дубли.
+     * Сначала используется защищённый ключ, затем самый ранний legacy ID.
+     */
+    public static function findByPlatformChat(string|int $chatId, string $platform): ?self
+    {
+        $platform = strtolower(trim($platform));
+
+        $byIdentity = self::hasIdentityKeyColumn()
+            ? self::where('identity_key', self::identityKey($platform, $chatId))->first()
+            : null;
+
+        return $byIdentity ?? self::where('chat_id', $chatId)
+                ->where('platform', $platform)
+                ->orderBy('id')
+                ->first();
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (BotUser $botUser): void {
+            $botUser->platform = strtolower(trim((string) $botUser->platform));
+
+            if (self::hasIdentityKeyColumn()) {
+                $botUser->identity_key ??= self::identityKey($botUser->platform, $botUser->chat_id);
+            }
+        });
+    }
+
+    private static function hasIdentityKeyColumn(): bool
+    {
+        if (self::$identityKeyColumnConfirmed) {
+            return true;
+        }
+
+        return self::$identityKeyColumnConfirmed = Schema::hasColumn('bot_users', 'identity_key');
     }
 
     /**
@@ -165,14 +222,11 @@ class BotUser extends Model
                     ->with('externalUser')
                     ->first();
             } elseif ($update->typeSource === 'private') {
-                $botUser = self::firstOrCreate(
-                    [
+                $botUser = self::findByPlatformChat($update->chatId, 'telegram')
+                    ?? self::firstOrCreate([
                         'chat_id' => $update->chatId,
-                    ],
-                    [
                         'platform' => 'telegram',
-                    ]
-                );
+                    ]);
 
                 if ($botUser->wasRecentlyCreated) {
                     // New user — fill profile from DTO synchronously.
@@ -239,11 +293,12 @@ class BotUser extends Model
     public static function getUserByChatId(string|int $chatId, string $platform): ?BotUser
     {
         try {
-            $botUser = self::firstOrCreate([
-                'chat_id' => $chatId,
-            ], [
-                'platform' => $platform,
-            ]);
+            $platform = strtolower(trim($platform));
+            $botUser = self::findByPlatformChat($chatId, $platform)
+                ?? self::firstOrCreate([
+                    'chat_id' => $chatId,
+                    'platform' => $platform,
+                ]);
 
             self::maybeEnrichProfile($botUser);
 
@@ -357,5 +412,3 @@ class BotUser extends Model
         return $this->is_closed ?? false;
     }
 }
-
-

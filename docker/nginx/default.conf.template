@@ -1,3 +1,15 @@
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+upstream app_backend {
+    zone app_backend 64k;
+    server app:9000 resolve;
+}
+
+upstream reverb_backend {
+    zone reverb_backend 64k;
+    server reverb:8080 resolve;
+}
+
 server {
     listen 80;
     server_name __MAIN_DOMAIN__ www.__MAIN_DOMAIN__;
@@ -12,6 +24,19 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/__MAIN_DOMAIN__/privkey.pem;
 
     client_max_body_size 60M;
+
+    location ~ ^/(app|apps)/ {
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_pass http://reverb_backend;
+    }
 
     root /var/www/public;
     index index.php index.html;
@@ -37,7 +62,7 @@ server {
 
     location ~ \.php$ {
         include fastcgi_params;
-        fastcgi_pass app:9000;
+        fastcgi_pass app_backend;
         fastcgi_index index.php;
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_param SCRIPT_FILENAME /var/www/public$fastcgi_script_name;

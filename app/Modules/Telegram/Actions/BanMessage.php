@@ -3,9 +3,7 @@
 namespace App\Modules\Telegram\Actions;
 
 use App\Models\BotUser;
-use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
-use App\Services\Settings\SettingsService;
+use App\Modules\Telegram\Jobs\SendTelegramTopicMessageJob;
 
 class BanMessage
 {
@@ -21,18 +19,10 @@ class BanMessage
     {
         $botUser = BotUser::find($botUserId);
 
-        SendTelegramMessageJob::dispatch(
-            $botUser->id,
-            $update,
-            TGTextMessageDto::from([
-                'methodQuery' => 'sendMessage',
-                'typeSource' => 'supergroup',
-                'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-                'message_thread_id' => $botUser->topic_id,
-                'text' => __('messages.ban_bot'),
-                'parse_mode' => 'html',
-            ]),
-            'incoming',
-        );
+        if ($botUser === null) {
+            throw new \RuntimeException("Telegram bot user {$botUserId} was not found");
+        }
+
+        SendTelegramTopicMessageJob::dispatch($botUser->id, __('messages.ban_bot'));
     }
 }

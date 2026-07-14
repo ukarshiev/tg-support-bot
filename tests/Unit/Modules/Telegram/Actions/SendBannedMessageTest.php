@@ -38,5 +38,6 @@ class SendBannedMessageTest extends TestCase
         // Assert
         $this->assertEquals($this->botUser->chat_id, $job->queryParams->chat_id);
         $this->assertEquals('sendMessage', $job->queryParams->methodQuery);
+        $this->assertEquals('You have been blocked by the bot administration.', $job->queryParams->text);
     }
 }

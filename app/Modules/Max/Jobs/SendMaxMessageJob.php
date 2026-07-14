@@ -4,11 +4,13 @@ namespace App\Modules\Max\Jobs;
 
 use App\Jobs\SendMessage\AbstractSendMessageJob;
 use App\Models\BotUser;
+use App\Models\Feedback;
 use App\Models\Message;
 use App\Modules\Max\Api\MaxMethods;
 use App\Modules\Max\DTOs\MaxTextMessageDto;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class SendMaxMessageJob extends AbstractSendMessageJob
 {
@@ -31,6 +33,7 @@ class SendMaxMessageJob extends AbstractSendMessageJob
         ?TelegramUpdateDto $updateDto,
         MaxTextMessageDto $queryParams,
         mixed $maxMethods = null,
+        public readonly ?int $feedbackId = null,
     ) {
         $this->botUserId = $botUserId;
         $this->updateDto = $updateDto;
@@ -43,54 +46,40 @@ class SendMaxMessageJob extends AbstractSendMessageJob
      */
     public function handle(): void
     {
-        try {
-            $botUser = BotUser::find($this->botUserId);
+        $botUser = BotUser::findOrFail($this->botUserId);
 
-            $response = $this->maxMethods->sendQuery(
-                $this->queryParams->methodQuery,
-                $this->queryParams->toArray()
-            );
+        $response = $this->maxMethods->sendQuery(
+            $this->queryParams->methodQuery,
+            $this->queryParams->toArray()
+        );
 
-            $retryDelays = [2, 4, 8, 16, 30];
+        if ($response->response_code === 200) {
+            $this->saveMessage($botUser, $response);
+            $this->updateTopic($botUser, $this->typeMessage);
 
-            foreach ($retryDelays as $attempt => $delay) {
-                if ($response->response_code === 200) {
-                    $this->saveMessage($botUser, $response);
-                    $this->updateTopic($botUser, $this->typeMessage);
+            return;
+        }
 
-                    return;
-                }
+        Log::channel('app')->warning('MAX message delivery failed', [
+            'source' => 'max_message_failed',
+            'method' => $this->queryParams->methodQuery,
+            'response_code' => $response->response_code,
+            'attachment_not_ready' => str_contains($response->error_message ?? '', 'attachment.not.ready'),
+        ]);
+        throw new \RuntimeException('MAX query rejected: HTTP ' . ($response->response_code ?? 0));
+    }
 
-                if (str_contains($response->error_message ?? '', 'attachment.not.ready')) {
-                    Log::channel('app')->info('SendMaxMessageJob: attachment not ready, retrying', [
-                        'attempt' => $attempt + 1,
-                        'delay' => $delay,
-                    ]);
-                    sleep($delay);
-                    $response = $this->maxMethods->sendQuery(
-                        $this->queryParams->methodQuery,
-                        $this->queryParams->toArray()
-                    );
-                    continue;
-                }
+    public function backoff(): array
+    {
+        return [2, 4, 8, 16, 30];
+    }
 
-                throw new \Exception($response->error_message ?? 'SendMaxMessageJob: unknown error', 1);
-            }
-
-            if ($response->response_code === 200) {
-                $this->saveMessage($botUser, $response);
-                $this->updateTopic($botUser, $this->typeMessage);
-
-                return;
-            }
-
-            throw new \Exception($response->error_message ?? 'SendMaxMessageJob: attachment not ready after all retries', 1);
-        } catch (\Throwable $e) {
-            Log::channel('app')->log(
-                $e->getCode() === 1 ? 'warning' : 'error',
-                $e->getMessage(),
-                ['file' => $e->getFile(), 'line' => $e->getLine()]
-            );
+    public function failed(Throwable $exception): void
+    {
+        if ($this->feedbackId !== null) {
+            Feedback::whereKey($this->feedbackId)
+                ->where('status', 'awaiting_rating')
+                ->update(['status' => 'delivery_failed']);
         }
     }
 

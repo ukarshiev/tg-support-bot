@@ -9,7 +9,8 @@ RUN apt-get update && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     docker-php-ext-configure gd --with-freetype --with-jpeg && \
-    docker-php-ext-install pdo pdo_pgsql pgsql intl zip gd && \
+    docker-php-ext-install pdo pdo_pgsql pgsql intl zip gd pcntl && \
+    pecl install redis && docker-php-ext-enable redis && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Настройки PHP
@@ -48,9 +49,11 @@ RUN composer install --no-interaction --prefer-dist --optimize-autoloader
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi && \
     npm run build
 
+# Сохраняем собранный public отдельно: при старте app он копируется в Docker-volume app_public для nginx.
+RUN cp -a public /var/www_public_image && chown -R www-data:www-data /var/www_public_image
+
 # Меняем пользователя на www-data
 USER www-data
 
 EXPOSE 9000
 CMD ["php-fpm"]
-

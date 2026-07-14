@@ -59,7 +59,9 @@ class SettingsService
             // Cache entry is stored as "type:value" to preserve the type.
             [$type, $plain] = $this->unpackCacheEntry($cacheEntry);
 
-            return $this->coerceByType($plain, $type);
+            if (!(SettingKeyRegistry::meta($key)['is_secret'] && $plain === '')) {
+                return $this->coerceByType($plain, $type);
+            }
         }
 
         try {
@@ -95,7 +97,8 @@ class SettingsService
     public function set(string $key, mixed $value): void
     {
         $meta = SettingKeyRegistry::meta($key);
-        $raw = $this->encode($value, $meta['type']);
+        $plain = $this->encode($value, $meta['type']);
+        $raw = $plain;
 
         if ($meta['is_secret']) {
             $raw = Crypt::encrypt($raw);
@@ -107,7 +110,7 @@ class SettingsService
         $setting->value = $raw;
         $setting->save();
 
-        Cache::forget($this->cacheKey($key));
+        Cache::forever($this->cacheKey($key), $this->packCacheEntry($meta['type'], $plain));
     }
 
     /**

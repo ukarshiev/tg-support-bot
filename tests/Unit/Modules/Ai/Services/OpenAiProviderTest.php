@@ -2,8 +2,8 @@
 
 namespace Tests\Unit\Modules\Ai\Services;
 
-use App\Models\BotUser;
 use App\Models\AiKnowledgeItem;
+use App\Models\BotUser;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiSystemPromptLoader;
@@ -131,7 +131,6 @@ class OpenAiProviderTest extends TestCase
                 && $messages[4] === ['role' => 'user', 'content' => 'Текущее сообщение'];
         });
     }
-
 
     public function test_payload_uses_selected_language_when_present(): void
     {

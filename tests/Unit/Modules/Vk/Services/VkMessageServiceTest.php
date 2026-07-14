@@ -3,8 +3,12 @@
 namespace Tests\Unit\Modules\Vk\Services;
 
 use App\Models\BotUser;
-use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
+use App\Models\Message;
+use App\Modules\Ai\Jobs\SendAiDraftJob;
+use App\Modules\Ai\Jobs\SendAiReplyJob;
+use App\Modules\Vk\Jobs\MirrorVkIncomingMessageJob;
 use App\Modules\Vk\Services\VkMessageService;
+use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Vk\VkUpdateDtoMock;
@@ -16,132 +20,73 @@ class VkMessageServiceTest extends TestCase
 
     private BotUser $botUser;
 
-    private array $basicPayload;
+    private array $payload;
 
-    private string $groupChatId;
-
-    public function setUp(): void
+    protected function setUp(): void
     {
         parent::setUp();
-
         Queue::fake();
-
-        $this->groupChatId = '-100000000000';
-
-        $chatId = time();
-        $this->botUser = BotUser::getUserByChatId($chatId, 'vk');
-
-        $payload = VkUpdateDtoMock::getDtoParams();
-        $this->basicPayload = $payload;
+        $this->payload = VkUpdateDtoMock::getDtoParams();
+        $this->botUser = BotUser::getUserByChatId(
+            $this->payload['object']['message']['from_id'],
+            'vk',
+        );
     }
 
-    public function test_send_text_message(): void
+    public function test_message_is_saved_before_telegram_mirror_is_queued(): void
     {
-        $dto = VkUpdateDtoMock::getDto($this->basicPayload);
+        $dto = VkUpdateDtoMock::getDto($this->payload);
 
         (new VkMessageService($dto))->handleUpdate();
 
-        Queue::assertPushed(SendVkTelegramMessageJob::class, function ($job) use ($dto) {
-            return
-                $job->botUserId === $this->botUser->id &&
-
-                $job->queryParams->methodQuery == 'sendMessage' &&
-                $job->queryParams->chat_id == $this->groupChatId &&
-                $job->queryParams->message_thread_id === $this->botUser->topic_id &&
-
-                $job->updateDto === $dto;
-        });
+        $message = Message::where('bot_user_id', $this->botUser->id)->sole();
+        $this->assertSame($dto->id, (int) $message->from_id);
+        $this->assertSame($dto->text, $message->text);
+        Queue::assertPushed(MirrorVkIncomingMessageJob::class, fn ($job) => $job->messageId === $message->id);
     }
 
-    public function test_send_photo(): void
+    public function test_repeated_delivery_does_not_duplicate_message_or_attachments(): void
     {
-        $payload = $this->basicPayload;
-        $payload['object']['message']['attachments'] = [
-            [
-                'type' => 'photo',
-                'photo' => [
-                    'id' => 457241856,
-                    'owner_id' => 222232176,
-                    'orig_photo' => [
-                        'url' => 'https://example.com/photo.jpg',
-                    ],
-                ],
+        $this->payload['object']['message']['attachments'] = [[
+            'type' => 'doc',
+            'doc' => [
+                'title' => 'test.pdf',
+                'url' => 'https://example.com/test.pdf',
             ],
-        ];
+        ]];
+        $dto = VkUpdateDtoMock::getDto($this->payload);
 
-        $dto = VkUpdateDtoMock::getDto($payload);
+        (new VkMessageService($dto))->handleUpdate();
         (new VkMessageService($dto))->handleUpdate();
 
-        Queue::assertPushed(SendVkTelegramMessageJob::class, function ($job) use ($dto) {
-            return
-                $job->botUserId === $this->botUser->id &&
-
-                $job->queryParams->methodQuery == 'sendDocument' &&
-                $job->queryParams->chat_id == $this->groupChatId &&
-                $job->queryParams->message_thread_id === $this->botUser->topic_id &&
-
-                $job->updateDto === $dto;
-        });
+        $this->assertDatabaseCount('messages', 1);
+        $this->assertDatabaseCount('message_attachments', 1);
     }
 
-    public function test_send_document(): void
+    public function test_ai_is_blocked_until_language_is_selected(): void
     {
-        $payload = $this->basicPayload;
-        $payload['object']['message']['attachments'] = [
-            [
-                'type' => 'doc',
-                'doc' => [
-                    'id' => 12345,
-                    'owner_id' => 222232176,
-                    'title' => 'test.pdf',
-                    'url' => 'https://example.com/photo.jpg',
-                ],
-            ],
-        ];
+        app(SettingsService::class)->set('ai.enabled', true);
+        $dto = VkUpdateDtoMock::getDto($this->payload);
 
-        $dto = VkUpdateDtoMock::getDto($payload);
         (new VkMessageService($dto))->handleUpdate();
 
-        Queue::assertPushed(SendVkTelegramMessageJob::class, function ($job) use ($dto) {
-            return
-                $job->botUserId === $this->botUser->id &&
-
-                $job->queryParams->methodQuery == 'sendDocument' &&
-                $job->queryParams->chat_id == $this->groupChatId &&
-                $job->queryParams->message_thread_id === $this->botUser->topic_id &&
-
-                $job->updateDto === $dto;
-        });
+        Queue::assertNotPushed(SendAiDraftJob::class);
+        Queue::assertNotPushed(SendAiReplyJob::class);
     }
 
-    public function test_send_location(): void
+    public function test_media_caption_is_forwarded_to_ai_after_language_selection(): void
     {
-        $payload = $this->basicPayload;
-        $payload['object']['message']['geo'] = [
-            'coordinates' => [
-                'latitude' => 55.524442,
-                'longitude' => 37.705064,
-            ],
-            'place' => [
-                'city' => 'деревня Сапроново',
-                'country' => 'Россия',
-                'title' => 'деревня Сапроново, Россия',
-            ],
-            'type' => 'point',
-        ];
+        app(SettingsService::class)->set('ai.enabled', true);
+        app(SettingsService::class)->set('ai.auto_reply', false);
+        $this->botUser->update(['preferred_language_code' => 'en']);
+        $this->payload['object']['message']['text'] = 'Please inspect this file';
+        $this->payload['object']['message']['attachments'] = [[
+            'type' => 'doc',
+            'doc' => ['title' => 'proof.pdf', 'url' => 'https://example.com/proof.pdf'],
+        ]];
 
-        $dto = VkUpdateDtoMock::getDto($payload);
-        (new VkMessageService($dto))->handleUpdate();
+        (new VkMessageService(VkUpdateDtoMock::getDto($this->payload)))->handleUpdate();
 
-        Queue::assertPushed(SendVkTelegramMessageJob::class, function ($job) use ($dto) {
-            return
-                $job->botUserId === $this->botUser->id &&
-
-                $job->queryParams->methodQuery == 'sendMessage' &&
-                $job->queryParams->chat_id == $this->groupChatId &&
-                $job->queryParams->message_thread_id === $this->botUser->topic_id &&
-
-                $job->updateDto === $dto;
-        });
+        Queue::assertPushed(SendAiDraftJob::class, fn ($job) => $job->userMessage === 'Please inspect this file');
     }
 }

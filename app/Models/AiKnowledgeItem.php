@@ -11,13 +11,13 @@ use Illuminate\Database\Eloquent\Model;
  * Knowledge block that can be injected into an AI request when it matches
  * the user's current question.
  *
- * @property int         $id
- * @property string      $slug
- * @property string      $title
- * @property string      $content
- * @property array|null  $keywords
- * @property bool        $is_active
- * @property int         $priority
+ * @property int        $id
+ * @property string     $slug
+ * @property string     $title
+ * @property string     $content
+ * @property array|null $keywords
+ * @property bool       $is_active
+ * @property int        $priority
  */
 class AiKnowledgeItem extends Model
 {

@@ -4,7 +4,7 @@ namespace Tests\Unit\Modules\Telegram\Actions;
 
 use App\Models\BotUser;
 use App\Modules\Telegram\Actions\BanMessage;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramTopicMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\TelegramUpdateDto_GroupMock;
@@ -31,14 +31,9 @@ class BanMessageTest extends TestCase
 
         app(BanMessage::class)->execute($this->botUser->id, $dto);
 
-        /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
-        $this->assertCount(1, $pushed);
-
-        $firstJob = $pushed[0]['job'];
-        $this->assertEquals($this->botUser->id, $firstJob->botUserId);
-        $this->assertEquals('-100000000000', $firstJob->queryParams->chat_id);
-        $this->assertEquals('sendMessage', $firstJob->queryParams->methodQuery);
-        $this->assertEquals(__('messages.ban_bot'), $firstJob->queryParams->text);
+        Queue::assertPushed(SendTelegramTopicMessageJob::class, fn (SendTelegramTopicMessageJob $job): bool =>
+            $job->botUserId === $this->botUser->id
+            && $job->text === __('messages.ban_bot')
+            && $job->queue === 'telegram-mirror');
     }
 }

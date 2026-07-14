@@ -5,200 +5,95 @@ namespace Tests\Unit\Modules\Ai\Jobs;
 use App\Models\AiMessage;
 use App\Models\BotUser;
 use App\Models\Message;
-use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
 use App\Modules\Ai\DTOs\AiResponseDto;
+use App\Modules\Ai\Jobs\DeliverAiMessageJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiBotApi;
-use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Tests\Mocks\Tg\TelegramUpdateDtoMock;
 use Tests\TestCase;
 
 class SendAiReplyJobTest extends TestCase
 {
     use RefreshDatabase;
 
-    private BotUser $botUser;
-
     protected function setUp(): void
     {
         parent::setUp();
-
-        $settings = app(\App\Services\Settings\SettingsService::class);
-        $settings->set('ai.default_provider', 'openai');
-
-        $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
-        $this->botUser->topic_id = 77;
-        $this->botUser->preferred_language_code = 'en';
-        $this->botUser->preferred_language_name = 'English';
-        $this->botUser->save();
-
         Queue::fake();
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => true])]);
+        app(SettingsService::class)->set('ai.default_provider', 'openai');
+        app(SettingsService::class)->set('telegram.token', null);
     }
 
-    public function test_delivers_and_mirrors_to_supergroup_when_ai_bot_not_configured(): void
+    public function test_generation_creates_pending_delivery_and_never_prematurely_accepts(): void
     {
-        // No AI bot token → use main bot mirror so support group still sees AI replies.
-        $settings = app(\App\Services\Settings\SettingsService::class);
-        $settings->set('telegram_ai.token', null);
-        $settings->set('telegram.token', 'main_bot_token');
-        $settings->set('telegram.secret_key', 'secret');
-        $settings->set('telegram.group_id', '-100111222333');
-        Http::fake();
-
-        $replyText = 'Auto reply without AI bot';
-
-        $aiResponse = new AiResponseDto(
-            response: $replyText,
-            confidenceScore: 0.9,
-            shouldEscalate: false,
-            provider: 'openai',
-            modelUsed: 'gpt-4',
-            tokensUsed: 10,
-            responseTime: 0.5,
-        );
-
-        $aiService = $this->createMock(AiAssistantService::class);
-        $aiService->expects($this->once())
-            ->method('processMessage')
-            ->with($this->callback(fn ($request): bool => $request->preferredLanguageName === 'English'))
-            ->willReturn($aiResponse);
-
-        $updateDto = TelegramUpdateDtoMock::getDto();
-        $job = new SendAiReplyJob($this->botUser->id, $updateDto, 'user question');
-
-        $job->handle(new AiBotApi(), $aiService);
-
-        // AiMessage persisted with accepted status, no Telegram message_id.
-        $this->assertDatabaseHas('ai_messages', [
-            'bot_user_id' => $this->botUser->id,
-            'message_id' => null,
-            'status' => AiMessage::STATUS_ACCEPTED,
-        ]);
-
-        // No direct HTTP calls to Telegram AI bot (AI bot not configured).
-        Http::assertNothingSent();
-
-        // Outgoing message row persisted regardless of platform send outcome.
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $this->botUser->id,
+        $botUser = BotUser::create([
+            'chat_id' => 701,
             'platform' => 'telegram',
-            'message_type' => 'outgoing',
-            'text' => $replyText,
+            'preferred_language_code' => 'ru',
         ]);
+        $service = $this->aiService('Ответ пользователю');
 
-        // Simple jobs dispatched for typing and user delivery.
-        Queue::assertPushed(SendTelegramSimpleQueryJob::class, function (SendTelegramSimpleQueryJob $job): bool {
-            return $job->queryParams->methodQuery === 'sendChatAction'
-                && $job->queryParams->action === 'typing';
-        });
-        Queue::assertPushed(SendTelegramSimpleQueryJob::class);
-        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job) use ($replyText): bool {
-            return $job->botUserId === $this->botUser->id
-                && $job->text === $replyText
-                && $job->prefix === "🤖 Ответ ИИ:\n";
-        });
+        (new SendAiReplyJob($botUser->id, null, 'Вопрос'))->handle(new AiBotApi(), $service);
+
+        $aiMessage = AiMessage::firstOrFail();
+        $this->assertSame('delivery_pending', $aiMessage->status);
+        $this->assertSame('Ответ пользователю', $aiMessage->text_translated);
+        $this->assertSame(0, Message::count());
+        Queue::assertPushed(DeliverAiMessageJob::class, fn ($job): bool => $job->aiMessageId === $aiMessage->id);
     }
 
-    public function test_posts_to_supergroup_when_ai_bot_configured(): void
+    public function test_missing_locale_uses_builtin_english_instead_of_russian_source(): void
     {
-        $aiToken = 'ai_reply_token_999';
-        $groupId = -100111222333;
+        $botUser = BotUser::create(['chat_id' => 702, 'platform' => 'vk']);
 
-        $settings = app(\App\Services\Settings\SettingsService::class);
-        $settings->set('telegram_ai.token', $aiToken);
-        $settings->set('telegram.token', 'main_bot_token');
-        $settings->set('telegram.secret_key', 'secret');
-        $settings->set('telegram.group_id', (string) $groupId);
+        (new SendAiReplyJob($botUser->id, null, 'Question'))
+            ->handle(new AiBotApi(), $this->aiService('Русский ответ'));
 
-        $replyText = 'Supergroup auto reply';
-
-        Http::fake([
-            'https://api.telegram.org/bot' . $aiToken . '/sendMessage' => Http::response([
-                'ok' => true,
-                'result' => [
-                    'message_id' => 555,
-                    'chat' => ['id' => $groupId, 'type' => 'supergroup'],
-                    'date' => time(),
-                    'text' => $replyText,
-                ],
-            ], 200),
-            // Fallback for any other calls.
-            '*' => Http::response(['ok' => true, 'result' => ['message_id' => 556]], 200),
-        ]);
-
-        $aiResponse = new AiResponseDto(
-            response: $replyText,
-            confidenceScore: 0.9,
-            shouldEscalate: false,
-            provider: 'openai',
-            modelUsed: 'gpt-4',
-            tokensUsed: 10,
-            responseTime: 0.5,
+        $aiMessage = AiMessage::firstOrFail();
+        $this->assertSame('builtin_safe_english', $aiMessage->translation_provider);
+        $this->assertSame('ready', $aiMessage->translation_status);
+        $this->assertSame(
+            'A support agent will reply shortly. We could not prepare a safe localized answer.',
+            $aiMessage->text_translated,
         );
+        $this->assertNotSame($aiMessage->text_source, $aiMessage->text_translated);
+    }
 
-        $aiService = $this->createMock(AiAssistantService::class);
-        $aiService->method('processMessage')->willReturn($aiResponse);
-
-        $updateDto = TelegramUpdateDtoMock::getDto();
-        $job = new SendAiReplyJob($this->botUser->id, $updateDto, 'user question');
-
-        $job->handle(new AiBotApi(), $aiService);
-
-        $this->assertDatabaseHas('ai_messages', [
-            'bot_user_id' => $this->botUser->id,
-            'message_id' => 555,
-            'status' => AiMessage::STATUS_ACCEPTED,
-        ]);
-
-        // Outgoing message persisted for admin thread visibility.
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $this->botUser->id,
+    public function test_transient_generation_exception_is_rethrown_for_queue_retry(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => 703,
             'platform' => 'telegram',
-            'message_type' => 'outgoing',
-            'text' => $replyText,
+            'preferred_language_code' => 'ru',
         ]);
+        $service = $this->createMock(AiAssistantService::class);
+        $service->method('processMessage')->willThrowException(new \RuntimeException('provider timeout'));
 
-        // Exactly one outgoing row (no duplicates from save+simple).
-        $this->assertEquals(
-            1,
-            Message::where('bot_user_id', $this->botUser->id)->where('message_type', 'outgoing')->count()
-        );
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('provider timeout');
 
-        // Simple job dispatched for user delivery.
-        Queue::assertPushed(SendTelegramSimpleQueryJob::class);
+        (new SendAiReplyJob($botUser->id, null, 'Вопрос'))->handle(new AiBotApi(), $service);
     }
 
-    public function test_auto_reply_persists_message_even_when_no_supergroup(): void
+    private function aiService(string $response): AiAssistantService
     {
-        app(\App\Services\Settings\SettingsService::class)->set('telegram_ai.token', null);
-
-        $replyText = 'Auto reply text';
-
-        $aiResponse = new AiResponseDto(
-            response: $replyText,
+        $dto = new AiResponseDto(
+            response: $response,
             confidenceScore: 0.9,
             shouldEscalate: false,
             provider: 'openai',
-            modelUsed: 'gpt-4',
+            modelUsed: 'test',
             tokensUsed: 10,
-            responseTime: 0.5,
+            responseTime: 0.1,
         );
+        $service = $this->createMock(AiAssistantService::class);
+        $service->method('processMessage')->willReturn($dto);
 
-        $aiService = $this->createMock(AiAssistantService::class);
-        $aiService->method('processMessage')->willReturn($aiResponse);
-
-        $job = new SendAiReplyJob($this->botUser->id, null, 'user question');
-        $job->handle(new AiBotApi(), $aiService);
-
-        // Outgoing row must exist before any send job runs (Queue is faked → job
-        // never executes, simulating a platform failure scenario).
-        $this->assertDatabaseHas('messages', [
-            'bot_user_id' => $this->botUser->id,
-            'message_type' => 'outgoing',
-        ]);
+        return $service;
     }
 }

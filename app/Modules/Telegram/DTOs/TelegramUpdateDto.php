@@ -20,7 +20,7 @@ use Spatie\LaravelData\Data;
  * @property array|null  $replyToMessage
  * @property int|null    $messageThreadId
  * @property int|null    $messageId
- * @property int|null    $callbackId
+ * @property string|null $callbackId
  * @property string|null $text
  * @property array|null  $entities
  * @property string|null $caption
@@ -48,7 +48,7 @@ class TelegramUpdateDto extends Data
         public ?array  $replyToMessage = null,
         public ?int    $messageThreadId = null,
         public ?int    $messageId = null,
-        public ?int    $callbackId = null,
+        public ?string $callbackId = null,
         public ?string $text = null,
         public ?array  $entities = null,
         public ?string $caption = null,
@@ -99,7 +99,9 @@ class TelegramUpdateDto extends Data
                 replyToMessage: self::extractReplayToMessage($data),
                 messageThreadId: self::extractMessageThreadId($data, $type),
                 messageId: self::extractMessageId($data, $type),
-                callbackId: $data['callback_query']['id'] ?? null,
+                callbackId: isset($data['callback_query']['id'])
+                    ? (string) $data['callback_query']['id']
+                    : null,
                 text: self::extractText($data, $type),
                 entities: $data[$type]['entities'] ?? $data[$type]['caption_entities'] ?? null,
                 caption: $data[$type]['caption'] ?? null,
@@ -251,5 +253,3 @@ class TelegramUpdateDto extends Data
         return $data[$type]['chat']['type'] ?? $data[$type]['message']['chat']['type'] ?? null;
     }
 }
-
-

@@ -4,11 +4,8 @@ namespace App\Modules\Ai\Actions;
 
 use App\Models\AiMessage;
 use App\Models\BotUser;
-use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
-use App\Modules\Admin\Services\ChannelStatusService;
+use App\Modules\Ai\Jobs\DeliverAiMessageJob;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
-use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
@@ -41,35 +38,20 @@ class AiAcceptMessage extends AiAction
                 throw new Exception('Message not found in database!', 1);
             }
 
-            // Delete the supergroup draft message to clean up the thread.
-            if ($messageData->message_id !== null) {
-                SendTelegramMessageJob::dispatch(
-                    $botUser->id,
-                    $update,
-                    TGTextMessageDto::from([
-                        'token' => (string) app(SettingsService::class)->get('telegram_ai.token'),
-                        'methodQuery' => 'deleteMessage',
-                        'typeSource' => 'supergroup',
-                        'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
-                        'message_id' => $messageData->message_id,
-                        'message_thread_id' => $update->messageThreadId,
-                    ]),
-                    'incoming',
-                );
+            if ($messageData->status === AiMessage::STATUS_ACCEPTED || $messageData->status === 'delivery_pending') {
+                return;
             }
 
-            $messageData->update(['status' => AiMessage::STATUS_ACCEPTED]);
+            $messageData->update(['status' => 'delivery_pending']);
 
-            Log::channel('app')->info('AiAcceptMessage: delivering AI answer to user', [
-                'source' => 'ai_accept_deliver',
+            Log::channel('app')->info('AiAcceptMessage: AI answer queued for delivery', [
+                'source' => 'ai_accept_delivery_queued',
                 'bot_user_id' => $botUser->id,
                 'platform' => $botUser->platform,
                 'ai_message_id' => $messageData->id,
             ]);
 
-            app(DeliverAiAnswerToUser::class)->execute($botUser, $messageData->text_ai, $update);
-
-            $this->mirrorAnswerToGroup($botUser, (string) $messageData->text_ai);
+            DeliverAiMessageJob::dispatch($messageData->id, $update, true, true);
         } catch (\Throwable $e) {
             Log::channel('app')->error($e->getMessage(), ['source' => 'ai_error']);
         }
@@ -99,7 +81,7 @@ class AiAcceptMessage extends AiAction
             return;
         }
 
-        $textAi = (string) $aiMessage->text_ai;
+        $textAi = (string) ($aiMessage->text_translated ?: $aiMessage->text_ai);
         if ($textAi === '') {
             Log::channel('app')->warning('AiAcceptMessage::executeForDraft: empty text_ai', [
                 'source' => 'ai_error',
@@ -109,74 +91,19 @@ class AiAcceptMessage extends AiAction
             return;
         }
 
-        // Delete supergroup draft when it was posted there.
-        if ($aiMessage->message_id !== null) {
-            $token = (string) app(SettingsService::class)->get('telegram_ai.token');
-            if ($token !== '') {
-                $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
-                $emptyUpdate = new TelegramUpdateDto(
-                    updateId: 0,
-                    typeQuery: 'message',
-                    aiTechMessage: false,
-                    typeSource: 'private',
-                );
-                SendTelegramMessageJob::dispatch(
-                    $botUser->id,
-                    $emptyUpdate,
-                    TGTextMessageDto::from([
-                        'token' => $token,
-                        'methodQuery' => 'deleteMessage',
-                        'typeSource' => 'supergroup',
-                        'chat_id' => $groupId,
-                        'message_id' => $aiMessage->message_id,
-                        'message_thread_id' => $botUser->topic_id,
-                    ]),
-                    'incoming',
-                );
-            }
+        if ($aiMessage->status === AiMessage::STATUS_ACCEPTED || $aiMessage->status === 'delivery_pending') {
+            return;
         }
 
-        $aiMessage->update(['status' => AiMessage::STATUS_ACCEPTED]);
+        $aiMessage->update(['status' => 'delivery_pending']);
 
-        Log::channel('app')->info('AiAcceptMessage::executeForDraft: accepted and delivering', [
-            'source' => 'ai_accept_draft_deliver',
+        Log::channel('app')->info('AiAcceptMessage::executeForDraft: queued for delivery', [
+            'source' => 'ai_accept_draft_delivery_queued',
             'bot_user_id' => $botUser->id,
             'platform' => $botUser->platform,
             'ai_message_id' => $aiMessage->id,
         ]);
 
-        app(DeliverAiAnswerToUser::class)->execute($botUser, $textAi);
-
-        $this->mirrorAnswerToGroup($botUser, $textAi);
-    }
-
-    /**
-     * After an AI answer is accepted, post it into the user's Telegram supergroup
-     * topic (so the group shows the final answer once its draft is removed).
-     *
-     * Runs only when the Telegram group is configured (token + group_id). Posts
-     * plain text (HTML markup stripped) from the main bot with the "🤖 Ответ ИИ:\n"
-     * prefix. Never creates a messages row and never re-delivers to the user.
-     *
-     * @param BotUser $botUser
-     * @param string  $textAi  AI answer (may contain Telegram HTML markup)
-     *
-     * @return void
-     */
-    private function mirrorAnswerToGroup(BotUser $botUser, string $textAi): void
-    {
-        $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
-
-        if ($groupId === '' || ! app(ChannelStatusService::class)->telegram()['connected']) {
-            return;
-        }
-
-        $plain = trim(html_entity_decode(strip_tags($textAi), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-
-        if ($plain === '') {
-            return;
-        }
-
-        MirrorAdminReplyToGroupJob::dispatch($botUser->id, $plain, "🤖 Ответ ИИ:\n");
+        DeliverAiMessageJob::dispatch($aiMessage->id, null, true, true);
     }
 }

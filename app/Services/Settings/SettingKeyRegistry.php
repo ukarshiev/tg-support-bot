@@ -54,6 +54,21 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => false,
         ],
+        'telegram.health_check_enabled' => [
+            'type' => 'bool',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'telegram.health_check_chat_id' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'telegram.health_check_languages' => [
+            'type' => 'json',
+            'config' => null,
+            'is_secret' => false,
+        ],
 
         // ── Telegram AI bot ──────────────────────────────────────────────────
         'telegram_ai.token' => [
@@ -223,6 +238,23 @@ class SettingKeyRegistry
             'is_secret' => false,
         ],
 
+        // ── AI support moderation ───────────────────────────────────────────
+        'ai.support_moderator_provider' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.support_moderator_model' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'ai.support_archive_path' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+
         // ── GigaChat extended fields ──────────────────────────────────────────
         'ai.gigachat_base_url' => [
             'type' => 'string',
@@ -252,6 +284,43 @@ class SettingKeyRegistry
         // OAuth scope: GIGACHAT_API_PERS (individuals) | GIGACHAT_API_B2B |
         // GIGACHAT_API_CORP (legal entities). Defaults to PERS in code when unset.
         'ai.gigachat_scope' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+
+        // ── Support languages / translation ─────────────────────────────────
+        'support.languages' => [
+            'type' => 'json',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'translation.provider_order' => [
+            'type' => 'json',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'translation.allow_external' => [
+            'type' => 'bool',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'translation.yandex_api_key' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => true,
+        ],
+        'translation.yandex_folder_id' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'translation.google_api_key' => [
+            'type' => 'string',
+            'config' => null,
+            'is_secret' => true,
+        ],
+        'translation.offline_endpoint' => [
             'type' => 'string',
             'config' => null,
             'is_secret' => false,

@@ -56,4 +56,6 @@ yarn-error.log
 /.playwright-mcp/
 /graphify-out/
 /output/
+/logs/
+/test-results/
 /.local-support-credentials.txt

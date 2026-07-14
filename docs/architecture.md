@@ -1,4 +1,4 @@
-# Последняя редакция: 01.07.2026 08:29 UTC+3
+# Последняя редакция: 14.07.2026 00:10 UTC+3
 
 # Архитектура проекта
 
@@ -20,6 +20,24 @@ flowchart LR
     queue --> providers[Telegram / VK / MAX / AI]
 ```
 
+## Надёжный путь сообщения
+
+```mermaid
+flowchart LR
+    incoming["Webhook или polling"] --> claim["Идемпотентный ключ события"]
+    claim --> save["Сохранение сообщения"]
+    save --> topic["Отдельная доставка в support-topic"]
+    save --> ai["AI или оператор"]
+    ai --> client["Подтверждение API канала"]
+    client --> mirror["Зеркало ответа в тему"]
+```
+
+- Событие идентифицируется платформой, диалогом и ID источника.
+- Telegram, VK и Max сначала сохраняют входящее сообщение, затем запускают зависимые действия.
+- Ответ считается доставленным только после успешного ответа API канала.
+- Зеркало никогда не отправляется в `General`: без `topic_id` сначала создаётся или восстанавливается тема.
+- Технический выбор языка не зеркалируется и не показывается в истории оператора.
+
 ## Основные зоны
 
 | Зона | Где лежит | За что отвечает |
@@ -29,6 +47,7 @@ flowchart LR
 | VK | `app/Modules/Vk` | webhook и отправка сообщений VK |
 | MAX | `app/Modules/Max` | интеграция с MAX |
 | AI | `app/Modules/Ai` | провайдеры AI и черновики ответов |
+| Translation | `app/Modules/Translation` | машинный перевод, fallback провайдеров, кэш и usage-логи |
 | External API | `app/Modules/External` | внешние источники и виджет |
 | Files/API docs | `app/Modules/Api` | файлы, главная страница, Swagger |
 | Настройки | `app/Services/Settings`, `App\Livewire\Settings` | хранение и редактирование параметров |
@@ -82,9 +101,35 @@ flowchart LR
 
 Где смотреть:
 
-- `config/support_languages.php` — список языков, подписи кнопок и приветствия.
+- `/admin/settings/language` — включение языков, порядок показа и настройки провайдеров перевода.
+- `support.languages` в таблице `settings` — основной список языков.
+- `config/support_languages.php` — fallback-список языков, если настройки ещё не заполнены.
 - `app/Modules/Telegram/Services/SupportLanguageService.php` — сборка клавиатуры и чтение callback `select_language:*`.
 - `bot_users.preferred_language_*` — выбранный язык клиента.
+- `auto_reply_translations` — переводы приветствия и других служебных автоответов.
+
+## Как работает машинный перевод
+
+Машинный перевод не смешан с Laravel i18n. Для него есть отдельный модуль `App\Modules\Translation`.
+
+```mermaid
+flowchart LR
+    request[Запрос перевода] --> protect[Защитить ссылки и плейсхолдеры]
+    protect --> cache{Есть кэш?}
+    cache -->|да| cached[Вернуть перевод]
+    cache -->|нет| providers[Провайдеры по приоритету]
+    providers --> logs[usage logs]
+    providers --> save[Сохранить кэш]
+    save --> result[Вернуть перевод]
+```
+
+Где используется:
+
+- автоответы и приветствия;
+- предпросмотр и отправка ответа оператора в веб-чате;
+- AI-черновики в вебе и Telegram-помощнике.
+
+Подробно: `docs/languages-and-translation.md`.
 
 ## Как AI выбирает язык ответа
 
@@ -107,7 +152,8 @@ flowchart LR
 
 - `app/Modules/Ai/Services/BaseAiProvider.php` — общий сборщик сообщений и языковое правило.
 - `app/Modules/Ai/Services/ShouldAiReply.php` — запрет автоответа Telegram до выбора языка.
-- `app/Modules/Ai/Jobs/SendAiReplyJob.php` — отправка `sendChatAction=typing` перед AI-ответом.
+- `app/Modules/Ai/Jobs/SendAiReplyJob.php` — включает статус `typing` перед запросом к AI и ещё раз перед отправкой ответа клиенту.
+- `app/Modules/Telegram/Actions/SendTypingAction.php` — отправляет `sendChatAction=typing` сразу в Telegram API, без отдельной queue job. Так пользователь видит «печатает», пока AI готовит ответ.
 - `/admin/settings/ai` → «Системный промпт» — бизнес-правила ответа, хранятся в БД.
 
 ## Как AI получает базу знаний
@@ -133,9 +179,12 @@ flowchart LR
 flowchart LR
     client[Клиент] --> incoming[Сообщение в бот]
     incoming --> ai[SendAiReplyJob]
-    ai --> user[Ответ клиенту]
-    ai --> web[Запись в веб-чат]
-    ai --> group[Копия в тему Telegram-группы]
+    ai --> typing[Telegram: бот печатает]
+    typing --> provider[AI-провайдер готовит текст]
+    provider --> typingAgain[Telegram: бот снова печатает]
+    typingAgain --> user[Ответ клиенту]
+    provider --> web[Запись в веб-чат]
+    provider --> group[Копия в тему Telegram-группы]
 ```
 
 
@@ -170,9 +219,10 @@ flowchart LR
 
 ## Что сделать, чтобы применить изменения:
 
-1) `docker compose exec -T app php artisan migrate` — Почему: добавить поля выбранного языка в таблицу клиентов.
-2) `docker compose restart app queue telegram_poller` — Почему: PHP-код подхватывается из volume, но процессы приложения, очереди и poller нужно перезапустить.
-3) `docker compose logs -f app queue telegram_poller` — Почему: проверить ошибки приложения, очереди и Telegram-поллера.
+1) `docker compose restart app queue telegram_poller` — Почему: PHP-код подхватывается из volume, но процессы приложения, очереди и poller нужно перезапустить.
+2) `docker compose logs -f app queue telegram_poller` — Почему: проверить ошибки приложения, очереди и Telegram-поллера.
 
 
+## Realtime Telegram pipeline
 
+Актуальная схема Redis/Horizon/Reverb: [Realtime Telegram pipeline](realtime-telegram-pipeline.md).

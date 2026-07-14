@@ -3,6 +3,8 @@
 namespace App\Modules\Telegram\Actions;
 
 use App\Models\BotUser;
+use App\Modules\Admin\Actions\BanBotUser;
+use App\Modules\Admin\Actions\UnbanBotUser;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 
 class BannedContactMessage
@@ -21,10 +23,19 @@ class BannedContactMessage
      */
     public function execute(BotUser $botUser, bool $banStatus, ?int $messageId = null): void
     {
-        $botUser->update([
-            'is_banned' => $banStatus,
-        ]);
-        $botUser->save();
+        if ($banStatus) {
+            app(BanBotUser::class)->execute($botUser);
+        } else {
+            app(UnbanBotUser::class)->execute($botUser);
+        }
+
+        $botUser->refresh();
+
+        if (empty($botUser->topic_id)) {
+            $this->sendContactMessage->execute($botUser);
+
+            return;
+        }
 
         $queryParams = $this->sendContactMessage->getQueryParams($botUser);
 

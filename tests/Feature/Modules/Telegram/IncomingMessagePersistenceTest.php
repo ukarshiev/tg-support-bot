@@ -3,15 +3,24 @@
 namespace Tests\Feature\Modules\Telegram;
 
 use App\Livewire\Chat\ConversationPage;
+use App\Models\AutoReply;
+use App\Models\AutoReplyTranslation;
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
+use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Max\DTOs\MaxUpdateDto;
 use App\Modules\Max\Services\MaxMessageService;
+use App\Modules\Telegram\Actions\SelectLanguage;
+use App\Modules\Telegram\Controllers\TelegramBotController;
+use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Modules\Vk\Services\VkMessageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Tests\Mocks\Max\MaxUpdateDtoMock;
@@ -47,9 +56,8 @@ class IncomingMessagePersistenceTest extends TestCase
      */
     private function clearGroupId(): void
     {
-        app(\App\Services\Settings\SettingsService::class)->forget('telegram.group_id');
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.group_id', '');
     }
-
 
     private function selectTelegramLanguage(BotUser $botUser, string $code = 'ru', string $name = 'Русский'): BotUser
     {
@@ -107,7 +115,6 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
     }
 
-
     public function test_telegram_incoming_without_selected_language_shows_selector_and_does_not_persist(): void
     {
         Queue::fake();
@@ -122,10 +129,10 @@ class IncomingMessagePersistenceTest extends TestCase
 
         $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
 
-        $this->assertSame(0, Message::where('bot_user_id', $botUser->id)->count());
+        $this->assertSame(1, Message::where('bot_user_id', $botUser->id)->count());
         Queue::assertPushed(\App\Modules\Telegram\Jobs\SendTelegramMessageJob::class, function ($job): bool {
             return $job->typeMessage === 'outgoing'
-                && $job->queryParams->text === 'Выберите язык / Choose your language:';
+                && $job->queryParams->text === 'Choose language';
         });
     }
 
@@ -169,6 +176,38 @@ class IncomingMessagePersistenceTest extends TestCase
         // No group-forward or topic-creation jobs dispatched.
         Queue::assertNotPushed(SendTelegramMessageJob::class);
         Queue::assertNotPushed(TopicCreateJob::class);
+    }
+
+    public function test_telegram_repeated_private_update_is_processed_once_with_group_off(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+            'ai.enabled' => true,
+            'ai.auto_reply' => true,
+        ]);
+        $this->clearGroupId();
+
+        $botUser = $this->selectTelegramLanguage(BotUser::create(['chat_id' => 123457, 'platform' => 'telegram']));
+        $payload = $this->telegramPayload($botUser, [
+            'message_id' => 777,
+            'text' => 'Are you here?',
+        ]);
+
+        $this->postTgWebhook($payload)->assertOk();
+        $this->postTgWebhook($payload)->assertOk();
+
+        $this->assertSame(
+            1,
+            Message::where('bot_user_id', $botUser->id)
+                ->where('message_type', 'incoming')
+                ->where('from_id', 777)
+                ->count()
+        );
+
+        Queue::assertPushed(SendAiReplyJob::class, 1);
     }
 
     /**
@@ -257,8 +296,8 @@ class IncomingMessagePersistenceTest extends TestCase
 
     /**
      * When the group IS configured, the existing group-forward path is taken:
-     * SendTelegramMessageJob (or TopicCreateJob chain) is dispatched and exactly
-     * one incoming row ends up in `messages` via the job — not via the direct-persist path.
+     * SendTelegramMessageJob is dispatched and exactly one incoming row ends up
+     * in `messages` via the job — not via the direct-persist path.
      *
      * We verify: only the job path runs (Queue::assertPushed) and only one row exists.
      * We do NOT call the real job here to avoid HTTP calls.
@@ -273,17 +312,14 @@ class IncomingMessagePersistenceTest extends TestCase
             'telegram.group_id' => '-100999888',
         ]);
 
-        // BotUser without a topic_id → TopicCreateJob will be dispatched first.
+        // BotUser without a topic_id → SendTelegramMessageJob will create the topic
+        // through a single chained TopicCreateJob when the queue worker handles it.
         $botUser = $this->selectTelegramLanguage(BotUser::create(['chat_id' => 456789, 'platform' => 'telegram']));
 
         $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
 
-        // The group-forward job (or its topic-creation precursor) must be dispatched.
-        $pushed = array_merge(
-            Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [],
-            Queue::pushedJobs()[TopicCreateJob::class] ?? [],
-        );
-        $this->assertNotEmpty($pushed, 'Expected group-forward job to be dispatched when group is ON');
+        Queue::assertPushed(SendTelegramMessageJob::class, 1);
+        Queue::assertNotPushed(TopicCreateJob::class);
 
         // The direct-persist path must NOT have run — no DB row yet (jobs are fake).
         $this->assertSame(
@@ -326,6 +362,93 @@ class IncomingMessagePersistenceTest extends TestCase
         );
 
         Queue::assertPushed(SendTelegramMessageJob::class);
+    }
+
+    public function test_telegram_repeated_private_update_is_forwarded_once_with_group_on(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+            'telegram.group_id' => '-100999888',
+            'ai.enabled' => true,
+            'ai.auto_reply' => true,
+        ]);
+
+        $botUser = $this->selectTelegramLanguage(BotUser::create([
+            'chat_id' => 567891,
+            'platform' => 'telegram',
+            'topic_id' => 43,
+        ]));
+
+        $payload = $this->telegramPayload($botUser, [
+            'message_id' => 778,
+            'text' => 'Are you still here?',
+        ]);
+
+        $this->postTgWebhook($payload)->assertOk();
+        $this->postTgWebhook($payload)->assertOk();
+
+        Queue::assertPushed(SendTelegramMessageJob::class, 1);
+        Queue::assertPushed(SendAiReplyJob::class, 1);
+
+        $this->assertDatabaseHas('delivery_operations', [
+            'bot_user_id' => $botUser->id,
+            'operation' => 'telegram_ingress',
+            'status' => DeliveryOperation::STATUS_DELIVERED,
+            'attempts' => 1,
+        ]);
+
+        $this->assertSame(
+            0,
+            Message::where('bot_user_id', $botUser->id)->where('message_type', 'incoming')->count(),
+            'No direct-persist row expected on group-ON path — job is responsible'
+        );
+    }
+
+    public function test_telegram_concurrent_claim_does_not_dispatch_duplicate_pipeline(): void
+    {
+        Queue::fake();
+        Cache::flush();
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+
+        $botUser = $this->selectTelegramLanguage(BotUser::create([
+            'chat_id' => 567892,
+            'platform' => 'telegram',
+        ]));
+        $messageId = 779;
+        $operationKey = hash('sha256', "telegram-ingress:{$botUser->id}:{$messageId}");
+        DeliveryOperation::create([
+            'operation_key' => $operationKey,
+            'bot_user_id' => $botUser->id,
+            'trace_id' => 'concurrent-test',
+            'destination' => 'internal',
+            'operation' => 'telegram_ingress',
+            'status' => DeliveryOperation::STATUS_PROCESSING,
+            'attempts' => 1,
+        ]);
+        Cache::put("telegram:incoming:telegram:{$botUser->chat_id}:{$messageId}", true, now()->addMinute());
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'message_id' => $messageId,
+            'text' => 'Concurrent delivery',
+        ]))->assertOk();
+
+        Queue::assertNotPushed(SendTelegramMessageJob::class);
+        Queue::assertNotPushed(SendAiReplyJob::class);
+        $this->assertDatabaseMissing('messages', [
+            'bot_user_id' => $botUser->id,
+            'from_id' => $messageId,
+        ]);
+        $this->assertSame(
+            DeliveryOperation::STATUS_PROCESSING,
+            DeliveryOperation::where('operation_key', $operationKey)->value('status'),
+        );
     }
 
     // ── VK — group OFF ────────────────────────────────────────────────────────
@@ -410,14 +533,14 @@ class IncomingMessagePersistenceTest extends TestCase
 
         (new VkMessageService($dto))->handleUpdate();
 
-        // With Queue::fake() jobs don't execute → no DB row yet.
+        // Save-first: Telegram outage must not hide or lose the client message.
         $this->assertSame(
-            0,
+            1,
             Message::where('bot_user_id', $botUser->id)->where('message_type', 'incoming')->count(),
-            'No direct-persist row expected on group-ON path'
+            'Incoming VK message must be stored before mirror delivery'
         );
 
-        Queue::assertPushed(\App\Modules\Telegram\Jobs\SendVkTelegramMessageJob::class);
+        Queue::assertPushed(\App\Modules\Vk\Jobs\MirrorVkIncomingMessageJob::class);
     }
 
     // ── Max — group OFF ───────────────────────────────────────────────────────
@@ -500,14 +623,14 @@ class IncomingMessagePersistenceTest extends TestCase
 
         (new MaxMessageService($dto))->handleUpdate();
 
-        // With Queue::fake() jobs don't execute → no DB row yet.
+        // Save-first: Telegram outage must not hide or lose the client message.
         $this->assertSame(
-            0,
+            1,
             Message::where('bot_user_id', $botUser->id)->where('message_type', 'incoming')->count(),
-            'No direct-persist row expected on group-ON path'
+            'Incoming MAX message must be stored before mirror delivery'
         );
 
-        Queue::assertPushed(\App\Modules\Telegram\Jobs\SendMaxTelegramMessageJob::class);
+        Queue::assertPushed(\App\Modules\Max\Jobs\MirrorMaxIncomingMessageJob::class);
     }
 
     // ── Admin panel visibility ────────────────────────────────────────────────
@@ -540,5 +663,352 @@ class IncomingMessagePersistenceTest extends TestCase
         $messages = $component->get('chatMessages');
         $this->assertCount(1, $messages);
         $this->assertSame('Admin can see me', $messages->first()->text);
+    }
+
+    public function test_telegram_start_message_is_persisted_for_debug_visibility(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+
+        $botUser = BotUser::create(['chat_id' => 789012, 'platform' => 'telegram']);
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'message_id' => 779,
+            'text' => '/start',
+        ]))->assertOk();
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 779,
+            'text' => '/start',
+        ]);
+    }
+
+    public function test_telegram_start_with_group_on_queues_start_before_language_selector(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+            'telegram.group_id' => '-100999888',
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 789013, 'platform' => 'telegram']);
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'message_id' => 780,
+            'text' => '/start',
+        ]))->assertOk();
+
+        /** @phpstan-ignore-next-line */
+        $jobs = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $ordered = collect($jobs)
+            ->map(fn (array $payload): array => [
+                'type' => $payload['job']->typeMessage,
+                'text' => $payload['job']->typeMessage === 'incoming'
+                    ? $payload['job']->updateDto->text
+                    : $payload['job']->queryParams->text,
+            ])
+            ->values();
+
+        $this->assertGreaterThanOrEqual(2, $ordered->count());
+        $this->assertSame(['type' => 'incoming', 'text' => '/start'], $ordered->get(0));
+        $this->assertSame('outgoing', $ordered->get(1)['type']);
+        $this->assertSame('Choose language', $ordered->get(1)['text']);
+    }
+
+    public function test_telegram_repeated_start_with_existing_selector_queues_fresh_selector(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+            'telegram.group_id' => '-100999888',
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 789014, 'platform' => 'telegram']);
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'from_id' => 780,
+            'to_id' => 1000,
+            'text' => "Выберите язык / Choose your language:\nСтраница 1/2",
+        ]);
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'message_id' => 781,
+            'text' => '/start',
+        ]))->assertOk();
+
+        /** @phpstan-ignore-next-line */
+        $jobs = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $selectorJobs = collect($jobs)->filter(fn (array $payload): bool => $payload['job']->typeMessage === 'outgoing'
+            && $payload['job']->queryParams->text === 'Choose language');
+
+        $this->assertCount(1, $selectorJobs);
+    }
+
+    public function test_telegram_full_start_language_text_flow_keeps_one_open_dialog_and_full_welcome_visible(): void
+    {
+        Queue::fake();
+        Cache::flush();
+        Http::fake([
+            'https://api.telegram.org/bot*/deleteMessage*' => Http::response(['ok' => true, 'result' => true], 200),
+        ]);
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+
+        $welcome = AutoReply::query()
+            ->where('type', AutoReply::TYPE_WELCOME)
+            ->where('trigger', '__system_welcome__')
+            ->first();
+
+        if ($welcome === null) {
+            $welcome = AutoReply::create([
+                'type' => AutoReply::TYPE_WELCOME,
+                'trigger' => '__system_welcome__',
+                'response' => 'Полное русское приветствие',
+                'enabled' => true,
+            ]);
+        } else {
+            $welcome->update([
+                'response' => 'Полное русское приветствие',
+                'enabled' => true,
+            ]);
+        }
+
+        AutoReply::create([
+            'type' => AutoReply::TYPE_WELCOME,
+            'trigger' => 'start',
+            'response' => 'Добрый день! Чем я могу помочь?',
+            'enabled' => true,
+        ]);
+
+        AutoReplyTranslation::updateOrCreate(
+            [
+                'auto_reply_id' => $welcome->id,
+                'locale' => 'en',
+            ],
+            [
+                'text' => 'FULL WELCOME: contact rules, links and support instructions.',
+                'status' => AutoReplyTranslation::STATUS_READY,
+                'source' => AutoReplyTranslation::SOURCE_AUTO,
+                'source_hash' => AutoReply::sourceHash($welcome->response),
+            ],
+        );
+
+        $chatId = 990001;
+
+        $this->postTgWebhook($this->telegramPayload(
+            BotUser::create(['chat_id' => $chatId, 'platform' => 'telegram']),
+            [
+                'message_id' => 1001,
+                'text' => '/start',
+                'from' => [
+                    'id' => $chatId,
+                    'is_bot' => false,
+                    'first_name' => 'Flow',
+                    'username' => 'flow_user',
+                    'language_code' => 'en',
+                ],
+                'chat' => [
+                    'id' => $chatId,
+                    'type' => 'private',
+                ],
+            ]
+        ))->assertOk();
+
+        $botUser = BotUser::where('chat_id', $chatId)->where('platform', 'telegram')->firstOrFail();
+
+        $callbackPayload = [
+            'update_id' => 100002,
+            'callback_query' => [
+                'id' => 'language-callback-1',
+                'from' => [
+                    'id' => $chatId,
+                    'is_bot' => false,
+                    'first_name' => 'Flow',
+                    'username' => 'flow_user',
+                    'language_code' => 'en',
+                ],
+                'message' => [
+                    'message_id' => 1002,
+                    'from' => [
+                        'id' => 999,
+                        'is_bot' => true,
+                        'first_name' => 'Support Bot',
+                    ],
+                    'chat' => [
+                        'id' => $chatId,
+                        'type' => 'private',
+                    ],
+                    'date' => time(),
+                    'text' => "Выберите язык / Choose your language:\nСтраница 1/2",
+                ],
+                'data' => 'select_language:en',
+            ],
+        ];
+
+        app(SelectLanguage::class)->execute(
+            $botUser,
+            TelegramUpdateDto::fromRequest(\Illuminate\Http\Request::create('/api/telegram/bot', 'POST', $callbackPayload)),
+        );
+
+        $this->seedSetting('telegram.token', '');
+
+        $clientTextMessageId = random_int(200000, 900000);
+
+        $clientTextPayload = $this->telegramPayload($botUser, [
+            'message_id' => $clientTextMessageId,
+            'text' => 'Hello, can you see my message?',
+            'from' => [
+                'id' => $chatId,
+                'is_bot' => false,
+                'first_name' => 'Flow',
+                'username' => 'flow_user',
+                'language_code' => 'en',
+            ],
+            'chat' => [
+                'id' => $chatId,
+                'type' => 'private',
+            ],
+        ]);
+
+        $controller = new TelegramBotController(
+            \Illuminate\Http\Request::create('/api/telegram/bot', 'POST', $clientTextPayload),
+        );
+        $controller->bot_query();
+
+        $botUser->refresh();
+
+        $this->assertSame('en', $botUser->preferred_language_code);
+        $this->assertFalse($botUser->is_closed, 'Start/language/text flow must not close the dialog by itself.');
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'incoming',
+            'from_id' => 1001,
+            'text' => '/start',
+        ]);
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'incoming',
+            'from_id' => $clientTextMessageId,
+            'text' => 'Hello, can you see my message?',
+        ]);
+
+        /** @phpstan-ignore-next-line */
+        $jobs = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+
+        $texts = collect($jobs)->map(fn (array $payload): ?string => $payload['job']->queryParams->text)->all();
+
+        $this->assertContains('Choose language', $texts);
+        $this->assertContains('FULL WELCOME: contact rules, links and support instructions.', $texts);
+        $this->assertNotContains('Good day! How can I help you?', $texts);
+    }
+
+    public function test_telegram_language_callback_via_webhook_answers_silently_and_queues_welcome(): void
+    {
+        Queue::fake();
+        Cache::flush();
+        Http::fake([
+            'https://api.telegram.org/*/answerCallbackQuery' => Http::response(['ok' => true, 'result' => true]),
+        ]);
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+
+        $welcome = AutoReply::query()
+            ->where('type', AutoReply::TYPE_WELCOME)
+            ->where('trigger', '__system_welcome__')
+            ->first();
+
+        if ($welcome === null) {
+            $welcome = AutoReply::create([
+                'type' => AutoReply::TYPE_WELCOME,
+                'trigger' => '__system_welcome__',
+                'response' => 'Полное русское приветствие',
+                'enabled' => true,
+            ]);
+        } else {
+            $welcome->update([
+                'response' => 'Полное русское приветствие',
+                'enabled' => true,
+            ]);
+        }
+
+        AutoReplyTranslation::updateOrCreate(
+            [
+                'auto_reply_id' => $welcome->id,
+                'locale' => 'pl',
+            ],
+            [
+                'text' => 'PEŁNE POWITANIE PO POLSKU',
+                'status' => AutoReplyTranslation::STATUS_READY,
+                'source' => AutoReplyTranslation::SOURCE_AUTO,
+                'source_hash' => AutoReply::sourceHash($welcome->response),
+            ],
+        );
+
+        $chatId = 990777;
+        $botUser = BotUser::create(['chat_id' => $chatId, 'platform' => 'telegram']);
+
+        $this->postTgWebhook([
+            'update_id' => 200002,
+            'callback_query' => [
+                'id' => 'webhook-language-callback',
+                'from' => [
+                    'id' => $chatId,
+                    'is_bot' => false,
+                    'first_name' => 'Flow',
+                    'username' => 'flow_user',
+                    'language_code' => 'pl',
+                ],
+                'message' => [
+                    'message_id' => 2002,
+                    'chat' => [
+                        'id' => $chatId,
+                        'type' => 'private',
+                    ],
+                    'date' => time(),
+                    'text' => "Выберите язык / Choose your language:\nСтраница 2/2",
+                ],
+                'data' => 'select_language:pl',
+            ],
+        ])->assertOk();
+
+        $botUser->refresh();
+
+        $this->assertSame('pl', $botUser->preferred_language_code);
+        $this->assertSame('Polski', $botUser->preferred_language_name);
+
+        Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/answerCallbackQuery')
+            && $request['callback_query_id'] === 'webhook-language-callback'
+            && !isset($request['text']));
+
+        /** @phpstan-ignore-next-line */
+        $jobs = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $welcomeJobs = collect($jobs)->filter(fn (array $payload): bool => $payload['job']->typeMessage === 'outgoing'
+            && $payload['job']->queryParams->text === 'PEŁNE POWITANIE PO POLSKU');
+
+        $this->assertCount(1, $welcomeJobs);
     }
 }

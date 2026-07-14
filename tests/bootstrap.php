@@ -30,6 +30,7 @@ $testEnvironment = [
     'DB_CONNECTION' => 'sqlite',
     'DB_DATABASE' => ':memory:',
     'MAIL_MAILER' => 'array',
+    'LOG_CHANNEL' => 'null',
     'PULSE_ENABLED' => 'false',
     'QUEUE_CONNECTION' => 'sync',
     'SESSION_DRIVER' => 'array',

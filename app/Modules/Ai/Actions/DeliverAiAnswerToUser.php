@@ -2,174 +2,171 @@
 
 namespace App\Modules\Ai\Actions;
 
+use App\Models\AiMessage;
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
-use App\Modules\Max\DTOs\MaxTextMessageDto;
-use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
+use App\Modules\Max\Api\MaxMethods;
+use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
-use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
-use App\Modules\Vk\DTOs\VkTextMessageDto;
-use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
+use App\Modules\Vk\Api\VkMethods;
 use App\Platform\PlatformChannelRegistry;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Persist an AI-generated answer to the `messages` table and dispatch a
- * best-effort platform send using the "simple" (non-saving) send job.
+ * Синхронно доставляет AI-ответ и фиксирует подтверждённый результат.
  *
- * The outgoing `Message` row is created BEFORE the send job is dispatched,
- * so the AI answer ALWAYS appears in the admin chat thread at `/admin/chats`
- * regardless of whether the platform send ultimately succeeds. This mirrors
- * the pattern used by {@see \App\Modules\Admin\Actions\SendReplyAction}.
- *
- * Built-in platforms (telegram/vk/max) are handled directly. Any other
- * platform is delegated to a {@see \App\Contracts\PlatformChannel} registered
- * in the {@see PlatformChannelRegistry} by a pluggable module (e.g. the paid
- * Avito package) — the core needs no edits to support a new platform; those
- * channels are responsible for their own persistence.
+ * Очередь и повторы находятся в DeliverAiMessageJob. Здесь сообщение в истории
+ * создаётся только после успешного ответа платформы: запись больше не выглядит
+ * отправленной, когда API фактически вернул ошибку.
  */
 class DeliverAiAnswerToUser
 {
-    /**
-     * Persist the AI answer and dispatch the platform send job.
-     *
-     * For telegram/vk/max:
-     * 1. Strip HTML markup to obtain the plain-text version for `messages.text`.
-     *    Telegram users still receive the HTML-formatted message (via parse_mode=html).
-     * 2. Create the `Message` row with `message_type = 'outgoing'` immediately.
-     * 3. Dispatch a "simple" (non-saving) send job so there is exactly one row.
-     *
-     * For pluggable platforms (default branch), delivery is delegated to the
-     * registered {@see PlatformChannel}; that channel owns its own persistence.
-     *
-     * @param BotUser                $botUser   Target user
-     * @param string                 $text      AI answer text (may contain Telegram HTML markup)
-     * @param TelegramUpdateDto|null $updateDto Optional originating TG update (not used for
-     *                                          persistence in this action; kept for signature
-     *                                          compatibility with callers)
-     *
-     * @return bool true if delivery was attempted (or a registered channel handled it),
-     *              false if the platform is unsupported and no channel is registered
-     */
-    public function execute(BotUser $botUser, string $text, ?TelegramUpdateDto $updateDto = null): bool
-    {
-        Log::channel('app')->info('DeliverAiAnswerToUser: routing', [
-            'source' => 'ai_deliver_routing',
-            'bot_user_id' => $botUser->id,
-            'platform' => $botUser->platform,
-            'chat_id' => $botUser->chat_id,
-            'text_length' => mb_strlen($text),
-        ]);
+    public function execute(
+        BotUser $botUser,
+        string $text,
+        ?TelegramUpdateDto $updateDto = null,
+        ?AiMessage $aiMessage = null,
+    ): bool {
+        $plainText = $this->stripHtmlForPlainText($text);
+        if ($plainText === '') {
+            throw new \RuntimeException('AI delivery rejected: empty client text');
+        }
 
-        switch ($botUser->platform) {
-            case 'telegram':
-                $plainText = $this->stripHtmlForPlainText($text);
+        $operation = $this->startOperation($botUser, $aiMessage);
 
-                Message::create([
-                    'bot_user_id' => $botUser->id,
-                    'platform' => $botUser->platform,
-                    'message_type' => 'outgoing',
-                    'from_id' => 0,
-                    'to_id' => 0,
-                    'text' => $plainText ?: null,
-                ]);
+        try {
+            $externalMessageId = $this->deliver($botUser, $plainText, $updateDto);
 
-                // Send PLAIN text with parse_mode explicitly disabled (null → omitted
-                // by toArray()). The DTO defaults parse_mode to 'html'; left at the
-                // default, Telegram rejects AI output that isn't valid Telegram HTML
-                // (stray '<', '&', code) with 400 "can't parse entities" and the
-                // answer never reaches the user. Plain delivery is robust for any text.
-                SendTelegramSimpleQueryJob::dispatch(
-                    TGTextMessageDto::from([
-                        'methodQuery' => 'sendMessage',
-                        'chat_id' => $botUser->chat_id,
-                        'text' => $plainText,
-                        'parse_mode' => null,
-                    ]),
-                );
-                return true;
+            $message = Message::create([
+                'bot_user_id' => $botUser->id,
+                'platform' => $botUser->platform,
+                'message_type' => 'outgoing',
+                'from_id' => 0,
+                'to_id' => 0,
+                'text' => $plainText,
+            ]);
 
-            case 'vk':
-                $plainText = $this->stripHtmlForPlainText($text);
+            $operation->update([
+                'message_id' => $message->id,
+                'status' => DeliveryOperation::STATUS_DELIVERED,
+                'external_message_id' => is_numeric($externalMessageId) ? (int) $externalMessageId : null,
+                'last_error' => null,
+                'delivered_at' => now(),
+            ]);
 
-                Message::create([
-                    'bot_user_id' => $botUser->id,
-                    'platform' => $botUser->platform,
-                    'message_type' => 'outgoing',
-                    'from_id' => 0,
-                    'to_id' => 0,
-                    'text' => $plainText ?: null,
-                ]);
+            Log::channel('app')->info('AI answer delivery confirmed', [
+                'source' => 'ai_delivery_confirmed',
+                'ai_message_id' => $aiMessage?->id,
+                'bot_user_id' => $botUser->id,
+                'platform' => $botUser->platform,
+                'operation_key' => $operation->operation_key,
+            ]);
 
-                SendVkSimpleMessageJob::dispatch(
-                    VkTextMessageDto::from([
-                        'methodQuery' => 'messages.send',
-                        'peer_id' => $botUser->chat_id,
-                        'message' => $plainText,
-                    ]),
-                );
-                return true;
+            return true;
+        } catch (\Throwable $exception) {
+            $operation->update([
+                'status' => DeliveryOperation::STATUS_RETRYING,
+                'last_error' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
 
-            case 'max':
-                $plainText = $this->stripHtmlForPlainText($text);
+            Log::channel('app')->warning('AI answer delivery attempt failed', [
+                'source' => 'ai_delivery_retrying',
+                'ai_message_id' => $aiMessage?->id,
+                'bot_user_id' => $botUser->id,
+                'platform' => $botUser->platform,
+                'operation_key' => $operation->operation_key,
+                'error_class' => $exception::class,
+                'error' => $exception->getMessage(),
+            ]);
 
-                Message::create([
-                    'bot_user_id' => $botUser->id,
-                    'platform' => $botUser->platform,
-                    'message_type' => 'outgoing',
-                    'from_id' => 0,
-                    'to_id' => 0,
-                    'text' => $plainText ?: null,
-                ]);
-
-                SendMaxSimpleMessageJob::dispatch(
-                    MaxTextMessageDto::from([
-                        'methodQuery' => 'sendMessage',
-                        'user_id' => $botUser->chat_id,
-                        'text' => $plainText,
-                    ]),
-                );
-                return true;
-
-            default:
-                $channel = app(PlatformChannelRegistry::class)->for($botUser->platform);
-
-                if ($channel !== null) {
-                    $channel->deliverAiAnswer($botUser, $text, $updateDto);
-
-                    Log::channel('app')->info('DeliverAiAnswerToUser: delivered via registered channel', [
-                        'source' => 'ai_deliver_registered_channel',
-                        'bot_user_id' => $botUser->id,
-                        'platform' => $botUser->platform,
-                    ]);
-
-                    return true;
-                }
-
-                Log::channel('app')->warning('DeliverAiAnswerToUser: unsupported platform', [
-                    'source' => 'ai_deliver_unsupported_platform',
-                    'bot_user_id' => $botUser->id,
-                    'platform' => $botUser->platform,
-                ]);
-                return false;
+            throw $exception;
         }
     }
 
-    /**
-     * AI drafts are stored with Telegram HTML markup (`<b>`, `<i>`, …) because
-     * the supergroup post uses `parse_mode=html`. VK and Max channels expect
-     * plain text and would otherwise render the literal tags. Strip them and
-     * decode HTML entities so the user sees a clean message.
-     *
-     * @param string $text
-     *
-     * @return string
-     */
+    private function startOperation(BotUser $botUser, ?AiMessage $aiMessage): DeliveryOperation
+    {
+        $operationKey = $aiMessage !== null
+            ? hash('sha256', 'ai-delivery:' . $aiMessage->id)
+            : hash('sha256', 'ai-delivery:' . $botUser->id . ':' . now()->format('Uv') . ':' . bin2hex(random_bytes(8)));
+
+        $operation = DeliveryOperation::firstOrCreate(
+            ['operation_key' => $operationKey],
+            [
+                'bot_user_id' => $botUser->id,
+                'trace_id' => 'ai-message:' . ($aiMessage !== null ? $aiMessage->id : 'direct'),
+                'destination' => $botUser->platform . '-client',
+                'operation' => 'ai-answer',
+                'status' => DeliveryOperation::STATUS_PENDING,
+            ],
+        );
+
+        if ($operation->status === DeliveryOperation::STATUS_DELIVERED) {
+            throw new \LogicException('AI delivery operation is already completed');
+        }
+
+        $operation->update([
+            'status' => DeliveryOperation::STATUS_PROCESSING,
+            'attempts' => $operation->attempts + 1,
+            'started_at' => $operation->started_at ?? now(),
+        ]);
+
+        return $operation;
+    }
+
+    private function deliver(BotUser $botUser, string $plainText, ?TelegramUpdateDto $updateDto): int|string|null
+    {
+        if ($botUser->platform === 'telegram') {
+            $response = TelegramMethods::sendQueryTelegram('sendMessage', [
+                'chat_id' => $botUser->chat_id,
+                'text' => $plainText,
+            ]);
+
+            if ($response->ok !== true) {
+                throw new \RuntimeException('Telegram rejected AI answer, response_code=' . ($response->response_code ?? 0));
+            }
+
+            return $response->message_id;
+        }
+
+        if ($botUser->platform === 'vk') {
+            $response = VkMethods::sendQueryVk('messages.send', [
+                'peer_id' => $botUser->chat_id,
+                'message' => $plainText,
+            ]);
+
+            if ($response->response_code !== 200) {
+                throw new \RuntimeException('VK rejected AI answer: HTTP ' . $response->response_code);
+            }
+
+            return is_int($response->response) ? $response->response : null;
+        }
+
+        if ($botUser->platform === 'max') {
+            $response = app(MaxMethods::class)->sendQuery('sendMessage', [
+                'user_id' => (int) $botUser->chat_id,
+                'text' => $plainText,
+            ]);
+
+            if ($response->response_code !== 200) {
+                throw new \RuntimeException('Max rejected AI answer: HTTP ' . $response->response_code);
+            }
+
+            return is_int($response->response) || is_string($response->response) ? $response->response : null;
+        }
+
+        $channel = app(PlatformChannelRegistry::class)->for($botUser->platform);
+        if ($channel === null) {
+            throw new \RuntimeException('Unsupported AI delivery platform: ' . $botUser->platform);
+        }
+
+        $channel->deliverAiAnswer($botUser, $plainText, $updateDto);
+
+        return null;
+    }
+
     private function stripHtmlForPlainText(string $text): string
     {
-        $plain = strip_tags($text);
-        $plain = html_entity_decode($plain, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        return trim($plain);
+        return trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
     }
 }

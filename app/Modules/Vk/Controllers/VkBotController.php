@@ -8,6 +8,7 @@ use App\Modules\Vk\Actions\SendBannedMessageVk;
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Modules\Vk\Services\VkEditService;
 use App\Modules\Vk\Services\VkMessageService;
+use App\Services\LanguageSelectionService;
 use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -31,39 +32,59 @@ class VkBotController
             return response('ok', 200);
         }
 
-        $cacheKey = 'vk_event_' . $dataHook->event_id;
+        $cacheKey = 'vk_event_' . hash('sha256', $dataHook->event_id);
         if (Cache::has($cacheKey)) {
             return response('ok', 200);
         }
-        Cache::put($cacheKey, true, 600);
 
-        $botUser = (new BotUser())->getUserByChatId($dataHook->from_id, 'vk');
+        $lock = Cache::lock($cacheKey . ':lock', 30);
+        if (!$lock->get()) {
+            return response('retry', 503);
+        }
 
-        if ($botUser->isBanned()) {
-            app(SendBannedMessageVk::class)->execute($botUser);
+        try {
+            $botUser = (new BotUser())->getUserByChatId($dataHook->from_id, 'vk');
+
+            if ($botUser->isBanned()) {
+                app(SendBannedMessageVk::class)->execute($botUser);
+                Cache::put($cacheKey, true, now()->addDay());
+
+                return response('ok', 200);
+            }
+
+            switch ($dataHook->type) {
+                case 'message_new':
+                    if (app(LanguageSelectionService::class)->isMenuCommand($dataHook->text)) {
+                        app(LanguageSelectionService::class)->sendSelector($botUser);
+                        break;
+                    }
+                    (new VkMessageService($dataHook))->handleUpdate();
+                    if (empty($botUser->preferred_language_code)) {
+                        app(LanguageSelectionService::class)->sendSelector($botUser);
+                    }
+                    break;
+
+                case 'message_edit':
+                    (new VkEditService($dataHook))->handleUpdate();
+                    break;
+
+                case 'message_event':
+                    $payload = $dataHook->rawData['object']['payload'] ?? [];
+                    if (app(LanguageSelectionService::class)->handleCallback($botUser, $payload)) {
+                        break;
+                    }
+                    $command = app(LanguageSelectionService::class)->callbackData($payload);
+                    if ($command !== null && str_starts_with((string) $command, 'feedback_rate_')) {
+                        app(HandleFeedbackRating::class)->execute(callbackData: (string) $command, actor: $botUser);
+                    }
+                    break;
+            }
+
+            Cache::put($cacheKey, true, now()->addDay());
 
             return response('ok', 200);
+        } finally {
+            $lock->release();
         }
-
-        switch ($dataHook->type) {
-            case 'message_new':
-                (new VkMessageService($dataHook))->handleUpdate();
-                break;
-
-            case 'message_edit':
-                (new VkEditService($dataHook))->handleUpdate();
-                break;
-
-            case 'message_event':
-                // VK callback button press — check if it's a feedback rating
-                $payload = $dataHook->rawData['object']['payload'] ?? [];
-                $command = $payload['command'] ?? null;
-                if ($command !== null && str_starts_with((string) $command, 'feedback_rate_')) {
-                    app(HandleFeedbackRating::class)->execute(callbackData: (string) $command);
-                }
-                break;
-        }
-
-        return response('ok', 200);
     }
 }

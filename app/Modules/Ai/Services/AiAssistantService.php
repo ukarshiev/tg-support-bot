@@ -7,6 +7,7 @@ namespace App\Modules\Ai\Services;
 use App\Modules\Ai\Contracts\AiProviderInterface;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
+use App\Modules\Ai\Support\AiSupportContextService;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
@@ -18,7 +19,8 @@ class AiAssistantService
 
     public function __construct(
         private readonly AiChatHistoryService $historyService,
-        private readonly AiKnowledgeService $knowledgeService
+        private readonly AiKnowledgeService $knowledgeService,
+        private readonly AiSupportContextService $supportContextService
     ) {
         $this->initializeProviders();
     }
@@ -149,11 +151,17 @@ class AiAssistantService
     {
         $history = $this->historyService->buildForBotUser($userId, $userMessage);
         $knowledge = $this->knowledgeService->buildContextMessage($userMessage);
+        $supportKnowledge = $this->supportContextService->buildContextMessage($userMessage);
 
-        if ($knowledge === null) {
-            return $history;
+        $context = [];
+        if ($knowledge !== null) {
+            $context[] = $knowledge;
         }
 
-        return array_merge([$knowledge], $history);
+        if ($supportKnowledge !== null) {
+            $context[] = $supportKnowledge;
+        }
+
+        return array_merge($context, $history);
     }
 }
