@@ -7,10 +7,13 @@ use App\Models\Feedback;
 use App\Models\Message;
 use App\Modules\Ai\Actions\DeliverAiAnswerToUser;
 use App\Modules\Feedback\Actions\SendFeedbackForm;
-use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
+use App\Modules\Feedback\Jobs\DeliverFeedbackFormJob;
+use App\Modules\Max\Api\MaxMethods;
+use App\Modules\Max\DTOs\MaxAnswerDto;
 use App\Platform\PlatformChannelRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Mockery;
 use Tests\Stubs\Platform\RecordingPlatformChannel;
 use Tests\TestCase;
 
@@ -64,6 +67,9 @@ class RegistryDeliveryTest extends TestCase
         (new SendFeedbackForm())->execute($botUser);
 
         $feedback = Feedback::where('bot_user_id', $botUser->id)->first();
+        $job = Queue::pushed(DeliverFeedbackFormJob::class)->first();
+        $this->assertNotNull($job);
+        $job->handle();
 
         $this->assertCount(1, $channel->feedbackForms);
         $this->assertEquals($botUser->id, $channel->feedbackForms[0]['botUser']->id);
@@ -75,7 +81,7 @@ class RegistryDeliveryTest extends TestCase
             'status' => 'awaiting_rating',
         ]);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(DeliverFeedbackFormJob::class);
     }
 
     public function test_builtin_platform_bypasses_registry(): void
@@ -84,6 +90,12 @@ class RegistryDeliveryTest extends TestCase
         // the core handles 'max' directly and never consults the registry.
         $channel = new RecordingPlatformChannel('max');
         app(PlatformChannelRegistry::class)->register($channel);
+        $max = Mockery::mock(MaxMethods::class);
+        $max->shouldReceive('sendQuery')
+            ->once()
+            ->with('sendMessage', Mockery::on(fn (array $params): bool => $params['text'] === 'hi'))
+            ->andReturn(new MaxAnswerDto(200, null, 'max-1'));
+        app()->instance(MaxMethods::class, $max);
 
         $botUser = BotUser::create(['chat_id' => 50003, 'platform' => 'max']);
 
@@ -92,16 +104,20 @@ class RegistryDeliveryTest extends TestCase
         $this->assertTrue($result);
         $this->assertCount(0, $channel->aiAnswers);
 
-        Queue::assertPushed(SendMaxSimpleMessageJob::class);
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'text' => 'hi',
+        ]);
     }
 
     public function test_returns_false_when_no_channel_registered_for_unknown_platform(): void
     {
         $botUser = BotUser::create(['chat_id' => 50004, 'platform' => 'demo_platform']);
 
-        $result = (new DeliverAiAnswerToUser())->execute($botUser, 'hi');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Unsupported AI delivery platform');
 
-        $this->assertFalse($result);
-        Queue::assertNothingPushed();
+        (new DeliverAiAnswerToUser())->execute($botUser, 'hi');
     }
 }

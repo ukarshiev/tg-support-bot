@@ -7,7 +7,7 @@ use App\Models\AiMessage;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 use phpDocumentor\Reflection\Exception;
@@ -62,9 +62,7 @@ class EditAiMessage
             $newTextMessage = preg_replace('/^.*\R/', '', $updateText, 1);
             $textMessage = AiHelper::preparedAiAnswer($messageData->text_manager, $newTextMessage);
 
-            SendTelegramMessageJob::dispatch(
-                $botUser->id,
-                $update,
+            SendTelegramSimpleQueryJob::dispatch(
                 TGTextMessageDto::from([
                     'token' => (string) app(SettingsService::class)->get('telegram_ai.token'),
                     'methodQuery' => 'editMessageText',
@@ -76,22 +74,18 @@ class EditAiMessage
                     'parse_mode' => 'html',
                     'reply_markup' => AiHelper::preparedAiReplyMarkup((int)$messageData->message_id, $newTextMessage),
                 ]),
-                'incoming',
             );
 
             AiMessage::where('message_id', $messageId)->update([
                 'text_ai' => $newTextMessage,
             ]);
 
-            SendTelegramMessageJob::dispatch(
-                $botUser->id,
-                $update,
+            SendTelegramSimpleQueryJob::dispatch(
                 TGTextMessageDto::from([
                     'methodQuery' => 'deleteMessage',
-                    'chat_id' => $update->chatId,
+                    'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
                     'message_id' => $update->messageId,
                 ]),
-                'incoming',
             );
         } catch (\Throwable $e) {
             Log::channel('app')->error($e->getMessage(), ['source' => 'ai_error']);

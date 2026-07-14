@@ -6,7 +6,7 @@ use App\Models\AiMessage;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Ai\Actions\AiCancelMessage;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\TelegramUpdate_AiButtonAction;
@@ -66,12 +66,11 @@ class AiCancelMessageTest extends TestCase
         (new AiCancelMessage())->execute($dto);
 
         /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
         $this->assertCount(1, $pushed);
 
         $firstJob = $pushed[0]['job'];
 
-        $this->assertEquals($this->botUser->id, $firstJob->botUserId);
         $this->assertEquals($this->groupId, $firstJob->queryParams->chat_id);
         $this->assertEquals('deleteMessage', $firstJob->queryParams->methodQuery);
 

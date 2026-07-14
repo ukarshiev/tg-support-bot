@@ -7,7 +7,9 @@ use App\Models\Message;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramMirrorJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\Answer\TelegramAnswerDtoMock;
 use Tests\Mocks\Tg\TelegramUpdateDtoMock;
 use Tests\TestCase;
@@ -68,6 +70,7 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
 
     public function test_incoming_photo_saves_caption_as_text_with_attachment(): void
     {
+        Queue::fake();
         $botUser = $this->makeBotUser();
 
         $dto = $this->incomingDtoWith([
@@ -97,10 +100,13 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
             'file_type' => 'photo',
             'file_id' => 'PHOTO_FILE_ID',
         ]);
+        Queue::assertPushed(SendTelegramMirrorJob::class, fn (SendTelegramMirrorJob $job): bool =>
+            $job->messageId === $message->id && $job->text === 'Подпись к фото');
     }
 
     public function test_incoming_photo_without_caption_saves_null_text(): void
     {
+        Queue::fake();
         $botUser = $this->makeBotUser();
 
         $dto = $this->incomingDtoWith([
@@ -120,10 +126,13 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
             'message_type' => 'incoming',
             'text' => null,
         ]);
+        Queue::assertPushed(SendTelegramMirrorJob::class, fn (SendTelegramMirrorJob $job): bool =>
+            $job->text === null);
     }
 
     public function test_incoming_plain_text_still_saved(): void
     {
+        Queue::fake();
         $botUser = $this->makeBotUser();
 
         $dto = $this->incomingDtoWith([

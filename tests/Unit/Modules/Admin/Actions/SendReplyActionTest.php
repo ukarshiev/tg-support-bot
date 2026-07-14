@@ -60,6 +60,27 @@ class SendReplyActionTest extends TestCase
         Queue::assertNotPushed(SendWebhookMessage::class);
     }
 
+    public function test_telegram_file_uses_retryable_delivery_job_before_receipt(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $botUser = BotUser::create(['chat_id' => 101, 'platform' => 'telegram']);
+        $file = UploadedFile::fake()->create('manual.pdf', 10);
+
+        SendReplyAction::execute($botUser, 'Manual', $file);
+
+        Queue::assertPushed(SendTelegramSimpleQueryJob::class, function ($job): bool {
+            return $job->queryParams->methodQuery === 'sendDocument'
+                && is_string($job->queryParams->uploaded_file_path)
+                && $job->queryParams->uploaded_file_path !== '';
+        });
+        $this->assertDatabaseHas('delivery_operations', [
+            'bot_user_id' => $botUser->id,
+            'operation' => 'admin-reply',
+            'status' => \App\Models\DeliveryOperation::STATUS_PENDING,
+        ]);
+    }
+
     public function test_saves_outgoing_message_for_vk_user(): void
     {
         Queue::fake();
@@ -251,6 +272,11 @@ class SendReplyActionTest extends TestCase
         SendReplyAction::execute($botUser, 'Hello');
 
         Queue::assertNotPushed(SendWebhookMessage::class);
+        $this->assertDatabaseHas('delivery_operations', [
+            'bot_user_id' => $botUser->id,
+            'operation' => 'admin-reply',
+            'status' => \App\Models\DeliveryOperation::STATUS_FAILED,
+        ]);
     }
 
     public function test_does_not_dispatch_webhook_when_external_source_missing(): void
@@ -379,11 +405,11 @@ class SendReplyActionTest extends TestCase
         $botUser = BotUser::create(['chat_id' => 600, 'platform' => 'telegram', 'topic_id' => 10]);
 
         SendReplyAction::execute($botUser, 'Mirrored reply');
+        $message = \App\Models\Message::where('bot_user_id', $botUser->id)->firstOrFail();
 
-        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job) use ($botUser): bool {
-            return $job->botUserId === $botUser->id
-                && $job->text === 'Mirrored reply';
-        });
+        Queue::assertPushedWithChain(SendTelegramSimpleQueryJob::class, [
+            new MirrorAdminReplyToGroupJob($botUser->id, 'Mirrored reply', sourceMessageId: $message->id),
+        ]);
 
         // Only one messages row (not two).
         $this->assertSame(1, \App\Models\Message::where('bot_user_id', $botUser->id)->count());
@@ -401,7 +427,15 @@ class SendReplyActionTest extends TestCase
 
         SendReplyAction::execute($botUser, 'VK reply, no mirror');
 
-        Queue::assertNotPushed(MirrorAdminReplyToGroupJob::class);
+        $message = \App\Models\Message::where('bot_user_id', $botUser->id)->firstOrFail();
+        Queue::assertPushedWithChain(SendVkSimpleMessageJob::class, [
+            new MirrorAdminReplyToGroupJob(
+                $botUser->id,
+                'VK reply, no mirror',
+                sourceMessageId: $message->id,
+                mirrorEnabled: false,
+            ),
+        ]);
     }
 
     public function test_mirror_uses_placeholder_text_for_file_only_reply(): void
@@ -417,10 +451,10 @@ class SendReplyActionTest extends TestCase
         $botUser = BotUser::create(['chat_id' => 602, 'platform' => 'telegram', 'topic_id' => 11]);
 
         SendReplyAction::execute($botUser, '');
+        $message = \App\Models\Message::where('bot_user_id', $botUser->id)->firstOrFail();
 
-        Queue::assertPushed(MirrorAdminReplyToGroupJob::class, function (MirrorAdminReplyToGroupJob $job): bool {
-            // The «Ответ из админки:» label + newline is added by the job's prefix.
-            return $job->text === '[вложение]' && $job->prefix === "👤 Ответ из админки:\n";
-        });
+        Queue::assertPushedWithChain(SendTelegramSimpleQueryJob::class, [
+            new MirrorAdminReplyToGroupJob($botUser->id, '[вложение]', sourceMessageId: $message->id),
+        ]);
     }
 }

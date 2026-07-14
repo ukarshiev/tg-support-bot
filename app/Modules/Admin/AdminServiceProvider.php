@@ -14,15 +14,18 @@ use App\Livewire\Settings\AutoReplyFormPage;
 use App\Livewire\Settings\GeneralSettingsPage;
 use App\Livewire\Settings\IntegrationChannelPage;
 use App\Livewire\Settings\IntegrationsListPage;
+use App\Livewire\Settings\LanguageSettingsPage;
 use App\Livewire\Settings\TeamMemberCreatePage;
 use App\Livewire\Settings\TeamMemberEditPage;
 use App\Livewire\Settings\TeamPage;
+use App\Livewire\Settings\TranslationQueuePage;
 use App\Modules\Admin\Controllers\BotUserAvatarController;
 use App\Modules\Admin\Controllers\ChatAttachmentController;
 use App\Modules\Admin\Controllers\PwaController;
 use App\Modules\Admin\Controllers\UserAvatarController;
 use App\Modules\Admin\Middleware\EnsureSettingsAccess;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -36,6 +39,9 @@ class AdminServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Broadcast::routes(['middleware' => ['web', 'auth']]);
+        require base_path('routes/channels.php');
+
         // ── Auth routes ────────────────────────────────────────────────────────
         // Login: guest-only full-page Livewire screen. Named `login` so Laravel's
         // `auth` middleware redirects unauthenticated visitors here automatically.
@@ -105,6 +111,12 @@ class AdminServiceProvider extends ServiceProvider
             ->group(function (): void {
                 Route::get('/general', GeneralSettingsPage::class)
                     ->name('general');
+
+                Route::get('/language', LanguageSettingsPage::class)
+                    ->name('language');
+
+                Route::get('/language/translate_queue', TranslationQueuePage::class)
+                    ->name('language.translate-queue');
 
                 // Integrations index — renders the mobile card-list page.
                 // Desktop users are redirected client-side (window.innerWidth check)

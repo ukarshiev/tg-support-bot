@@ -2,10 +2,18 @@
 
 namespace App\Modules\Admin\Actions;
 
+use App\Contracts\LocalizedSystemMessageChannel;
+use App\Models\AutoReply;
 use App\Models\BotUser;
+use App\Modules\Max\Actions\SendBannedMessageMax;
+use App\Modules\Telegram\Actions\SendBannedMessage;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Modules\Vk\Actions\SendBannedMessageVk;
+use App\Platform\PlatformChannelRegistry;
+use App\Services\AutoReplies\SystemAutoReplyResolver;
 use App\Services\Settings\SettingsService;
+use Illuminate\Support\Facades\Log;
 
 class BanBotUser
 {
@@ -36,6 +44,8 @@ class BanBotUser
             'closed_at' => $botUser->closed_at ?? now(),
         ]);
 
+        $this->notifyClient($botUser->fresh());
+
         if ($botUser->platform === 'telegram' && !empty($botUser->topic_id)) {
             $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
 
@@ -54,5 +64,38 @@ class BanBotUser
                 ]));
             }
         }
+    }
+
+    private function notifyClient(BotUser $botUser): void
+    {
+        match ($botUser->platform) {
+            'telegram' => app(SendBannedMessage::class)->execute($botUser),
+            'vk' => app(SendBannedMessageVk::class)->execute($botUser),
+            'max' => app(SendBannedMessageMax::class)->execute($botUser),
+            default => $this->notifyPrivateChannel($botUser),
+        };
+    }
+
+    private function notifyPrivateChannel(BotUser $botUser): void
+    {
+        $channel = app(PlatformChannelRegistry::class)->for($botUser->platform);
+        $text = app(SystemAutoReplyResolver::class)->resolve(AutoReply::TYPE_BAN, $botUser);
+
+        if ($text === null) {
+            return;
+        }
+
+        if ($channel instanceof LocalizedSystemMessageChannel) {
+            $channel->sendSystemMessage($botUser, AutoReply::TYPE_BAN, $text);
+
+            return;
+        }
+
+        Log::channel('app')->warning('Private channel does not support localized ban notice', [
+            'source' => 'localized_channel_capability_missing',
+            'bot_user_id' => $botUser->id,
+            'platform' => $botUser->platform,
+            'auto_reply_type' => AutoReply::TYPE_BAN,
+        ]);
     }
 }

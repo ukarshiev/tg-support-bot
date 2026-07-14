@@ -6,7 +6,7 @@ use App\Models\AiMessage;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Ai\Actions\EditAiMessage;
-use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\TelegramUpdate_AiButtonAction;
@@ -66,6 +66,7 @@ class EditAiMessageTest extends TestCase
 
         $dataParams = TelegramUpdateDto_GroupMock::getDtoParams();
         $dataParams['message']['text'] = $newMessage;
+        $dataParams['message']['message_thread_id'] = $this->botUser->topic_id;
         $dto = TelegramUpdate_AiButtonAction::getDto($dataParams);
         // -------
 
@@ -74,16 +75,14 @@ class EditAiMessageTest extends TestCase
         // -------
 
         /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $pushed = Queue::pushedJobs()[SendTelegramSimpleQueryJob::class] ?? [];
         $this->assertCount(2, $pushed);
 
         $firstJob = $pushed[0]['job'];
-        $this->assertEquals($this->botUser->id, $firstJob->botUserId);
         $this->assertEquals($this->groupId, $firstJob->queryParams->chat_id);
         $this->assertEquals('editMessageText', $firstJob->queryParams->methodQuery);
 
         $secondJob = $pushed[1]['job'];
-        $this->assertEquals($this->botUser->id, $secondJob->botUserId);
         $this->assertEquals($this->groupId, $secondJob->queryParams->chat_id);
         $this->assertEquals('deleteMessage', $secondJob->queryParams->methodQuery);
     }

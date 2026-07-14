@@ -18,7 +18,7 @@ class AiHelper
             $textMessage .= "📄 Инструкция: \n{$managerText}  \n\n";
         }
 
-        $textMessage .= "🤖 Ответ от AI: \n{$aiText} \n\n";
+        $textMessage .= "🧠 AI-подсказка, клиент не видит: \n{$aiText} \n\n";
 
         return $textMessage;
     }
@@ -39,14 +39,12 @@ class AiHelper
                         'callback_data' => "ai_message_send_{$messageId}",
                     ],
                     [
+                        'text' => '✏️ Изменить',
+                        'callback_data' => "ai_message_edit_{$messageId}",
+                    ],
+                    [
                         'text' => '❌ Отменить',
                         'callback_data' => "ai_message_cancel_{$messageId}",
-                    ],
-                ],
-                [
-                    [
-                        'text' => '📝 Редактировать ответ',
-                        'switch_inline_query_current_chat' => "ai_message_edit_{$messageId} \n\n" . $aiText,
                     ],
                 ],
             ],

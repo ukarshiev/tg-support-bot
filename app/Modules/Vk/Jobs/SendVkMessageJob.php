@@ -41,40 +41,45 @@ class SendVkMessageJob extends AbstractSendMessageJob
 
     public function handle(): void
     {
-        try {
-            $botUser = BotUser::find($this->botUserId);
+        $botUser = BotUser::findOrFail($this->botUserId);
 
-            $methodQuery = $this->queryParams->methodQuery;
-            $dataQuery = $this->queryParams->toArray();
+        $methodQuery = $this->queryParams->methodQuery;
+        $dataQuery = $this->queryParams->toArray();
 
-            Log::channel('app')->info('SendVkMessageJob: sending', [
-                'source' => 'send_vk_message_start',
-                'bot_user_id' => $this->botUserId,
-                'method' => $methodQuery,
-                'params' => array_diff_key($dataQuery, array_flip(['access_token'])),
-            ]);
+        Log::channel('app')->info('SendVkMessageJob: sending', [
+            'source' => 'send_vk_message_start',
+            'bot_user_id' => $this->botUserId,
+            'method' => $methodQuery,
+            'text_length' => mb_strlen((string) ($dataQuery['message'] ?? '')),
+            'has_attachment' => !empty($dataQuery['attachment'] ?? null),
+        ]);
 
-            $response = $this->vkMethods->sendQueryVk($methodQuery, $dataQuery);
+        $response = $this->vkMethods->sendQueryVk($methodQuery, $dataQuery);
 
-            if ($response->response_code === 200) {
-                $this->saveMessage($botUser, $response);
-                $this->updateTopic($botUser, $this->typeMessage);
-                return;
-            } elseif (!empty($response->error_message)) {
-                Log::channel('app')->error('SendVkMessageJob: VK API error', [
-                    'source' => 'send_vk_message_api_error',
-                    'bot_user_id' => $this->botUserId,
-                    'method' => $methodQuery,
-                    'error_type' => $response->error_type,
-                    'error_message' => $response->error_message,
-                ]);
-                throw new \Exception($response->error_message, 1);
-            }
+        if ($response->response_code === 200) {
+            $this->saveMessage($botUser, $response);
+            $this->updateTopic($botUser, $this->typeMessage);
 
-            throw new \Exception('SendVkMessageJob: unknown error', 1);
-        } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            return;
         }
+
+        Log::channel('app')->error('SendVkMessageJob: VK API error', [
+            'source' => 'send_vk_message_api_error',
+            'bot_user_id' => $this->botUserId,
+            'method' => $methodQuery,
+            'error_type' => $response->error_type,
+            'response_code' => $response->response_code,
+        ]);
+        throw new \RuntimeException(sprintf(
+            'VK query rejected: code=%s type=%s',
+            $response->response_code ?? 0,
+            $response->error_type ?? 'UNKNOWN',
+        ));
+    }
+
+    public function backoff(): array
+    {
+        return [1, 2, 5, 10, 20];
     }
 
     /**

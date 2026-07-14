@@ -33,7 +33,23 @@ class AiMessage extends Model
         'status',
         'text_ai',
         'text_manager',
+        'text_source',
+        'text_translated',
+        'source_locale',
+        'target_locale',
+        'translation_provider',
+        'translation_status',
+        'translation_source',
+        'source_hash',
+        'translated_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'translated_at' => 'datetime',
+        ];
+    }
 
     /**
      * @return BelongsTo

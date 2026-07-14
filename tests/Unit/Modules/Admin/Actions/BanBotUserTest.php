@@ -32,6 +32,9 @@ class BanBotUserTest extends TestCase
         $this->assertNotNull($botUser->banned_at);
         $this->assertTrue($botUser->isClosed());
         $this->assertNotNull($botUser->closed_at);
+        Queue::assertPushed(SendTelegramSimpleQueryJob::class, fn (SendTelegramSimpleQueryJob $job): bool =>
+            $job->queryParams->methodQuery === 'sendMessage'
+            && (string) $job->queryParams->chat_id === (string) $botUser->chat_id);
     }
 
     public function test_closes_forum_topic_when_topic_id_present(): void
@@ -58,7 +61,7 @@ class BanBotUserTest extends TestCase
 
         (new BanBotUser())->execute($botUser);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendTelegramSimpleQueryJob::class, 1);
     }
 
     public function test_noop_when_already_banned(): void

@@ -3,16 +3,17 @@
 namespace App\Modules\Vk\Services;
 
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiReplyJob;
 use App\Modules\Ai\Services\ShouldAiReply;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
 use App\Modules\Telegram\Services\ActionService\Send\ToTgMessageService;
 use App\Modules\Vk\DTOs\VkUpdateDto;
+use App\Modules\Vk\Jobs\MirrorVkIncomingMessageJob;
 use App\Services\Settings\SettingsService;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class VkMessageService extends ToTgMessageService
 {
@@ -31,186 +32,137 @@ class VkMessageService extends ToTgMessageService
         parent::__construct($update);
     }
 
-    /**
-     * @return void
-     *
-     * @throws \Exception
-     */
     public function handleUpdate(): void
     {
-        try {
-            if ($this->update->type !== 'message_new') {
-                throw new \Exception('Unknown event type', 1);
-            }
-
-            // When the Telegram supergroup is configured, forward the message to
-            // the user's forum topic; the job persists the row after the API call.
-            // When the group is NOT configured, persist directly so the admin
-            // workspace always shows incoming VK messages (group-OFF path).
-            if (!empty((string) app(SettingsService::class)->get('telegram.group_id'))) {
-                if (!empty($this->update->listFileUrl)) {
-                    $this->sendDocument();
-                } elseif (!empty($this->update->text)) {
-                    $this->sendMessage();
-                } elseif (!empty($this->update->geo)) {
-                    $this->sendLocation();
-                }
-            } else {
-                $this->persistIncomingVkMessage();
-                if (!empty($this->update->text)) {
-                    $this->maybeDispatchAi($this->update->text);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+        if ($this->update->type !== 'message_new') {
+            throw new \InvalidArgumentException('Unsupported VK event type: ' . $this->update->type);
         }
+
+        $message = $this->persistIncomingMessage();
+
+        if (!empty((string) app(SettingsService::class)->get('telegram.group_id')) && $this->hasDeliverableContent()) {
+            MirrorVkIncomingMessageJob::dispatch(
+                $this->botUser->id,
+                $message->id,
+                $this->update->event_id,
+                $this->update->geo,
+            );
+        }
+
+        $this->maybeDispatchAi($this->update->text, !empty($this->update->listAttachments));
     }
 
-    /**
-     * Persist an incoming VK message directly to the `messages` table without
-     * routing it through the Telegram supergroup.
-     *
-     * Called only when no telegram.group_id is configured. The group-ON path
-     * persists via SendVkTelegramMessageJob::saveMessage() instead, so the two
-     * branches are mutually exclusive and produce exactly one row each.
-     *
-     * @return void
-     */
-    protected function persistIncomingVkMessage(): void
+    private function persistIncomingMessage(): Message
     {
-        $message = Message::create([
-            'bot_user_id' => $this->botUser->id,
-            'platform' => $this->botUser->platform,
-            'message_type' => 'incoming',
-            'from_id' => $this->update->id ?? 0,
-            'to_id' => 0,
-            'text' => $this->update->text ?? null,
-        ]);
+        return DB::transaction(function (): Message {
+            BotUser::whereKey($this->botUser->id)->lockForUpdate()->firstOrFail();
 
-        foreach ($this->update->listAttachments as $attachment) {
-            $message->attachments()->create([
-                'file_id' => $attachment['file_id'],
-                'file_type' => $attachment['type'],
-                'file_name' => $attachment['file_name'] ?? null,
+            $message = Message::firstOrCreateForSourceEvent('vk', $this->update->id, [
+                'bot_user_id' => $this->botUser->id,
+                'message_type' => 'incoming',
+                'message_kind' => Message::KIND_CHAT,
+                'delivery_status' => Message::DELIVERY_DELIVERED,
+                'from_id' => $this->update->id,
+                'to_id' => 0,
+                'text' => $this->update->text,
             ]);
-        }
+
+            foreach ($this->update->listAttachments as $attachment) {
+                $message->attachments()->firstOrCreate([
+                    'file_id' => $attachment['file_id'],
+                    'file_type' => $attachment['type'],
+                ], [
+                    'file_name' => $attachment['file_name'] ?? null,
+                ]);
+            }
+
+            $message->load('attachments');
+
+            return $message;
+        });
     }
 
-    /**
-     * @return void
-     */
-    protected function sendDocument(): void
+    private function maybeDispatchAi(?string $text, bool $hasMedia): void
     {
-        $this->messageParamsDTO->methodQuery = 'sendDocument';
-        $this->messageParamsDTO->document = $this->update->listFileUrl[0];
-
-        $this->messageParamsDTO->caption = $this->update->text ?? '';
-
-        SendVkTelegramMessageJob::dispatch(
-            $this->botUser->id,
-            $this->update,
-            $this->messageParamsDTO,
-        );
-    }
-
-    /**
-     * @return void
-     */
-    protected function sendLocation(): void
-    {
-        $this->messageParamsDTO->methodQuery = 'sendLocation';
-        $this->messageParamsDTO->latitude = $this->update->geo['coordinates']['latitude'];
-        $this->messageParamsDTO->longitude = $this->update->geo['coordinates']['longitude'];
-
-        SendVkTelegramMessageJob::dispatch(
-            $this->botUser->id,
-            $this->update,
-            $this->messageParamsDTO,
-        );
-    }
-
-    /**
-     * @return void
-     */
-    protected function sendMessage(): void
-    {
-        $this->messageParamsDTO->text = $this->update->text;
-
-        SendVkTelegramMessageJob::dispatch(
-            $this->botUser->id,
-            $this->update,
-            $this->messageParamsDTO,
-        );
-
-        $this->maybeDispatchAi($this->update->text);
-    }
-
-    /**
-     * Trigger AI generation for an incoming VK text message, when gating allows.
-     *
-     * The draft/auto-reply job is dispatched without a TelegramUpdateDto — the
-     * jobs derive the platform from BotUser and assemble the supergroup post
-     * and the platform-specific user delivery themselves.
-     *
-     * @param string|null $text
-     *
-     * @return void
-     */
-    protected function maybeDispatchAi(?string $text): void
-    {
-        if ($this->botUser === null) {
+        if ($this->botUser === null || empty($this->botUser->preferred_language_code)) {
             return;
         }
 
+        $mediaOnly = ($text === null || trim($text) === '') && $hasMedia;
+        $aiText = $mediaOnly ? 'Пользователь отправил медиафайл без подписи.' : $text;
         $shouldAiReply = app(ShouldAiReply::class);
-        if (!$shouldAiReply->shouldGenerateForBotUserText($this->botUser, $text)) {
+        if (!$shouldAiReply->shouldGenerateForBotUserText($this->botUser, $aiText)) {
             return;
         }
 
-        if ((bool) app(SettingsService::class)->get('ai.auto_reply')) {
-            SendAiReplyJob::dispatch($this->botUser->id, null, (string) $text);
-        } else {
-            SendAiDraftJob::dispatch($this->botUser->id, null, (string) $text);
+        $operation = DeliveryOperation::firstOrCreate(
+            ['operation_key' => hash('sha256', 'vk-ai|' . $this->botUser->id . '|' . $this->update->id)],
+            [
+                'bot_user_id' => $this->botUser->id,
+                'trace_id' => $this->update->event_id,
+                'destination' => 'ai-support',
+                'operation' => $mediaOnly ? 'draft-media' : 'generate-reply',
+                'status' => DeliveryOperation::STATUS_PENDING,
+            ],
+        );
+        if (!$operation->wasRecentlyCreated && $operation->status === DeliveryOperation::STATUS_DELIVERED) {
+            return;
+        }
+
+        try {
+            if ($mediaOnly) {
+                SendAiDraftJob::dispatch($this->botUser->id, null, $aiText);
+            } elseif (
+                (bool) app(SettingsService::class)->get('ai.auto_reply')
+                && !$shouldAiReply->shouldUseDraftOnly($this->botUser, $aiText)
+            ) {
+                SendAiReplyJob::dispatch($this->botUser->id, null, (string) $aiText);
+            } else {
+                SendAiDraftJob::dispatch($this->botUser->id, null, (string) $aiText);
+            }
+            $operation->update(['status' => DeliveryOperation::STATUS_DELIVERED, 'delivered_at' => now()]);
+        } catch (\Throwable $e) {
+            $operation->update(['status' => DeliveryOperation::STATUS_RETRYING, 'last_error' => $e::class]);
+            throw $e;
         }
     }
 
-    /**
-     * @return void
-     */
+    private function hasDeliverableContent(): bool
+    {
+        return trim((string) $this->update->text) !== ''
+            || !empty($this->update->listAttachments)
+            || !empty($this->update->geo);
+    }
+
     protected function sendPhoto(): void
     {
-        //
     }
 
-    /**
-     * @return void
-     */
-    protected function sendSticker(): void
+    protected function sendDocument(): void
     {
-        //
     }
 
-    /**
-     * @return void
-     */
-    protected function sendContact(): void
+    protected function sendLocation(): void
     {
-        //
     }
 
-    /**
-     * @return void
-     */
-    protected function sendVideoNote(): void
-    {
-        //
-    }
-
-    /**
-     * @return void
-     */
     protected function sendVoice(): void
     {
-        //
+    }
+
+    protected function sendSticker(): void
+    {
+    }
+
+    protected function sendVideoNote(): void
+    {
+    }
+
+    protected function sendContact(): void
+    {
+    }
+
+    protected function sendMessage(): void
+    {
     }
 }

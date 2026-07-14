@@ -64,7 +64,7 @@ class OpenAiProvider extends BaseAiProvider
         ]);
 
         if (!$response->successful()) {
-            throw new \Exception('OpenAI API request failed: ' . $response->body());
+            throw new \Exception('OpenAI API request failed: HTTP ' . $response->status());
         }
 
         return $response->json();

@@ -112,11 +112,10 @@ class MaxMethods
 
         Log::channel('app')->info('MaxMethods::sendMessageWithKeyboard response', [
             'status' => $response->status(),
-            'body' => $response->body(),
         ]);
 
         if ($response->failed()) {
-            throw new \RuntimeException('Max sendMessage with keyboard failed: ' . $response->body(), 1);
+            throw new \RuntimeException('Max sendMessage with keyboard failed: HTTP ' . $response->status(), 1);
         }
 
         $data = $response->json();
@@ -155,11 +154,10 @@ class MaxMethods
 
         Log::channel('app')->info('MaxMethods::sendImageMessage response', [
             'status' => $response->status(),
-            'body' => $response->body(),
         ]);
 
         if ($response->failed()) {
-            throw new \RuntimeException('Max sendImage failed: ' . $response->body(), 1);
+            throw new \RuntimeException('Max sendImage failed: HTTP ' . $response->status(), 1);
         }
 
         $data = $response->json();
@@ -196,11 +194,10 @@ class MaxMethods
 
         Log::channel('app')->info('MaxMethods::sendAudioMessage response', [
             'status' => $response->status(),
-            'body' => $response->body(),
         ]);
 
         if ($response->failed()) {
-            throw new \RuntimeException('Max sendAudio failed: ' . $response->body(), 1);
+            throw new \RuntimeException('Max sendAudio failed: HTTP ' . $response->status(), 1);
         }
 
         $data = $response->json();
@@ -239,11 +236,10 @@ class MaxMethods
 
         Log::channel('app')->info('MaxMethods::sendFileMessage response', [
             'status' => $response->status(),
-            'body' => $response->body(),
         ]);
 
         if ($response->failed()) {
-            throw new \RuntimeException('Max sendFile failed: ' . $response->body(), 1);
+            throw new \RuntimeException('Max sendFile failed: HTTP ' . $response->status(), 1);
         }
 
         $data = $response->json();

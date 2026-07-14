@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -41,7 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
          * Log unhandled exceptions to the application log file channel.
          */
         $exceptions->render(function (Throwable $e, Request $request) {
-            if ($e instanceof HttpExceptionInterface || $e instanceof RouteNotFoundException) {
+            if ($e instanceof HttpExceptionInterface || $e instanceof RouteNotFoundException || $e instanceof AuthenticationException) {
                 return null;
             }
 

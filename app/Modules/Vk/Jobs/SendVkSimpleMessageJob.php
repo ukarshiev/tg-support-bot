@@ -4,9 +4,11 @@ namespace App\Modules\Vk\Jobs;
 
 use App\Jobs\SendMessage\AbstractSendMessageJob;
 use App\Models\BotUser;
+use App\Models\Feedback;
 use App\Modules\Vk\Api\VkMethods;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class SendVkSimpleMessageJob extends AbstractSendMessageJob
 {
@@ -27,6 +29,7 @@ class SendVkSimpleMessageJob extends AbstractSendMessageJob
     public function __construct(
         VkTextMessageDto $queryParams,
         mixed $vkMethods = null,
+        public readonly ?int $feedbackId = null,
     ) {
         $this->queryParams = $queryParams;
 
@@ -35,15 +38,38 @@ class SendVkSimpleMessageJob extends AbstractSendMessageJob
 
     public function handle(): void
     {
-        try {
-            $methodQuery = $this->queryParams->methodQuery;
-            $dataQuery = $this->queryParams->toArray();
+        $methodQuery = $this->queryParams->methodQuery;
+        $dataQuery = $this->queryParams->toArray();
 
-            $this->vkMethods->sendQueryVk($methodQuery, $dataQuery);
+        $response = $this->vkMethods->sendQueryVk($methodQuery, $dataQuery);
+        if ($response->response_code === 200) {
+            return;
+        }
 
-            throw new \Exception('SendVkMessageJob: unknown error', 1);
-        } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+        Log::channel('app')->warning('VK simple message delivery failed', [
+            'source' => 'vk_simple_message_failed',
+            'method' => $methodQuery,
+            'response_code' => $response->response_code,
+            'error_type' => $response->error_type,
+        ]);
+        throw new \RuntimeException(sprintf(
+            'VK query rejected: code=%s type=%s',
+            $response->response_code ?? 0,
+            $response->error_type ?? 'UNKNOWN',
+        ));
+    }
+
+    public function backoff(): array
+    {
+        return [1, 2, 5, 10, 20];
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        if ($this->feedbackId !== null) {
+            Feedback::whereKey($this->feedbackId)
+                ->where('status', 'awaiting_rating')
+                ->update(['status' => 'delivery_failed']);
         }
     }
 

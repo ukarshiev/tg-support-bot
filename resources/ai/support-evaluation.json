@@ -1,0 +1,16 @@
+[
+  {
+    "name": "BroSpace price",
+    "query": "How much is BroSpace?",
+    "expected_keywords": ["brospace"],
+    "forbidden_keywords": ["massage", "elite"],
+    "min_results": 1
+  },
+  {
+    "name": "Elite tariff",
+    "query": "Сколько стоит Elite и где купить?",
+    "expected_keywords": ["elite"],
+    "forbidden_keywords": ["brospace", "massage"],
+    "min_results": 1
+  }
+]

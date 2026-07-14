@@ -41,11 +41,16 @@ class SendWebhookMessage implements ShouldQueue
                 throw new \Exception('Webhook URL is empty', 1);
             }
 
-            (new WebhookService())->sendMessage($this->url, $this->payload);
+            $response = (new WebhookService())->sendMessage($this->url, $this->payload);
+            if ($response === null) {
+                throw new \RuntimeException('Webhook delivery failed.');
+            }
         } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', 'Webhook delivery job failed', [
+                'error_type' => $e::class,
+            ]);
 
-            $this->fail($e->getMessage());
+            throw $e;
         }
     }
 }

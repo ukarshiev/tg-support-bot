@@ -1,7 +1,13 @@
 <!DOCTYPE html>
-<html lang="ru" class="h-full">
+@php
+    $adminCookieHeader = (string) request()->headers->get('cookie', '');
+    preg_match('/(?:^|;\s*)tg_support_admin_theme=(dark|light)(?:;|$)/', $adminCookieHeader, $adminThemeMatch);
+    $adminInitialTheme = $adminThemeMatch[1] ?? null;
+@endphp
+<html lang="ru" class="h-full" @if($adminInitialTheme) data-theme="{{ $adminInitialTheme }}" style="color-scheme: {{ $adminInitialTheme }}" @endif>
 <head>
     <meta charset="UTF-8" />
+    @include('partials.admin-theme-head')
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
 
@@ -18,16 +24,7 @@
 
     <title>Чаты — Admin</title>
 
-    <script>
-        (() => {
-            const key = 'tg-support-bot-admin-theme';
-            const saved = localStorage.getItem(key);
-            const theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-            document.documentElement.dataset.theme = theme;
-            document.documentElement.style.colorScheme = theme;
-        })();
-    </script>
-
+    @include('partials.reverb-runtime')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 

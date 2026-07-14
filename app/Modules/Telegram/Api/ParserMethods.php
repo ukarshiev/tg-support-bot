@@ -10,6 +10,12 @@ use phpDocumentor\Reflection\Exception as phpDocumentorException;
 
 class ParserMethods
 {
+    private const CONNECT_TIMEOUT_SECONDS = 2;
+
+    private const REQUEST_TIMEOUT_SECONDS = 8;
+
+    private const UPLOAD_TIMEOUT_SECONDS = 15;
+
     /**
      * Send POST
      *
@@ -23,6 +29,8 @@ class ParserMethods
     {
         try {
             $resultQuery = Http::withHeaders($queryHeading)
+                ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
+                ->timeout(self::REQUEST_TIMEOUT_SECONDS)
                 ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
                 ->post($urlQuery, $queryParams)
                 ->json();
@@ -33,11 +41,11 @@ class ParserMethods
 
             return $resultQuery;
         } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            self::logTransportFailure('post', $e);
             return [
                 'ok' => false,
                 'response_code' => 500,
-                'result' => $e->getMessage(),
+                'result' => 'Request caused an error',
             ];
         }
     }
@@ -59,6 +67,8 @@ class ParserMethods
             }
 
             $resultQuery = Http::withHeaders($queryHeading)
+                ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
+                ->timeout(self::REQUEST_TIMEOUT_SECONDS)
                 ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
                 ->withoutVerifying()
                 ->get($urlQuery)
@@ -70,11 +80,11 @@ class ParserMethods
 
             return $resultQuery;
         } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            self::logTransportFailure('get', $e);
             return [
                 'ok' => false,
                 'response_code' => 500,
-                'result' => $e->getMessage(),
+                'result' => 'Request caused an error',
             ];
         }
     }
@@ -103,6 +113,8 @@ class ParserMethods
                 }
 
                 $resultQuery = Http::attach($attachType, $fileHandle, $safeName)
+                    ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
+                    ->timeout(self::UPLOAD_TIMEOUT_SECONDS)
                     ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
                     ->post($urlQuery, $queryParams)
                     ->json();
@@ -143,6 +155,8 @@ class ParserMethods
                     fopen($tempPath, 'rb'),
                     $safeName
                 )
+                    ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
+                    ->timeout(self::UPLOAD_TIMEOUT_SECONDS)
                     ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
                     ->post($urlQuery, $queryParams)
                     ->json();
@@ -154,12 +168,44 @@ class ParserMethods
 
             return $resultQuery;
         } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            self::logTransportFailure('attachment', $e);
             return [
                 'ok' => false,
                 'response_code' => 500,
-                'result' => $e->getMessage(),
+                'result' => self::safeAttachmentError($e),
             ];
         }
+    }
+
+    private static function safeAttachmentError(\Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+        foreach (['File ', 'Temporary file ', 'Cannot open temporary file'] as $safePrefix) {
+            if (str_starts_with($message, $safePrefix)) {
+                return $message;
+            }
+        }
+
+        return 'Request caused an error';
+    }
+
+    private static function logTransportFailure(string $operation, \Throwable $exception): void
+    {
+        $message = preg_replace(
+            '~https://api\.telegram\.org/bot[^/\s]+~i',
+            'https://api.telegram.org/bot[hidden]',
+            $exception->getMessage(),
+        ) ?? 'Telegram transport failed';
+
+        Log::channel('app')->log(
+            $exception->getCode() === 1 ? 'warning' : 'error',
+            'Telegram transport failed',
+            [
+                'source' => 'telegram_transport_failed',
+                'operation' => $operation,
+                'error_class' => $exception::class,
+                'error' => mb_substr($message, 0, 1000),
+            ],
+        );
     }
 }

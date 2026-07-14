@@ -1,4 +1,4 @@
-# Последняя редакция: 01.07.2026 09:46 UTC+3
+# Последняя редакция: 11.07.2026 07:57 UTC+3
 
 # Windows Docker-запуск relaxaclub
 
@@ -62,6 +62,18 @@ docker compose exec app php artisan telegram:set-webhook
 Команда ставит `max_connections=5`, чтобы Telegram не открывал слишком много параллельных webhook-запросов для домашнего reverse proxy и небольшого PHP-FPM пула.
 
 
+
+## Устойчивость Telegram poller к сетевым сбоям
+
+Основной `telegram_poller` не должен завершаться из-за временного timeout/TLS-сбоя Telegram API.
+
+Что важно:
+
+- `deleteWebhook` выполняется с retry и не печатает токен в лог;
+- `getUpdates` ловит транспортные ошибки и продолжает цикл;
+- внутренний webhook при transport error не двигает offset, чтобы update не потерялся;
+- в `docker-compose.yml` основной poller запускается с `--timeout=10`, а не `25`, чтобы кнопки и `/start` не ждали длинный цикл.
+
 ## Telegram poller для домашней сети
 
 Если Telegram-серверы не могут стабильно достучаться до домашнего reverse proxy, используется сервис `telegram_poller`.
@@ -79,10 +91,23 @@ flowchart LR
 
 При старте poller вызывает `deleteWebhook` без удаления накопленных updates, а затем забирает сообщения через `getUpdates`. Это обходит проблему входящих подключений Telegram к домашнему роутеру/Synology.
 
+Отдельный AI-бот теперь тоже работает через polling, потому что публичный webhook `/api/ai-bot/webhook` в домашней сети может получать `Connection timed out`. Для этого добавлен сервис `ai_telegram_poller`.
+
+```mermaid
+flowchart LR
+    aipoller[ai_telegram_poller] --> tgai[Telegram AI bot getUpdates]
+    aipoller --> aiwebhook[Внутренний webhook http://nginx/api/ai-bot/webhook]
+    aiwebhook --> app[Laravel AiBotController]
+    app --> client[Клиент]
+    app --> group[Support-тема]
+```
+
+Это не конфликтует с polling основного Telegram-бота: основной `telegram_poller` читает клиентские сообщения основного бота, а `ai_telegram_poller` читает только `callback_query` от AI-бота.
+
 Проверка poller:
 
 ```bash
-docker compose logs -f telegram_poller queue app
+docker compose logs -f telegram_poller ai_telegram_poller queue app
 ```
 
 Если сообщение пришло в Telegram, но не видно в админке, сначала смотреть:
@@ -90,6 +115,37 @@ docker compose logs -f telegram_poller queue app
 1. `docker compose logs -f telegram_poller` — забираются ли updates из Telegram.
 2. `docker compose logs -f queue` — создался ли топик и отправилось ли сообщение в группу.
 3. `docker compose exec app php artisan tinker --execute="echo \App\Models\Message::count();"` — появились ли сообщения в БД.
+
+## Быстрый фронт на Windows Docker
+
+Админка работает через Livewire: каждое действие ждёт быстрый ответ Laravel. На Windows нельзя монтировать весь проект в PHP-контейнер как `.:/var/www`: PHP начинает читать классы, `vendor`, Blade-шаблоны и кеши через медленный Windows bind mount. Из-за этого обычный переход по настройкам занимал 2–7 секунд.
+
+Теперь `docker-compose.yml` работает иначе:
+
+```mermaid
+flowchart LR
+    browser[Браузер] --> nginx[Nginx]
+    nginx --> public[app_public volume: CSS/JS/public]
+    nginx --> app[PHP-FPM из Docker-образа]
+    app --> code[Код и vendor внутри образа]
+    app --> storage[app_storage volume]
+    app --> cache[app_bootstrap_cache volume]
+    app --> db[(PostgreSQL)]
+```
+
+Что это значит простыми словами:
+
+- PHP-код и зависимости берутся из Docker-образа — это быстро.
+- `public/build` отдаётся из общего Docker-volume `app_public`, поэтому HTML, CSS и JS всегда совпадают. При старте `app` ассеты копируются туда из свежего Docker-образа.
+- `storage` и `bootstrap/cache` вынесены в Docker-volume, чтобы runtime-данные не пропадали.
+- После изменения кода, Blade, CSS/JS или зависимостей нужно пересобрать контейнеры.
+
+Контрольный замер после правки:
+
+```text
+/admin/login: примерно 0.20 с вместо 3.6–5 с
+/build/assets/*.css и *.js: примерно 0.004 с
+```
 
 ## PHP-FPM для админки и webhook
 
@@ -115,17 +171,16 @@ docker compose logs -f telegram_poller queue app
 
 ## Что сделать, чтобы применить изменения:
 
-1) `docker compose build app queue scheduler telegram_poller && docker compose up -d app queue scheduler nginx telegram_poller` — Почему: изменён Dockerfile и PHP-FPM конфиг, нужен новый образ с PHP GD и перезапуск сервисов.
+1) `docker compose up -d --build` — Почему: изменены `Dockerfile` и `docker-compose.yml`, нужно пересобрать образ, обновить `app_public` и пересоздать сервисы.
 2) `docker compose exec app php artisan migrate --force` — Почему: гарантировать наличие таблиц Laravel queue (`jobs`, `failed_jobs`).
 3) `docker compose exec app php artisan telegram:set-webhook` — Почему: переустановить webhook Telegram с безопасным `max_connections=5`.
-4) `docker compose exec app php artisan test` — Почему: проверить, что тесты аватарок и остальной код проходят в новом образе.
-5) `docker compose logs -f app nginx queue scheduler telegram_poller` — Почему: проверить ошибки приложения, nginx, очереди и планировщика.
+4) `docker compose logs -f app nginx queue scheduler telegram_poller` — Почему: проверить ошибки приложения, nginx, очереди и планировщика.
 
 ## Тёмная тема админки
 
 В админке есть переключатель темы рядом со ссылкой «Документация» внизу бокового меню.
 
-Выбор сохраняется в браузере через `localStorage`, поэтому после обновления страницы тема остаётся прежней. Если выбора ещё нет, интерфейс берёт системную тему браузера.
+Выбор сохраняется в двух местах: `localStorage` для мгновенного переключения в браузере и cookie `tg_support_admin_theme` для первого серверного HTML-ответа. Поэтому при переходе в настройки сервер сразу отдаёт `<html data-theme="dark">`, а ранний inline-скрипт в `<head>` только синхронизирует состояние до загрузки CSS. Если выбора ещё нет, интерфейс берёт системную тему браузера.
 
 Палитра тёмной темы:
 
@@ -150,8 +205,11 @@ docker compose logs -f telegram_poller queue app
 ## Что сделать, чтобы применить изменения:
 
 1) `npm run build` — Почему: пересобрать CSS/JS ассеты после изменения цветов и Blade-разметки.
-2) `docker compose restart app nginx` — Почему: обновить Laravel/nginx-процессы, если страница открыта из Docker.
+2) `docker compose up -d --build` — Почему: код и Blade-шаблоны находятся внутри Docker-образа, простой restart не подтянет новую архитектуру темы.
 3) `docker compose logs -f app nginx queue scheduler` — Почему: проверить ошибки после применения темы.
 
 
 
+## Redis, Horizon и Reverb
+
+Инструкция применения и rollback: [Realtime Telegram pipeline](realtime-telegram-pipeline.md).

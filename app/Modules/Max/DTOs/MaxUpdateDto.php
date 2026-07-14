@@ -29,11 +29,10 @@ readonly class MaxUpdateDto
             $data = $request->all();
 
             $attachments = $data['message']['body']['attachments'] ?? [];
-
             return new self(
                 event_id: (string)($data['event_id'] ?? $data['timestamp']),
                 type: $data['update_type'] ?? $data['type'],
-                from_id: $data['message']['sender']['user_id'],
+                from_id: (int) ($data['message']['sender']['user_id'] ?? $data['callback']['user']['user_id'] ?? $data['user']['user_id']),
                 id: $data['message']['body']['mid'] ?? '',
                 text: $data['message']['body']['text'] ?? null,
                 rawData: $data,
@@ -43,6 +42,23 @@ readonly class MaxUpdateDto
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * MAX uses an opaque string as the external message identifier. The legacy
+     * messages.from_id column is a BIGINT, therefore use a stable 60-bit key
+     * derived from the real `mid` instead of the sender user id.
+     */
+    public function persistenceId(): int
+    {
+        if ($this->id !== '' && ctype_digit($this->id)) {
+            $numeric = filter_var($this->id, FILTER_VALIDATE_INT);
+            if (is_int($numeric) && $numeric > 0) {
+                return $numeric;
+            }
+        }
+
+        return (int) hexdec(substr(hash('sha256', $this->id !== '' ? $this->id : $this->event_id), 0, 15));
     }
 
     /**

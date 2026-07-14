@@ -2,11 +2,16 @@
 
 namespace Tests\Unit\Livewire\Chat;
 
+use App\Jobs\TranslateMessageHistoryJob;
 use App\Livewire\Chat\ConversationPage;
+use App\Models\AiMessage;
 use App\Models\BotUser;
 use App\Models\Message;
+use App\Models\MessageTranslation;
+use App\Models\TranslationJob;
 use App\Models\User;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
+use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -120,6 +125,70 @@ class ConversationPageTest extends TestCase
             ->call('selectChat', $botUser->id)
             ->assertSet('activeBotUserId', $botUser->id)
             ->assertSet('activeBotUser.id', $botUser->id);
+    }
+
+    public function test_language_selector_is_hidden_and_contact_summary_is_rendered_when_language_is_selected(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => '7001',
+            'platform' => 'telegram',
+            'display_name' => 'Barka Dark',
+            'username' => 'Dark_Barka',
+            'preferred_language_code' => 'en',
+            'preferred_language_name' => 'English',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => '/start',
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'from_id' => 0,
+            'to_id' => 2,
+            'text' => 'Выберите язык / Choose your language:',
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'from_id' => 0,
+            'to_id' => 3,
+            'text' => 'Welcome text',
+        ]);
+
+        $component = Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id);
+
+        $html = $component->html();
+        $threadStart = strpos($html, 'id="chat-thread"');
+        $threadEnd = strpos($html, 'Pending AI drafts', $threadStart ?: 0);
+        $threadHtml = $threadStart === false
+            ? $html
+            : substr($html, $threadStart, $threadEnd === false ? null : $threadEnd - $threadStart);
+
+        $startPos = strpos($threadHtml, '/start');
+        $contactPos = strpos($threadHtml, 'КОНТАКТНАЯ ИНФОРМАЦИЯ');
+        $selectorPos = strpos($threadHtml, 'Выберите язык / Choose your language:');
+        $welcomePos = strpos($threadHtml, 'Welcome text');
+
+        $this->assertIsInt($startPos);
+        $this->assertIsInt($contactPos);
+        $this->assertFalse($selectorPos);
+        $this->assertIsInt($welcomePos);
+        $this->assertLessThan($contactPos, $startPos);
+        $this->assertLessThan($contactPos, $welcomePos);
+        $this->assertStringContainsString('Источник: telegram', $threadHtml);
+        $this->assertStringContainsString('Выбранный язык: English', $threadHtml);
     }
 
     public function test_select_chat_loads_messages(): void
@@ -332,6 +401,433 @@ class ConversationPageTest extends TestCase
         $this->assertSame('fresh', $msgs->last()->text);
     }
 
+    public function test_non_russian_chat_queues_visible_history_translation(): void
+    {
+        Queue::fake();
+
+        app(SettingsService::class)->set('support.languages', [
+            'ru' => ['code' => 'ru', 'name' => 'Русский', 'native' => '🇷🇺 Русский', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 1],
+            'tr' => ['code' => 'tr', 'name' => 'Türkçe', 'native' => '🇹🇷 Türkçe', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 2],
+        ]);
+
+        $botUser = BotUser::create([
+            'chat_id' => 11001,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'tr',
+            'preferred_language_name' => 'Türkçe',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        $message = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Merhaba',
+        ]);
+        $selector = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'message_kind' => Message::KIND_LANGUAGE_SELECTOR,
+            'from_id' => 0,
+            'to_id' => 2,
+            'text' => 'Choose language',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSet('chatTranslationLocale', 'tr')
+            ->assertSet('chatHistoryTranslationActive', true)
+            ->assertSee('🇹🇷 TR');
+
+        $this->assertDatabaseHas('message_translations', [
+            'message_id' => $message->id,
+            'source_locale' => 'tr',
+            'target_locale' => 'ru',
+            'direction' => 'client_to_operator',
+            'status' => 'queued',
+        ]);
+        $this->assertDatabaseHas('translation_jobs', [
+            'job_type' => TranslationJob::TYPE_MESSAGE_HISTORY,
+            'subject_id' => $message->id,
+            'status' => TranslationJob::STATUS_QUEUED,
+        ]);
+        $this->assertDatabaseMissing('message_translations', [
+            'message_id' => $selector->id,
+        ]);
+        Queue::assertPushed(TranslateMessageHistoryJob::class);
+    }
+
+    public function test_russian_chat_shows_flag_without_queuing_history_translation(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 11002,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'ru',
+            'preferred_language_name' => 'Русский',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Привет',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSet('chatTranslationLocale', 'ru')
+            ->assertSet('chatHistoryTranslationActive', false)
+            ->assertSee('RU');
+
+        $this->assertDatabaseCount('message_translations', 0);
+        Queue::assertNotPushed(TranslateMessageHistoryJob::class);
+    }
+
+    public function test_chat_without_selected_language_shows_not_selected(): void
+    {
+        Queue::fake();
+
+        app(SettingsService::class)->set('support.languages', [
+            'ru' => ['code' => 'ru', 'name' => 'Русский', 'native' => '🇷🇺 Русский', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 1],
+            'en' => ['code' => 'en', 'name' => 'English', 'native' => '🇺🇸 English', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 2],
+        ]);
+
+        $botUser = BotUser::create([
+            'chat_id' => 11006,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'ru',
+            'preferred_language_name' => 'Русский',
+            'preferred_language_selected_at' => null,
+            'chat_translation_locale' => null,
+            'chat_translation_locale_selected_at' => null,
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Вы тут?',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSet('chatTranslationLocale', null)
+            ->assertSet('chatHistoryTranslationActive', false)
+            ->assertSee('Не выбран')
+            ->assertDontSee('🇺🇸 EN ON');
+
+        $this->assertDatabaseCount('message_translations', 0);
+        Queue::assertNotPushed(TranslateMessageHistoryJob::class);
+    }
+
+    public function test_manual_chat_language_change_is_saved_only_to_chat_context(): void
+    {
+        Queue::fake();
+
+        app(SettingsService::class)->set('support.languages', [
+            'ru' => ['code' => 'ru', 'name' => 'Русский', 'native' => '🇷🇺 Русский', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 1],
+            'tr' => ['code' => 'tr', 'name' => 'Türkçe', 'native' => '🇹🇷 Türkçe', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 2],
+            'en' => ['code' => 'en', 'name' => 'English', 'native' => '🇺🇸 English', 'enabled' => false, 'show_on_start' => true, 'sort_order' => 3],
+        ]);
+
+        $botUser = BotUser::create([
+            'chat_id' => 11003,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'ru',
+            'preferred_language_name' => 'Русский',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Merhaba',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('setChatTranslationLocale', 'tr')
+            ->assertSet('chatTranslationLocale', 'tr')
+            ->assertSee('🇹🇷 TR')
+            ->assertDontSee('🇺🇸 EN');
+
+        $botUser->refresh();
+        $this->assertSame('ru', $botUser->preferred_language_code);
+        $this->assertSame('tr', $botUser->chat_translation_locale);
+    }
+
+    public function test_selecting_another_chat_resets_composer_and_uses_new_chat_language(): void
+    {
+        Queue::fake();
+
+        app(SettingsService::class)->set('support.languages', [
+            'ru' => ['code' => 'ru', 'name' => 'Русский', 'native' => '🇷🇺 Русский', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 1],
+            'tr' => ['code' => 'tr', 'name' => 'Türkçe', 'native' => '🇹🇷 Türkçe', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 2],
+            'es' => ['code' => 'es', 'name' => 'Español', 'native' => '🇪🇸 Español', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 3],
+        ]);
+
+        $turkish = BotUser::create([
+            'chat_id' => 12001,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'tr',
+            'preferred_language_name' => 'Türkçe',
+            'preferred_language_selected_at' => now(),
+        ]);
+        $spanish = BotUser::create([
+            'chat_id' => 12002,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'es',
+            'preferred_language_name' => 'Español',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        Message::create([
+            'bot_user_id' => $turkish->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Merhaba',
+        ]);
+        Message::create([
+            'bot_user_id' => $spanish->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 2,
+            'to_id' => 0,
+            'text' => 'Hola',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $turkish->id)
+            ->set('replyText', 'Черновик для турецкого клиента')
+            ->call('selectChat', $spanish->id)
+            ->assertSet('replyText', '')
+            ->assertSet('replyTranslatedText', null)
+            ->assertSet('replyTranslationStatus', 'empty')
+            ->assertSet('chatTranslationLocale', 'es')
+            ->assertSee('🇪🇸 ES')
+            ->assertDontSee('Черновик для турецкого клиента')
+            ->assertDontSee('🇹🇷 TR ON');
+    }
+
+    public function test_preferred_language_wins_over_stale_chat_translation_locale(): void
+    {
+        Queue::fake();
+
+        app(SettingsService::class)->set('support.languages', [
+            'ru' => ['code' => 'ru', 'name' => 'Русский', 'native' => '🇷🇺 Русский', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 1],
+            'tr' => ['code' => 'tr', 'name' => 'Türkçe', 'native' => '🇹🇷 Türkçe', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 2],
+            'es' => ['code' => 'es', 'name' => 'Español', 'native' => '🇪🇸 Español', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 3],
+        ]);
+
+        $botUser = BotUser::create([
+            'chat_id' => 12003,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'es',
+            'preferred_language_name' => 'Español',
+            'preferred_language_selected_at' => now(),
+            'chat_translation_locale' => 'tr',
+            'chat_translation_locale_selected_at' => now()->subHour(),
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 3,
+            'to_id' => 0,
+            'text' => 'Hola',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSet('chatTranslationLocale', 'es')
+            ->assertSee('🇪🇸 ES')
+            ->assertDontSee('🇹🇷 TR ON');
+    }
+
+    public function test_outgoing_history_prefers_restored_operator_translation_over_client_text(): void
+    {
+        Queue::fake();
+
+        app(SettingsService::class)->set('support.languages', [
+            'ru' => ['code' => 'ru', 'name' => 'Русский', 'native' => '🇷🇺 Русский', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 1],
+            'tr' => ['code' => 'tr', 'name' => 'Türkçe', 'native' => '🇹🇷 Türkçe', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 2],
+        ]);
+
+        $botUser = BotUser::create([
+            'chat_id' => 12004,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'tr',
+            'preferred_language_name' => 'Türkçe',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        $message = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'from_id' => 0,
+            'to_id' => 12004,
+            'text' => 'Siparişiniz hazırlanıyor.',
+        ]);
+
+        MessageTranslation::create([
+            'message_id' => $message->id,
+            'source_locale' => 'ru',
+            'target_locale' => 'tr',
+            'source_text' => 'Siparişiniz hazırlanıyor.',
+            'translated_text' => 'Siparişiniz hazırlanıyor.',
+            'direction' => 'operator_to_client',
+            'status' => 'ready',
+            'source' => 'auto',
+            'source_hash' => \App\Modules\Translation\Services\TranslationService::sourceHash('Siparişiniz hazırlanıyor.'),
+            'translated_at' => now(),
+        ]);
+        MessageTranslation::create([
+            'message_id' => $message->id,
+            'source_locale' => 'tr',
+            'target_locale' => 'ru',
+            'source_text' => 'Siparişiniz hazırlanıyor.',
+            'translated_text' => 'Ваш заказ готовится.',
+            'direction' => 'system_to_operator',
+            'status' => 'ready',
+            'source' => 'auto',
+            'source_hash' => \App\Modules\Translation\Services\TranslationService::sourceHash('Siparişiniz hazırlanıyor.'),
+            'translated_at' => now(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Ваш заказ готовится.')
+            ->assertSee('Siparişiniz hazırlanıyor.');
+    }
+
+    public function test_pending_ai_draft_restores_russian_operator_layer_when_source_is_client_language(): void
+    {
+        Queue::fake();
+
+        app(SettingsService::class)->set('translation.provider_order', ['fake']);
+        app(SettingsService::class)->set('support.languages', [
+            'ru' => ['code' => 'ru', 'name' => 'Русский', 'native' => '🇷🇺 Русский', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 1],
+            'en' => ['code' => 'en', 'name' => 'English', 'native' => '🇺🇸 English', 'enabled' => true, 'show_on_start' => true, 'sort_order' => 2],
+        ]);
+
+        $botUser = BotUser::create([
+            'chat_id' => 12005,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'en',
+            'preferred_language_name' => 'English',
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 12005,
+            'to_id' => 0,
+            'text' => 'Thanks',
+        ]);
+
+        AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'status' => AiMessage::STATUS_PENDING,
+            'text_ai' => "You're welcome! I'm glad to help.",
+            'text_source' => "You're welcome! I'm glad to help.",
+            'text_translated' => "You're welcome! I'm glad to help.",
+            'source_locale' => 'ru',
+            'target_locale' => 'en',
+            'translation_status' => 'ready',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('RU')
+            ->assertSee('Выбранный язык')
+            ->assertSee("[ru] You're welcome! I'm glad to help.");
+    }
+
+    public function test_retry_message_translation_requeues_only_one_failed_message(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 11004,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'tr',
+            'preferred_language_name' => 'Türkçe',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        $failed = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Hata',
+        ]);
+        $other = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Tamam',
+        ]);
+
+        MessageTranslation::create([
+            'message_id' => $failed->id,
+            'source_locale' => 'tr',
+            'target_locale' => 'ru',
+            'source_text' => 'Hata',
+            'direction' => 'client_to_operator',
+            'status' => 'failed',
+            'source' => 'auto',
+            'source_hash' => \App\Modules\Translation\Services\TranslationService::sourceHash('Hata'),
+            'error_message' => 'Провайдер недоступен',
+        ]);
+        MessageTranslation::create([
+            'message_id' => $other->id,
+            'source_locale' => 'tr',
+            'target_locale' => 'ru',
+            'source_text' => 'Tamam',
+            'translated_text' => 'Хорошо',
+            'direction' => 'client_to_operator',
+            'status' => 'ready',
+            'source' => 'auto',
+            'source_hash' => \App\Modules\Translation\Services\TranslationService::sourceHash('Tamam'),
+            'translated_at' => now(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->call('retryMessageTranslation', $failed->id);
+
+        $this->assertDatabaseHas('message_translations', [
+            'message_id' => $failed->id,
+            'status' => 'queued',
+        ]);
+        $this->assertDatabaseMissing('message_translations', [
+            'message_id' => $other->id,
+            'status' => 'queued',
+        ]);
+    }
+
     public function test_select_chat_zero_clears_active_dialog(): void
     {
         $botUser = BotUser::create(['chat_id' => 1, 'platform' => 'telegram']);
@@ -350,7 +846,12 @@ class ConversationPageTest extends TestCase
     {
         Queue::fake();
 
-        $botUser = BotUser::create(['chat_id' => 100, 'platform' => 'telegram']);
+        $botUser = BotUser::create([
+            'chat_id' => 100,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'ru',
+            'preferred_language_selected_at' => now(),
+        ]);
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
@@ -368,13 +869,40 @@ class ConversationPageTest extends TestCase
         Queue::assertPushed(SendTelegramSimpleQueryJob::class);
     }
 
+    public function test_foreign_reply_is_blocked_until_translation_is_ready(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 101,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'fr',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->set('replyText', 'Русский текст')
+            ->set('replyTranslationStatus', 'error')
+            ->set('replyTranslatedText', null)
+            ->call('sendReply')
+            ->assertDispatched('admin-toast', message: 'Перевод ещё не готов. Текст не отправлен.', type: 'error');
+
+        $this->assertDatabaseMissing('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'text' => 'Русский текст',
+        ]);
+        Queue::assertNotPushed(SendTelegramSimpleQueryJob::class);
+    }
+
     // ── Polling interval ───────────────────────────────────────────────────────
 
-    public function test_polling_interval_is_five_seconds(): void
+    public function test_polling_interval_is_thirty_seconds_fallback(): void
     {
         $instance = Livewire::test(ConversationPage::class)->instance();
 
-        $this->assertEquals('5s', $instance->getPollingInterval());
+        $this->assertEquals('30s', $instance->getPollingInterval());
     }
 
     // ── shouldShowReplyForm ────────────────────────────────────────────────────

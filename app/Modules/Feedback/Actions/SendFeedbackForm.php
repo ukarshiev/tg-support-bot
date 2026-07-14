@@ -2,248 +2,57 @@
 
 namespace App\Modules\Feedback\Actions;
 
+use App\Models\AutoReply;
 use App\Models\BotUser;
 use App\Models\Feedback;
-use App\Modules\Max\DTOs\MaxTextMessageDto;
-use App\Modules\Max\Jobs\SendMaxMessageJob;
-use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
-use App\Modules\Vk\DTOs\VkTextMessageDto;
-use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
-use App\Platform\PlatformChannelRegistry;
+use App\Modules\Feedback\Jobs\DeliverFeedbackFormJob;
+use App\Services\AutoReplies\SystemAutoReplyResolver;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Send the post-close feedback form to the user on their platform.
- *
- * Creates a Feedback record with status='awaiting_rating' and dispatches
- * a platform-appropriate message carrying the rating keyboard.
- *
- * Platform delivery:
- * - telegram — SendTelegramSimpleQueryJob with inline_keyboard (5 star buttons)
- * - vk       — SendVkSimpleMessageJob with VK callback keyboard (5 buttons)
- * - max      — SendMaxMessageJob with Max inline keyboard (5 buttons)
- * - other    — delegated to a PlatformChannel registered in PlatformChannelRegistry
- *              by a pluggable module (e.g. the paid Avito package)
- *
- * callback_data / payload format: feedback_rate_{botUserId}_{score}
- * e.g. feedback_rate_42_3
- */
+/** Создаёт ровно одну актуальную форму и передаёт подтверждаемую доставку отдельной очереди. */
 class SendFeedbackForm
 {
-    /**
-     * Send feedback form to the user after their conversation is closed.
-     *
-     * @param BotUser $botUser The user whose conversation was just closed.
-     *
-     * @return void
-     */
     public function execute(BotUser $botUser): void
     {
+        $superseded = Feedback::query()
+            ->where('bot_user_id', $botUser->id)
+            ->whereIn('status', ['awaiting_rating', 'delivery_pending'])
+            ->update(['status' => 'superseded']);
+
+        if ($superseded > 0) {
+            Log::channel('app')->info('Old feedback forms superseded', [
+                'source' => 'feedback_forms_superseded',
+                'bot_user_id' => $botUser->id,
+                'count' => $superseded,
+            ]);
+        }
+
+        $text = app(SystemAutoReplyResolver::class)->resolve(AutoReply::TYPE_FEEDBACK_REQUEST, $botUser);
+        if ($text === null) {
+            Log::channel('app')->info('SendFeedbackForm: disabled prompt skipped', [
+                'source' => 'feedback_form_disabled',
+                'bot_user_id' => $botUser->id,
+                'platform' => $botUser->platform,
+                'locale' => $botUser->preferred_language_code,
+            ]);
+
+            return;
+        }
+
         $feedback = Feedback::create([
             'bot_user_id' => $botUser->id,
-            'status' => 'awaiting_rating',
+            'status' => 'delivery_pending',
             'closed_at' => now(),
         ]);
 
-        Log::channel('app')->info('SendFeedbackForm: created feedback record', [
-            'source' => 'feedback_form_created',
+        DeliverFeedbackFormJob::dispatch($feedback->id, $text);
+
+        Log::channel('app')->info('Feedback form queued', [
+            'source' => 'feedback_form_delivery_queued',
             'bot_user_id' => $botUser->id,
             'feedback_id' => $feedback->id,
             'platform' => $botUser->platform,
+            'locale' => $botUser->preferred_language_code,
         ]);
-
-        switch ($botUser->platform) {
-            case 'telegram':
-                $this->sendTelegram($botUser, $feedback->id);
-                break;
-
-            case 'vk':
-                $this->sendVk($botUser, $feedback->id);
-                break;
-
-            case 'max':
-                $this->sendMax($botUser, $feedback->id);
-                break;
-
-            default:
-                $channel = app(PlatformChannelRegistry::class)->for($botUser->platform);
-
-                if ($channel !== null) {
-                    $channel->sendFeedbackForm($botUser, $feedback->id);
-
-                    Log::channel('app')->info('SendFeedbackForm: delivered via registered channel', [
-                        'source' => 'feedback_form_registered_channel',
-                        'bot_user_id' => $botUser->id,
-                        'feedback_id' => $feedback->id,
-                        'platform' => $botUser->platform,
-                    ]);
-                    break;
-                }
-
-                Log::channel('app')->warning('SendFeedbackForm: unsupported platform, skipping delivery', [
-                    'source' => 'feedback_form_unsupported_platform',
-                    'bot_user_id' => $botUser->id,
-                    'platform' => $botUser->platform,
-                ]);
-                break;
-        }
-    }
-
-    /**
-     * Send Telegram inline keyboard with 5 star rating buttons.
-     *
-     * @param BotUser $botUser
-     * @param int     $feedbackId
-     *
-     * @return void
-     */
-    private function sendTelegram(BotUser $botUser, int $feedbackId): void
-    {
-        // TODO: move text to lang/ru/messages.php when i18n infrastructure is added
-        $text = 'Пожалуйста, оцените качество нашей поддержки:';
-
-        $keyboard = $this->buildTelegramKeyboard($botUser->id, $feedbackId);
-
-        SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
-            'methodQuery' => 'sendMessage',
-            'chat_id' => $botUser->chat_id,
-            'text' => $text,
-            'parse_mode' => 'html',
-            'reply_markup' => ['inline_keyboard' => [$keyboard]],
-        ]));
-    }
-
-    /**
-     * Send VK message with inline callback keyboard (5 rating buttons).
-     *
-     * VK supports callback buttons via the `keyboard` JSON parameter on messages.send.
-     * Callback events arrive at the VK webhook as type=message_event and are routed
-     * by VkBotController to HandleFeedbackRating.
-     *
-     * @param BotUser $botUser
-     * @param int     $feedbackId
-     *
-     * @return void
-     */
-    private function sendVk(BotUser $botUser, int $feedbackId): void
-    {
-        // TODO: move text to lang/ru/messages.php when i18n infrastructure is added
-        $text = 'Пожалуйста, оцените качество нашей поддержки:';
-
-        $keyboard = $this->buildVkKeyboard($botUser->id, $feedbackId);
-
-        SendVkSimpleMessageJob::dispatch(VkTextMessageDto::from([
-            'methodQuery' => 'messages.send',
-            'peer_id' => $botUser->chat_id,
-            'message' => $text,
-            'keyboard' => json_encode($keyboard),
-        ]));
-    }
-
-    /**
-     * Send Max message with inline keyboard (5 rating buttons).
-     *
-     * Max supports inline keyboards via the keyboard array in MaxTextMessageDto.
-     * Callback events arrive as update_type=message_callback and are routed
-     * by MaxBotController to HandleFeedbackRating.
-     *
-     * @param BotUser $botUser
-     * @param int     $feedbackId
-     *
-     * @return void
-     */
-    private function sendMax(BotUser $botUser, int $feedbackId): void
-    {
-        // TODO: move text to lang/ru/messages.php when i18n infrastructure is added
-        $text = 'Пожалуйста, оцените качество нашей поддержки:';
-
-        $keyboard = $this->buildMaxKeyboard($botUser->id, $feedbackId);
-
-        SendMaxMessageJob::dispatch(
-            $botUser->id,
-            null,
-            MaxTextMessageDto::from([
-                'methodQuery' => 'sendMessage',
-                'user_id' => $botUser->chat_id,
-                'text' => $text,
-                'keyboard' => $keyboard,
-            ]),
-        );
-    }
-
-    /**
-     * Build Telegram inline keyboard row with 5 rating buttons.
-     *
-     * callback_data format: feedback_rate_{botUserId}_{feedbackId}_{score}
-     *
-     * @param int $botUserId
-     * @param int $feedbackId
-     *
-     * @return array<int, array<string, string>>
-     */
-    private function buildTelegramKeyboard(int $botUserId, int $feedbackId): array
-    {
-        $buttons = [];
-
-        for ($score = 1; $score <= 5; $score++) {
-            $buttons[] = [
-                'text' => (string) $score,
-                'callback_data' => "feedback_rate_{$botUserId}_{$feedbackId}_{$score}",
-            ];
-        }
-
-        return $buttons;
-    }
-
-    /**
-     * Build VK callback keyboard with 5 rating buttons in one row.
-     *
-     * @param int $botUserId
-     * @param int $feedbackId
-     *
-     * @return array<string, mixed>
-     */
-    private function buildVkKeyboard(int $botUserId, int $feedbackId): array
-    {
-        $buttons = [];
-
-        for ($score = 1; $score <= 5; $score++) {
-            $buttons[] = [
-                'action' => [
-                    'type' => 'callback',
-                    'label' => (string) $score,
-                    'payload' => json_encode(['command' => "feedback_rate_{$botUserId}_{$feedbackId}_{$score}"]),
-                ],
-            ];
-        }
-
-        return [
-            'inline' => true,
-            'buttons' => [$buttons],
-        ];
-    }
-
-    /**
-     * Build Max inline keyboard with 5 rating buttons in one row.
-     *
-     * @param int $botUserId
-     * @param int $feedbackId
-     *
-     * @return array<int, array<int, array<string, mixed>>>
-     */
-    private function buildMaxKeyboard(int $botUserId, int $feedbackId): array
-    {
-        $buttons = [];
-
-        for ($score = 1; $score <= 5; $score++) {
-            $buttons[] = [
-                'type' => 'callback',
-                'text' => (string) $score,
-                'payload' => "feedback_rate_{$botUserId}_{$feedbackId}_{$score}",
-            ];
-        }
-
-        return [$buttons];
     }
 }

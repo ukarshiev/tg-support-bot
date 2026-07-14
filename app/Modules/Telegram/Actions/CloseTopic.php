@@ -2,12 +2,18 @@
 
 namespace App\Modules\Telegram\Actions;
 
+use App\Contracts\LocalizedSystemMessageChannel;
+use App\Models\AutoReply;
 use App\Models\BotUser;
 use App\Modules\Feedback\Actions\SendFeedbackForm;
+use App\Modules\Max\DTOs\MaxTextMessageDto;
+use App\Modules\Max\Jobs\SendMaxSimpleMessageJob;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
+use App\Platform\PlatformChannelRegistry;
+use App\Services\AutoReplies\SystemAutoReplyResolver;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
 
@@ -25,29 +31,35 @@ class CloseTopic
         }
 
         $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
+        $closeText = app(SystemAutoReplyResolver::class)->resolve(AutoReply::TYPE_DIALOG_CLOSED, $botUser);
 
-        switch ($botUser->platform) {
-            case 'telegram':
-                $this->sendMessageInTelegram($botUser);
-                break;
+        Log::channel('app')->info('CloseTopic: client message resolution completed', [
+            'source' => 'close_topic_text_resolved',
+            'bot_user_id' => $botUser->id,
+            'platform' => $botUser->platform,
+            'locale' => $botUser->preferred_language_code,
+            'auto_reply_type' => AutoReply::TYPE_DIALOG_CLOSED,
+            'delivery_enabled' => $closeText !== null,
+        ]);
 
-            case 'vk':
-                $this->sendMessageInVk($botUser);
-                break;
+        if ($closeText !== null) {
+            $this->sendCloseMessage($botUser, $closeText);
         }
 
-        SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
-            'methodQuery' => 'editForumTopic',
-            'chat_id' => $groupId,
-            'message_thread_id' => $botUser->topic_id,
-            'icon_custom_emoji_id' => __('icons.outgoing'),
-        ]));
+        if ($groupId !== '' && !empty($botUser->topic_id)) {
+            SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
+                'methodQuery' => 'editForumTopic',
+                'chat_id' => $groupId,
+                'message_thread_id' => $botUser->topic_id,
+                'icon_custom_emoji_id' => __('icons.outgoing'),
+            ]));
 
-        SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
-            'methodQuery' => 'closeForumTopic',
-            'chat_id' => $groupId,
-            'message_thread_id' => $botUser->topic_id,
-        ]));
+            SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
+                'methodQuery' => 'closeForumTopic',
+                'chat_id' => $groupId,
+                'message_thread_id' => $botUser->topic_id,
+            ]));
+        }
 
         $botUser->update([
             'is_closed' => true,
@@ -66,17 +78,41 @@ class CloseTopic
         }
     }
 
+    private function sendCloseMessage(BotUser $botUser, string $text): void
+    {
+        switch ($botUser->platform) {
+            case 'telegram':
+                $this->sendMessageInTelegram($botUser, $text);
+                break;
+
+            case 'vk':
+                $this->sendMessageInVk($botUser, $text);
+                break;
+
+            case 'max':
+                $this->sendMessageInMax($botUser, $text);
+                break;
+
+            default:
+                $channel = app(PlatformChannelRegistry::class)->for($botUser->platform);
+                if ($channel instanceof LocalizedSystemMessageChannel) {
+                    $channel->sendSystemMessage($botUser, AutoReply::TYPE_DIALOG_CLOSED, $text);
+                }
+                break;
+        }
+    }
+
     /**
      * @param BotUser $botUser
      *
      * @return void
      */
-    private function sendMessageInTelegram(BotUser $botUser): void
+    private function sendMessageInTelegram(BotUser $botUser, string $text): void
     {
         SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
             'methodQuery' => 'sendMessage',
             'chat_id' => $botUser->chat_id,
-            'text' => __('messages.message_close_topic'),
+            'text' => $text,
             'parse_mode' => 'html',
         ]));
     }
@@ -86,14 +122,23 @@ class CloseTopic
      *
      * @return void
      */
-    private function sendMessageInVk(BotUser $botUser): void
+    private function sendMessageInVk(BotUser $botUser, string $text): void
     {
         SendVkSimpleMessageJob::dispatch(
             VkTextMessageDto::from([
                 'methodQuery' => 'messages.send',
                 'peer_id' => $botUser->chat_id,
-                'message' => __('messages.message_close_topic'),
+                'message' => $text,
             ]),
         );
+    }
+
+    private function sendMessageInMax(BotUser $botUser, string $text): void
+    {
+        SendMaxSimpleMessageJob::dispatch(MaxTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'user_id' => $botUser->chat_id,
+            'text' => $text,
+        ]));
     }
 }

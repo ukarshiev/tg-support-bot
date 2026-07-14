@@ -18,12 +18,15 @@ class WebhookService
         try {
             $response = Http::timeout(10)->asJson()->post($url, $dataMessage);
             if ($response->failed()) {
-                throw new \RuntimeException('Ошибка! Статус: ' . $response->status() . ', body: ' . $response->body());
+                throw new \RuntimeException('Ошибка доставки webhook. HTTP ' . $response->status());
             }
 
             return $response->body();
         } catch (\Throwable $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', 'Ошибка доставки webhook', [
+                'error_type' => $e::class,
+                'error_code' => $e->getCode(),
+            ]);
 
             return null;
         }

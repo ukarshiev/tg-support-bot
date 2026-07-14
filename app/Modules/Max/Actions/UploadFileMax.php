@@ -30,16 +30,14 @@ class UploadFileMax
         try {
             $fileResponse = Http::get($telegramFileUrl);
             if ($fileResponse->failed()) {
-                throw new \Exception("Failed to download from Telegram: status={$fileResponse->status()} url={$telegramFileUrl}");
+                throw new \Exception("Failed to download from Telegram: HTTP {$fileResponse->status()}");
             }
 
             return $this->uploadContents($fileResponse->body(), $filename, $type);
         } catch (\Throwable $e) {
-            Log::channel('app')->error('UploadFileMax: download failed | ' . get_class($e) . ': ' . $e->getMessage(), [
+            Log::channel('app')->error('UploadFileMax: download failed', [
                 'type' => $type,
-                'filename' => $filename,
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
+                'error_type' => $e::class,
             ]);
 
             return null;
@@ -70,7 +68,6 @@ class UploadFileMax
 
             Log::channel('app')->info('UploadFileMax: uploading to CDN', [
                 'type' => $type,
-                'filename' => $filename,
                 'size' => strlen($contents),
             ]);
 
@@ -78,12 +75,15 @@ class UploadFileMax
                 ->post($uploadResult->url);
 
             if ($cdnResponse->failed()) {
-                throw new \Exception("CDN upload failed: status={$cdnResponse->status()} body={$cdnResponse->body()}");
+                throw new \Exception("CDN upload failed: HTTP {$cdnResponse->status()}");
             }
 
             $cdnData = $cdnResponse->json() ?? [];
 
-            Log::channel('app')->info('UploadFileMax: CDN response | type=' . $type . ' data=' . json_encode($cdnData));
+            Log::channel('app')->info('UploadFileMax: CDN response received', [
+                'type' => $type,
+                'status' => $cdnResponse->status(),
+            ]);
 
             $token = $uploadResult->token
                 ?? $cdnData['token']
@@ -91,19 +91,16 @@ class UploadFileMax
                 ?? null;
 
             if ($token === null) {
-                throw new \RuntimeException('No token received. CDN response: ' . json_encode($cdnData));
+                throw new \RuntimeException('No token received from CDN response.');
             }
 
             Log::channel('app')->info('UploadFileMax: upload succeeded', ['type' => $type]);
 
             return $token;
         } catch (\Throwable $e) {
-            Log::channel('app')->error('UploadFileMax: upload failed | ' . get_class($e) . ': ' . $e->getMessage(), [
+            Log::channel('app')->error('UploadFileMax: upload failed', [
                 'type' => $type,
-                'filename' => $filename,
-                'exception' => get_class($e),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
+                'error_type' => $e::class,
             ]);
 
             return null;

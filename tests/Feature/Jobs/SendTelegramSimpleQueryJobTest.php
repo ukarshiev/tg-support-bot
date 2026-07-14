@@ -7,7 +7,6 @@ use App\Modules\Telegram\Actions\DeleteForumTopic;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
-use App\Modules\Telegram\Jobs\TopicCreateJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -33,14 +32,8 @@ class SendTelegramSimpleQueryJobTest extends TestCase
         $this->dto = TelegramUpdateDtoMock::getDto();
         $this->botUser = BotUser::getOrCreateByTelegramUpdate($this->dto);
 
-        $jobTopicCreate = new TopicCreateJob(
-            $this->botUser->id,
-        );
-        $jobTopicCreate->handle();
-
         $this->groupId = time();
-
-        $this->botUser->refresh();
+        $this->botUser->update(['topic_id' => 42]);
     }
 
     public function test_edit_forum_topic_outgoing(): void
@@ -98,5 +91,27 @@ class SendTelegramSimpleQueryJobTest extends TestCase
         if (isset($botUser->topic_id)) {
             app(DeleteForumTopic::class)->execute($this->botUser);
         }
+    }
+
+    public function test_permanent_client_delivery_error_throws_and_stops_job_chain(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*/sendMessage' => Http::response([
+                'ok' => false,
+                'error_code' => 400,
+                'description' => 'Bad Request: chat not found',
+            ], 400),
+        ]);
+
+        $job = new SendTelegramSimpleQueryJob(TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => $this->botUser->chat_id,
+            'text' => 'Проверка доставки',
+        ]));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Telegram query rejected');
+
+        $job->handle();
     }
 }

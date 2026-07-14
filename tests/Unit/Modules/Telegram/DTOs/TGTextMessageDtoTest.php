@@ -36,4 +36,24 @@ class TGTextMessageDtoTest extends TestCase
 
         $this->assertSame(123456789, $dto->chat_id);
     }
+
+    public function test_answer_callback_query_payload_does_not_include_chat_fields(): void
+    {
+        $dto = TGTextMessageDto::from([
+            'methodQuery' => 'answerCallbackQuery',
+            'chat_id' => 0,
+            'message_thread_id' => 12,
+            'callback_query_id' => '777',
+            'text' => 'Подсказка',
+            'parse_mode' => 'html',
+        ]);
+
+        $payload = $dto->toArray();
+
+        $this->assertSame('777', $payload['callback_query_id']);
+        $this->assertSame('Подсказка', $payload['text']);
+        $this->assertArrayNotHasKey('chat_id', $payload);
+        $this->assertArrayNotHasKey('message_thread_id', $payload);
+        $this->assertArrayNotHasKey('parse_mode', $payload);
+    }
 }

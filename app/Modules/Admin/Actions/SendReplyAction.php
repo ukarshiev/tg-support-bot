@@ -3,10 +3,10 @@
 namespace App\Modules\Admin\Actions;
 
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
 use App\Models\User;
 use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
-use App\Modules\Admin\Jobs\SendAdminDocumentJob;
 use App\Modules\Admin\Services\ChannelStatusService;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Max\Actions\UploadFileMax;
@@ -20,11 +20,13 @@ use App\Modules\Vk\Actions\SaveFileVk;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use App\Modules\Vk\Jobs\SendVkSimpleMessageJob;
 use App\Services\Settings\SettingsService;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use Throwable;
 
 class SendReplyAction
 {
@@ -42,9 +44,9 @@ class SendReplyAction
      * @param UploadedFile|null $file    Optional file attachment
      * @param User|null         $author  Operator sending the reply (null for AI/telegram-group paths)
      *
-     * @return void
+     * @return Message
      */
-    public static function execute(BotUser $botUser, string $text, ?UploadedFile $file = null, ?User $author = null): void
+    public static function execute(BotUser $botUser, string $text, ?UploadedFile $file = null, ?User $author = null): Message
     {
         // A new reply re-opens a previously closed conversation.
         if ($botUser->isClosed()) {
@@ -62,14 +64,76 @@ class SendReplyAction
             'sender_name' => $author?->name,
         ]);
 
-        match (true) {
-            $botUser->platform === 'telegram' => self::sendTelegramReply($botUser, $text, $file, $message),
-            $botUser->platform === 'vk' => self::sendVkReply($botUser, $text, $file, $message),
-            $botUser->platform === 'max' => self::sendMaxReply($botUser, $text, $file, $message),
-            default => self::sendExternalReply($botUser, $text),
-        };
+        $operationKey = hash('sha256', 'admin-reply:' . $message->id);
+        $deliveryOperation = DeliveryOperation::create([
+            'operation_key' => $operationKey,
+            'bot_user_id' => $botUser->id,
+            'message_id' => $message->id,
+            'trace_id' => 'admin-message:' . $message->id,
+            'destination' => $botUser->platform . '-client',
+            'operation' => 'admin-reply',
+            'status' => DeliveryOperation::STATUS_PENDING,
+        ]);
 
-        self::maybeMirrorToGroup($botUser, $text, $file);
+        try {
+            $deliveryJob = match (true) {
+                $botUser->platform === 'telegram' => self::sendTelegramReply($botUser, $text, $file, $message),
+                $botUser->platform === 'vk' => self::sendVkReply($botUser, $text, $file, $message),
+                $botUser->platform === 'max' => self::sendMaxReply($botUser, $text, $file, $message),
+                default => self::sendExternalReply($botUser, $text),
+            };
+        } catch (Throwable $exception) {
+            $deliveryOperation->update([
+                'status' => DeliveryOperation::STATUS_FAILED,
+                'last_error' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
+
+            throw $exception;
+        }
+
+        if ($deliveryJob === null) {
+            $deliveryOperation->update([
+                'status' => DeliveryOperation::STATUS_FAILED,
+                'last_error' => 'Delivery channel is not configured',
+            ]);
+
+            Log::channel('app')->error('Admin reply has no configured delivery channel', [
+                'source' => 'admin_reply_delivery_unavailable',
+                'message_id' => $message->id,
+                'bot_user_id' => $botUser->id,
+                'platform' => $botUser->platform,
+            ]);
+
+            return $message;
+        }
+
+        $jobs = [
+            $deliveryJob,
+            self::mirrorJob($botUser, $text, $file, $message->id),
+        ];
+
+        // Зеркало выполняется только после успешной клиентской доставки.
+        // Если delivery job исчерпает повторы, Laravel не продолжит цепочку.
+        Bus::chain($jobs)
+            ->catch(static function (Throwable $exception) use ($operationKey): void {
+                DeliveryOperation::query()
+                    ->where('operation_key', $operationKey)
+                    ->where('status', '!=', DeliveryOperation::STATUS_DELIVERED)
+                    ->update([
+                        'status' => DeliveryOperation::STATUS_FAILED,
+                        'last_error' => mb_substr($exception->getMessage(), 0, 2000),
+                    ]);
+
+                Log::channel('app')->critical('Admin reply delivery permanently failed', [
+                    'source' => 'admin_reply_delivery_failed_terminal',
+                    'operation_key' => $operationKey,
+                    'error_class' => $exception::class,
+                    'error' => $exception->getMessage(),
+                ]);
+            })
+            ->dispatch();
+
+        return $message;
     }
 
     /**
@@ -86,14 +150,12 @@ class SendReplyAction
      * @param string            $text
      * @param UploadedFile|null $file
      *
-     * @return void
+     * @return MirrorAdminReplyToGroupJob
      */
-    private static function maybeMirrorToGroup(BotUser $botUser, string $text, ?UploadedFile $file): void
+    private static function mirrorJob(BotUser $botUser, string $text, ?UploadedFile $file, int $sourceMessageId): MirrorAdminReplyToGroupJob
     {
         $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
-        if (!app(ChannelStatusService::class)->telegram()['connected'] || $groupId === '') {
-            return;
-        }
+        $mirrorEnabled = app(ChannelStatusService::class)->telegram()['connected'] && $groupId !== '';
 
         // Determine mirror text — file-only replies get a placeholder. The
         // «Ответ из админки:» label + newline is added by the job's prefix.
@@ -102,11 +164,16 @@ class SendReplyAction
             : '[вложение]';
 
         // Ensure the forum topic exists before mirroring.
-        if (empty($botUser->topic_id)) {
+        if ($mirrorEnabled && empty($botUser->topic_id)) {
             TopicCreateJob::dispatch($botUser->id);
         }
 
-        MirrorAdminReplyToGroupJob::dispatch($botUser->id, $mirrorText);
+        return new MirrorAdminReplyToGroupJob(
+            $botUser->id,
+            $mirrorText,
+            sourceMessageId: $sourceMessageId,
+            mirrorEnabled: $mirrorEnabled,
+        );
     }
 
     /**
@@ -123,9 +190,9 @@ class SendReplyAction
      * @param UploadedFile|null $file
      * @param Message           $message
      *
-     * @return void
+     * @return ShouldQueue
      */
-    private static function sendMaxReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): void
+    private static function sendMaxReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): ShouldQueue
     {
         if ($file !== null) {
             $token = self::uploadMaxFile($file);
@@ -143,7 +210,7 @@ class SendReplyAction
                 // stored copy via its public URL).
                 self::recordOutgoingAttachment($message, $file);
 
-                SendMaxSimpleMessageJob::dispatch(
+                return new SendMaxSimpleMessageJob(
                     MaxTextMessageDto::from([
                         'methodQuery' => $method,
                         'user_id' => (int) $botUser->chat_id,
@@ -151,8 +218,6 @@ class SendReplyAction
                         'file_token' => $token,
                     ])
                 );
-
-                return;
             }
 
             // Upload failed: with no text there is nothing left to deliver.
@@ -161,11 +226,11 @@ class SendReplyAction
                     'bot_user_id' => $botUser->id,
                 ]);
 
-                return;
+                throw new \RuntimeException('MAX file upload failed and reply has no text');
             }
         }
 
-        SendMaxSimpleMessageJob::dispatch(
+        return new SendMaxSimpleMessageJob(
             MaxTextMessageDto::from([
                 'methodQuery' => 'sendMessage',
                 'user_id' => (int) $botUser->chat_id,
@@ -221,15 +286,15 @@ class SendReplyAction
      * @param Message      $message
      * @param UploadedFile $file
      *
-     * @return void
+     * @return string|null
      */
-    private static function recordOutgoingAttachment(Message $message, UploadedFile $file): void
+    private static function recordOutgoingAttachment(Message $message, UploadedFile $file): ?string
     {
         try {
             $path = $file->store('chat-attachments', 'local');
 
             if (!is_string($path) || $path === '') {
-                return;
+                return null;
             }
 
             $mime = $file->getMimeType() ?? '';
@@ -245,8 +310,12 @@ class SendReplyAction
                 'file_type' => $type,
                 'file_name' => $file->getClientOriginalName(),
             ]);
+
+            return $path;
         } catch (\Throwable $e) {
             Log::channel('app')->error('SendReplyAction: failed to record outgoing attachment | ' . $e->getMessage());
+
+            return null;
         }
     }
 
@@ -258,44 +327,29 @@ class SendReplyAction
      * @param UploadedFile|null $file
      * @param Message           $message
      *
-     * @return void
+     * @return ShouldQueue
      */
-    private static function sendTelegramReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): void
+    private static function sendTelegramReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): ShouldQueue
     {
         if ($file !== null) {
-            // UploadedFile cannot be serialized by the queue.
-            // Copy the Livewire temp file to a controlled directory and pass the path.
-            $realPath = $file->getRealPath();
-
-            if ($realPath === false) {
-                return;
+            // Очередь получает постоянный файл из private local storage, а не
+            // временный Livewire UploadedFile, который исчезает после запроса.
+            $storedPath = self::recordOutgoingAttachment($message, $file);
+            if ($storedPath === null) {
+                throw new \RuntimeException('Telegram reply file storage failed');
             }
+            $destPath = Storage::disk('local')->path($storedPath);
 
-            $ext = $file->getClientOriginalExtension();
-            $dir = storage_path('app/temp_attachments');
-            $destPath = $dir . '/' . Str::uuid() . ($ext ? '.' . $ext : '');
-
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-
-            if (!copy($realPath, $destPath)) {
-                return;
-            }
-
-            SendAdminDocumentJob::dispatch(
-                dbMessageId:  $message->id,
-                chatId:       (int) $botUser->chat_id,
-                filePath:     $destPath,
-                caption:      $text ?: null,
-                originalName: $file->getClientOriginalName(),
-                mimeType:     $file->getMimeType() ?? 'application/octet-stream',
-            );
-
-            return;
+            return new SendTelegramSimpleQueryJob(TGTextMessageDto::from([
+                'methodQuery' => 'sendDocument',
+                'chat_id' => (int) $botUser->chat_id,
+                'caption' => $text ?: null,
+                'uploaded_file_path' => $destPath,
+                'parse_mode' => null,
+            ]));
         }
 
-        SendTelegramSimpleQueryJob::dispatch(
+        return new SendTelegramSimpleQueryJob(
             TGTextMessageDto::from([
                 'methodQuery' => 'sendMessage',
                 'chat_id' => $botUser->chat_id,
@@ -316,9 +370,9 @@ class SendReplyAction
      * @param UploadedFile|null $file
      * @param Message           $message
      *
-     * @return void
+     * @return ShouldQueue
      */
-    private static function sendVkReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): void
+    private static function sendVkReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): ShouldQueue
     {
         $attachment = $file !== null ? self::uploadVkDocument($botUser, $file) : null;
 
@@ -328,7 +382,7 @@ class SendReplyAction
             self::recordOutgoingAttachment($message, $file);
         }
 
-        SendVkSimpleMessageJob::dispatch(
+        return new SendVkSimpleMessageJob(
             VkTextMessageDto::from([
                 'methodQuery' => 'messages.send',
                 'peer_id' => $botUser->chat_id,
@@ -421,18 +475,18 @@ class SendReplyAction
      * @param BotUser $botUser
      * @param string  $text
      *
-     * @return void
+     * @return ShouldQueue|null
      */
-    private static function sendExternalReply(BotUser $botUser, string $text): void
+    private static function sendExternalReply(BotUser $botUser, string $text): ?ShouldQueue
     {
         $botUser->load('externalUser.externalSource');
         $webhookUrl = $botUser->externalUser?->externalSource?->webhook_url;
 
         if (empty($webhookUrl)) {
-            return;
+            return null;
         }
 
-        SendWebhookMessage::dispatch($webhookUrl, [
+        return new SendWebhookMessage($webhookUrl, [
             'type_query' => 'send_message',
             'externalId' => $botUser->externalUser->external_id,
             'message' => [

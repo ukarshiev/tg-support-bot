@@ -3,6 +3,7 @@
 namespace App\Modules\Ai\Middleware;
 
 use App\Services\Settings\SettingsService;
+use App\Support\InboundWebhookLog;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -34,7 +35,10 @@ class AiBotQuery
                 throw new \RuntimeException('Secret-Token is invalid!');
             }
 
-            Log::channel('app')->info(json_encode($request->all()), ['source' => 'ai_bot_request']);
+            Log::channel('app')->info('AI bot webhook accepted', [
+                ...InboundWebhookLog::summarize('telegram', $request->all()),
+                'source' => 'ai_bot_request',
+            ]);
 
             return $next($request);
         } catch (\Throwable $e) {

@@ -3,6 +3,7 @@
 namespace App\Modules\External\Middleware;
 
 use App\Models\ExternalSourceAccessTokens;
+use App\Support\InboundWebhookLog;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -57,8 +58,9 @@ class ApiQuery
      */
     private function logRequest(Request $request): void
     {
-        $dataRequest = json_encode($request->all());
-
-        Log::channel('app')->info($dataRequest, ['source' => 'api_request']);
+        Log::channel('app')->info('Входящий запрос внешнего канала принят', [
+            'source' => 'api_request',
+            ...InboundWebhookLog::summarize('external', $request->all()),
+        ]);
     }
 }

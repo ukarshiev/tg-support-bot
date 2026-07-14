@@ -117,7 +117,7 @@ class DeepSeekProvider extends BaseAiProvider
         ]);
 
         if (!$response->successful()) {
-            throw new \Exception('DeepSeek API request failed: ' . $response->body());
+            throw new \Exception('DeepSeek API request failed: HTTP ' . $response->status());
         }
 
         return $response->json();

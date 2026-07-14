@@ -5,6 +5,7 @@ namespace Tests\Unit\Modules\Vk\Services;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
+use App\Modules\Vk\Jobs\MirrorVkIncomingMessageJob;
 use App\Modules\Vk\Services\VkEditService;
 use App\Modules\Vk\Services\VkMessageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -39,25 +40,16 @@ class VkEditServiceTest extends TestCase
         // ---------------
 
         /** @phpstan-ignore-next-line */
-        $pushed = Queue::pushedJobs()[SendVkTelegramMessageJob::class] ?? [];
+        $pushed = Queue::pushedJobs()[MirrorVkIncomingMessageJob::class] ?? [];
         $this->assertNotEmpty($pushed);
 
-        // Проверка редактирования джобы
-        $jobData = $pushed[0]['job'];
-
-        $this->assertEquals($dtoNewMessage->text, $jobData->queryParams->text);
-        $this->assertEquals($this->botUser->topic_id, $jobData->queryParams->message_thread_id);
-        $this->assertEquals('-100000000000', $jobData->queryParams->chat_id);
-        $this->assertEquals($dtoNewMessage, $jobData->updateDto);
-
-        $whereMessageParams = [
+        $messageData = Message::where([
             'bot_user_id' => $this->botUser->id,
             'message_type' => 'incoming',
             'platform' => 'vk',
-            'from_id' => $dtoNewMessage->from_id,
-            'to_id' => rand(),
-        ];
-        $messageData = Message::where($whereMessageParams)->firstOrCreate($whereMessageParams);
+            'from_id' => $dtoNewMessage->id,
+        ])->sole();
+        $messageData->update(['to_id' => rand(1, 100000)]);
 
         // изменение сообщения
         $dtoParams = VkUpdateDtoMock::getDtoParams();
@@ -75,7 +67,7 @@ class VkEditServiceTest extends TestCase
         $this->assertNotEmpty($pushed);
 
         // Проверка редактирования джобы
-        $jobData = $pushed[1]['job'];
+        $jobData = $pushed[0]['job'];
 
         $this->assertEquals($dtoUpdateMessage->text, $jobData->queryParams->text);
         $this->assertEquals($this->botUser->topic_id, $jobData->queryParams->message_thread_id);

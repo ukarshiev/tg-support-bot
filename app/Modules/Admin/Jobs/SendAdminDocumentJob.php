@@ -30,6 +30,7 @@ class SendAdminDocumentJob implements ShouldQueue
         public string $originalName,
         public string $mimeType,
     ) {
+        $this->onQueue('telegram-interactive');
     }
 
     public function handle(): void

@@ -3,23 +3,39 @@
 namespace App\Modules\Telegram\Actions;
 
 use App\Models\BotUser;
+use App\Modules\Telegram\Api\TelegramMethods;
+use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
-use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
-use App\Modules\Telegram\Services\SupportLanguageService;
+use App\Modules\Telegram\Jobs\SendContactMessageJob;
+use App\Modules\Telegram\Services\ContactSummaryFormatter;
 use App\Services\Settings\SettingsService;
 
 class SendContactMessage
 {
     public function __construct(
         private GetChat $getChat,
-        private SupportLanguageService $languages,
+        private ContactSummaryFormatter $formatter,
     ) {
     }
 
-    public function execute(BotUser $botUser): void
+    public function execute(BotUser $botUser, ?string $telegramLanguageCode = null): void
     {
-        $dto = $this->getQueryParams($botUser);
-        SendTelegramSimpleQueryJob::dispatch($dto);
+        SendContactMessageJob::dispatch($botUser->id, $telegramLanguageCode);
+    }
+
+    public function sendNow(BotUser $botUser, ?string $telegramLanguageCode = null): TelegramAnswerDto
+    {
+        if (empty($botUser->topic_id)) {
+            throw new \RuntimeException("Cannot send contact card without Telegram topic for bot user {$botUser->id}");
+        }
+
+        $dto = $this->getQueryParams($botUser, $telegramLanguageCode);
+
+        return TelegramMethods::sendQueryTelegram(
+            $dto->methodQuery,
+            $dto->toArray(),
+            $dto->token,
+        );
     }
 
     /**
@@ -27,13 +43,17 @@ class SendContactMessage
      *
      * @return TGTextMessageDto
      */
-    public function getQueryParams(BotUser $botUser): TGTextMessageDto
+    public function getQueryParams(BotUser $botUser, ?string $telegramLanguageCode = null): TGTextMessageDto
     {
+        if (empty($botUser->topic_id)) {
+            throw new \RuntimeException("Cannot build contact card without Telegram topic for bot user {$botUser->id}");
+        }
+
         return TGTextMessageDto::from([
             'methodQuery' => 'sendMessage',
             'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
             'message_thread_id' => $botUser->topic_id,
-            'text' => $this->buildText($botUser),
+            'text' => $this->buildText($botUser, $telegramLanguageCode),
             'parse_mode' => 'html',
             'reply_markup' => [
                 'inline_keyboard' => $this->buildKeyboard($botUser),
@@ -46,7 +66,7 @@ class SendContactMessage
      *
      * @return string
      */
-    private function buildText(BotUser $botUser): string
+    private function buildText(BotUser $botUser, ?string $telegramLanguageCode = null): string
     {
         $chatData = [];
 
@@ -58,29 +78,11 @@ class SendContactMessage
             }
         }
 
-        $username = $botUser->username ?: ($chatData['username'] ?? null);
-        $displayName = $botUser->display_name ?: trim(($chatData['first_name'] ?? '') . ' ' . ($chatData['last_name'] ?? ''));
-        $languageName = $this->languages->displayName(
-            $botUser->preferred_language_code,
-            $botUser->preferred_language_name
-        );
-        $telegramLanguageCode = $chatData['language_code'] ?? null;
-        $profileLink = $username ? 'https://telegram.me/' . $username : null;
+        if ($telegramLanguageCode !== null && $telegramLanguageCode !== '') {
+            $chatData['language_code'] = $telegramLanguageCode;
+        }
 
-        $text = "<b>КОНТАКТНАЯ ИНФОРМАЦИЯ</b>\n";
-        $text .= 'Источник: ' . e($botUser->platform) . "\n";
-        $text .= "ID: <code>{$botUser->chat_id}</code>\n";
-        $text .= 'Имя: ' . e($displayName !== '' ? $displayName : 'не указано') . "\n";
-        $text .= 'Пользователь: ' . ($username ? '<code>' . e($username) . '</code>' : 'не указан') . "\n";
-        $text .= 'Ссылка: ' . ($profileLink ? e($profileLink) : 'не доступна') . "\n";
-        $text .= 'Выбранный язык: ' . e($languageName) . "\n";
-        $text .= 'Telegram language_code: ' . e($telegramLanguageCode ?: 'не доступен') . "\n";
-        $text .= "Телефон: не передан\n";
-        $text .= "Регион: не определён\n";
-        $text .= 'Первое обращение: ' . e(optional($botUser->created_at)->format('d.m.Y H:i') ?: 'неизвестно') . "\n";
-        $text .= 'Последняя активность: ' . e(optional($botUser->updated_at)->format('d.m.Y H:i') ?: 'неизвестно') . "\n";
-
-        return $text;
+        return $this->formatter->toTelegramHtml($botUser, $chatData);
     }
 
     /**

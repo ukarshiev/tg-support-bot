@@ -1,7 +1,13 @@
 <!DOCTYPE html>
-<html lang="ru" class="h-full">
+@php
+    $adminCookieHeader = (string) request()->headers->get('cookie', '');
+    preg_match('/(?:^|;\s*)tg_support_admin_theme=(dark|light)(?:;|$)/', $adminCookieHeader, $adminThemeMatch);
+    $adminInitialTheme = $adminThemeMatch[1] ?? null;
+@endphp
+<html lang="ru" class="h-full" @if($adminInitialTheme) data-theme="{{ $adminInitialTheme }}" style="color-scheme: {{ $adminInitialTheme }}" @endif>
 <head>
     <meta charset="UTF-8" />
+    @include('partials.admin-theme-head')
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
 
@@ -18,16 +24,7 @@
 
     <title>{{ $title ?? 'Настройки' }} — Admin</title>
 
-    <script>
-        (() => {
-            const key = 'tg-support-bot-admin-theme';
-            const saved = localStorage.getItem(key);
-            const theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-            document.documentElement.dataset.theme = theme;
-            document.documentElement.style.colorScheme = theme;
-        })();
-    </script>
-
+    @include('partials.reverb-runtime')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
     <style>[x-cloak]{display:none !important;}</style>
@@ -123,6 +120,19 @@
                 </x-admin.nav-item>
 
                 <x-admin.nav-item
+                    href="{{ route('admin.settings.language') }}"
+                    :active="request()->routeIs('admin.settings.language') || request()->routeIs('admin.settings.language.*')"
+                    title="Открыть настройки языков и переводчиков"
+                >
+                    <x-slot name="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1m14 20-5-10-5 10m2-4h6" />
+                        </svg>
+                    </x-slot>
+                    Языки
+                </x-admin.nav-item>
+
+                <x-admin.nav-item
                     href="{{ route('admin.settings.ai') }}"
                     :active="request()->routeIs('admin.settings.ai') || request()->routeIs('admin.settings.ai.provider')"
                 >
@@ -206,6 +216,31 @@
     </div>
 
 </div>{{-- /Alpine scope wrapper --}}
+
+
+    {{-- Уведомления настроек: показывает результат Livewire-действий без перезагрузки страницы. --}}
+    <div
+        x-data="{ toasts: [] }"
+        x-on:admin-toast.window="
+            const id = Date.now() + Math.random();
+            toasts.push({ id, message: $event.detail.message, type: $event.detail.type || 'success' });
+            setTimeout(() => { toasts = toasts.filter(t => t.id !== id); }, 3500);
+        "
+        class="fixed right-4 top-4 z-[100] flex flex-col gap-2"
+        style="pointer-events:none;"
+        aria-live="polite"
+    >
+        <template x-for="toast in toasts" :key="toast.id">
+            <div
+                x-transition.opacity.duration.200ms
+                class="flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg"
+                :class="toast.type === 'danger' ? 'bg-red-600' : 'bg-emerald-600'"
+                style="min-width:220px;"
+            >
+                <span x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
 
     @include('partials.notification-sounds')
 

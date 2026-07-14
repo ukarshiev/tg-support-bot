@@ -1,4 +1,28 @@
 services:
+    redis:
+        image: redis:7-alpine
+        container_name: tg_support_redis
+        restart: always
+        env_file:
+            - .env
+        command: >-
+            sh -lc 'exec redis-server
+            --appendonly yes
+            --appendfsync everysec
+            --maxmemory 256mb
+            --maxmemory-policy noeviction
+            --requirepass "$$REDIS_PASSWORD"'
+        healthcheck:
+            test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+            interval: 5s
+            timeout: 3s
+            retries: 10
+            start_period: 5s
+        volumes:
+            - redisdata:/data
+        networks:
+            - pet
+
     app:
         build: .
         container_name: pet
@@ -11,12 +35,18 @@ services:
             retries: 3
             start_period: 40s
         depends_on:
-            - pgdb
+            pgdb:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
         env_file:
             - .env
         working_dir: /var/www/
+        command: sh -lc 'rm -rf /var/www/public/* && cp -a /var/www_public_image/. /var/www/public/ && php-fpm'
         volumes:
-            - .:/var/www
+            - app_public:/var/www/public
+            - app_storage:/var/www/storage
+            - app_bootstrap_cache:/var/www/bootstrap/cache
         networks:
             - pet
         dns:
@@ -50,7 +80,7 @@ services:
         container_name: nginx
         restart: unless-stopped
         healthcheck:
-            test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1"]
+            test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1 && curl -fsS -H 'Host: ${MAIN_DOMAIN}' 'http://127.0.0.1/up' >/dev/null"]
             interval: 30s
             timeout: 5s
             retries: 3
@@ -59,15 +89,19 @@ services:
             - ${NGINX_PORT}
             - "443:443"
         volumes:
-            - .:/var/www
+            - app_public:/var/www/public:ro
             - ./docker/nginx:/etc/nginx/conf.d
             - /etc/letsencrypt:/etc/letsencrypt:ro
             - ./docker/nginx/logs:/var/log/nginx
         environment:
             - TZ=${SYSTEM_TIMEZONE}
         depends_on:
-            - pgdb
-            - app
+            pgdb:
+                condition: service_healthy
+            app:
+                condition: service_healthy
+            reverb:
+                condition: service_healthy
         networks:
             - pet
 
@@ -76,24 +110,54 @@ services:
         container_name: laravel_queue
         restart: always
         healthcheck:
-            test: ["CMD-SHELL", "php -v >/dev/null && php artisan about --only=environment >/dev/null"]
+            test: ["CMD-SHELL", "php artisan horizon:status | grep -qi running"]
             interval: 30s
             timeout: 10s
             retries: 3
             start_period: 40s
         depends_on:
-            - app
+            app:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
         env_file:
             - .env
         working_dir: /var/www
         volumes:
-            - .:/var/www
-        command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
+            - app_public:/var/www/public
+            - app_storage:/var/www/storage
+            - app_bootstrap_cache:/var/www/bootstrap/cache
+        command: php artisan horizon
         networks:
             - pet
         dns:
             - 8.8.8.8
             - 1.1.1.1
+
+    reverb:
+        build: .
+        container_name: laravel_reverb
+        restart: always
+        healthcheck:
+            test: ["CMD-SHELL", "php -r '$$s=@fsockopen(\"127.0.0.1\",8080,$$e,$$m,1); exit($$s?0:1);'"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
+        depends_on:
+            app:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        env_file:
+            - .env
+        working_dir: /var/www
+        volumes:
+            - app_storage:/var/www/storage
+            - app_bootstrap_cache:/var/www/bootstrap/cache
+        command: php artisan reverb:start --host=0.0.0.0 --port=8080
+        networks:
+            - pet
 
     scheduler:
         build: .
@@ -106,12 +170,15 @@ services:
             retries: 3
             start_period: 40s
         depends_on:
-            - app
+            app:
+                condition: service_healthy
         env_file:
             - .env
         working_dir: /var/www
         volumes:
-            - .:/var/www
+            - app_public:/var/www/public
+            - app_storage:/var/www/storage
+            - app_bootstrap_cache:/var/www/bootstrap/cache
         command: php artisan schedule:work
         networks:
             - pet
@@ -124,15 +191,45 @@ services:
         container_name: telegram_poller
         restart: always
         depends_on:
-            - app
-            - nginx
-            - queue
+            app:
+                condition: service_healthy
+            nginx:
+                condition: service_healthy
+            queue:
+                condition: service_healthy
         env_file:
             - .env
         working_dir: /var/www
         volumes:
-            - .:/var/www
-        command: php artisan telegram:poll-updates --sleep=1 --timeout=25
+            - app_public:/var/www/public
+            - app_storage:/var/www/storage
+            - app_bootstrap_cache:/var/www/bootstrap/cache
+        command: php artisan telegram:poll-updates --sleep=1 --timeout=10
+        networks:
+            - pet
+        dns:
+            - 8.8.8.8
+            - 1.1.1.1
+
+    ai_telegram_poller:
+        build: .
+        container_name: ai_telegram_poller
+        restart: always
+        depends_on:
+            app:
+                condition: service_healthy
+            nginx:
+                condition: service_healthy
+            queue:
+                condition: service_healthy
+        env_file:
+            - .env
+        working_dir: /var/www
+        volumes:
+            - app_public:/var/www/public
+            - app_storage:/var/www/storage
+            - app_bootstrap_cache:/var/www/bootstrap/cache
+        command: php artisan ai-bot:poll-updates --sleep=1 --timeout=25
         networks:
             - pet
         dns:
@@ -140,7 +237,10 @@ services:
             - 1.1.1.1
 volumes:
     pgdata:
+    redisdata:
+    app_public:
+    app_storage:
+    app_bootstrap_cache:
 networks:
     pet:
         driver: bridge
-
