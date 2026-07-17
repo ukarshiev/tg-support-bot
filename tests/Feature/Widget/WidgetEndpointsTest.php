@@ -121,6 +121,24 @@ class WidgetEndpointsTest extends TestCase
         ])->assertUnauthorized();
     }
 
+    public function test_global_cors_does_not_allow_legacy_widget_key(): void
+    {
+        $response = $this->call(
+            'OPTIONS',
+            "/api/widget/{$this->externalId}/messages",
+            server: [
+                'HTTP_ORIGIN' => 'https://client.example',
+                'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
+                'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'X-Widget-Key',
+            ],
+        );
+
+        $this->assertStringNotContainsString(
+            'X-Widget-Key',
+            (string) $response->headers->get('Access-Control-Allow-Headers'),
+        );
+    }
+
     public function test_trusted_external_client_can_issue_widget_session(): void
     {
         $accessToken = str_repeat('t', 64);
