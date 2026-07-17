@@ -4,6 +4,7 @@ set -Eeuo pipefail
 readonly SERVICES=(app queue reverb scheduler telegram_poller ai_telegram_poller)
 declare -A PREVIOUS_IMAGE_IDS=()
 declare -A PREVIOUS_IMAGE_NAMES=()
+declare -A PREVIOUS_IMAGE_TAGS=()
 
 rollback() {
     local exit_code=$?
@@ -11,8 +12,8 @@ rollback() {
     echo "Release failed; restoring previous application images." >&2
 
     for service in "${SERVICES[@]}"; do
-        if [[ -n "${PREVIOUS_IMAGE_IDS[$service]:-}" && -n "${PREVIOUS_IMAGE_NAMES[$service]:-}" ]]; then
-            docker image tag "${PREVIOUS_IMAGE_IDS[$service]}" "${PREVIOUS_IMAGE_NAMES[$service]}"
+        if [[ -n "${PREVIOUS_IMAGE_TAGS[$service]:-}" && -n "${PREVIOUS_IMAGE_NAMES[$service]:-}" ]]; then
+            docker image tag "${PREVIOUS_IMAGE_TAGS[$service]}" "${PREVIOUS_IMAGE_NAMES[$service]}"
         fi
     done
 
@@ -39,6 +40,8 @@ for service in "${SERVICES[@]}"; do
     if [[ -n "$container_id" ]]; then
         PREVIOUS_IMAGE_IDS[$service]="$(docker inspect --format '{{.Image}}' "$container_id")"
         PREVIOUS_IMAGE_NAMES[$service]="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+        PREVIOUS_IMAGE_TAGS[$service]="tg-support-bot-rollback-${service}:previous"
+        docker image tag "${PREVIOUS_IMAGE_IDS[$service]}" "${PREVIOUS_IMAGE_TAGS[$service]}"
     fi
 done
 
@@ -67,6 +70,7 @@ backup_checksum="$(sha256sum "$backup_file" | awk '{print $1}')"
 docker compose build --pull
 docker compose up --no-deps assets_init
 docker compose up -d pgdb redis app
+docker compose exec -T --user root app sh -lc 'rm -f bootstrap/cache/*.php'
 docker compose exec -T app php artisan migrate --force
 docker compose exec -T app php artisan security:external-preflight
 docker compose exec -T app php artisan optimize:clear
