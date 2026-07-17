@@ -20,7 +20,7 @@ class ExternalSourceFactory extends Factory
     {
         return [
             'name' => $this->faker->company() . ' ' . $this->faker->numerify('###'),
-            'webhook_url' => $this->faker->optional()->url(),
+            'webhook_url' => null,
         ];
     }
 }

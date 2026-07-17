@@ -7,7 +7,6 @@ use App\Support\InboundWebhookLog;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Mockery\Exception;
 use Symfony\Component\HttpFoundation\Response;
 
 class VkQuery
@@ -19,21 +18,28 @@ class VkQuery
      */
     public function handle(Request $request, Closure $next): Response
     {
-        try {
-            $secretCode = (string) app(SettingsService::class)->get('vk.secret_key');
-            if ($secretCode !== request()->secret) {
-                throw new Exception('Secret-Key is invalid!');
-            }
+        $settings = app(SettingsService::class);
+        $secretCode = (string) $settings->get('vk.secret_key');
+        if ($secretCode === '') {
+            Log::channel('app')->critical('VK webhook secret is not configured');
 
-            $this->logRequest($request);
-
-            return $next($request);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Access is forbidden',
-                'error' => $e->getMessage(),
-            ], Response::HTTP_FORBIDDEN);
+            return response()->json(['message' => 'Webhook is unavailable'], Response::HTTP_SERVICE_UNAVAILABLE);
         }
+
+        $receivedSecret = (string) $request->input('secret', '');
+        if ($receivedSecret === '' || ! hash_equals($secretCode, $receivedSecret)) {
+            return response()->json(['message' => 'Access is forbidden'], Response::HTTP_FORBIDDEN);
+        }
+
+        $configuredGroupId = (int) ($settings->get('vk.group_id') ?? 0);
+        $receivedGroupId = (int) $request->input('group_id', 0);
+        if ($configuredGroupId > 0 && $receivedGroupId !== $configuredGroupId) {
+            return response()->json(['message' => 'Access is forbidden'], Response::HTTP_FORBIDDEN);
+        }
+
+        $this->logRequest($request);
+
+        return $next($request);
     }
 
     /**

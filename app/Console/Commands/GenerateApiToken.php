@@ -1,96 +1,72 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Console\Commands;
 
 use App\Models\ExternalSource;
-use App\Models\ExternalSourceAccessTokens;
-use App\Modules\External\DTOs\ExternalSourceDto;
-use App\Modules\External\Services\Source\ExternalSourceService;
+use App\Modules\External\Services\Source\ExternalSourceTokensService;
+use App\Services\Webhook\OutboundWebhookException;
+use App\Services\Webhook\OutboundWebhookUrlPolicy;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
-use phpDocumentor\Reflection\Exception;
 
-/**
- * Example request:
- * php artisan app:generate-token source_name https://example.com/webhook
- */
 class GenerateApiToken extends Command
 {
     protected $signature = 'app:generate-token {source} {hook_url}';
 
-    protected $description = 'Generate token for user, create user if not exists';
+    protected $description = 'Create or rotate an external API token and reveal the new value once';
 
-    public function __construct(private ExternalSourceService $externalSourceService)
-    {
+    public function __construct(
+        private readonly ExternalSourceTokensService $tokens,
+        private readonly OutboundWebhookUrlPolicy $urlPolicy,
+    ) {
         parent::__construct();
     }
 
     public function handle(): int
     {
-        try {
-            $sourceName = $this->argument('source');
-            $hookUrl = $this->argument('hook_url');
+        $sourceName = (string) $this->argument('source');
+        $hookUrl = (string) $this->argument('hook_url');
+        $validator = Validator::make(compact('sourceName', 'hookUrl'), [
+            'sourceName' => ['required', 'string', 'min:3', 'max:100'],
+            'hookUrl' => ['required', 'url'],
+        ]);
 
-            $validator = Validator::make([
-                'source' => $sourceName,
-                'hook_url' => $hookUrl,
-            ], [
-                'source' => ['required', 'string', 'min:3', 'max:100'],
-                'hook_url' => ['required', 'url'],
-            ]);
-
-            if ($validator->fails()) {
-                foreach ($validator->errors()->all() as $error) {
-                    $this->error($error);
-                }
-                return 1;
+        if ($validator->fails()) {
+            foreach ($validator->errors()->all() as $error) {
+                $this->error($error);
             }
 
-            DB::transaction(function () use ($sourceName, $hookUrl) {
-                $externalSourceData = [
-                    'name' => $sourceName,
-                    'webhook_url' => $hookUrl,
-                    'updated_at' => date('Y-m-d H:i:s'),
-                ];
+            return self::FAILURE;
+        }
 
-                $sourceItem = ExternalSource::where('name', $sourceName)->first();
-                if (!$sourceItem) {
-                    $this->info('Adding new resource...');
+        try {
+            $this->urlPolicy->validate($hookUrl);
 
-                    $sourceData = ExternalSourceDto::from(array_merge($externalSourceData, [
-                        'created_at' => date('Y-m-d H:i:s'),
-                    ]));
+            [$source, $rawToken] = DB::transaction(function () use ($sourceName, $hookUrl): array {
+                $source = ExternalSource::firstOrCreate(
+                    ['name' => $sourceName],
+                    ['webhook_url' => $hookUrl],
+                );
+                $source->update(['webhook_url' => $hookUrl]);
 
-                    $sourceItem = $this->externalSourceService->create($sourceData);
-                } else {
-                    $this->info("Updating resource {$sourceName}...");
-
-                    $sourceData = ExternalSourceDto::from(array_merge($externalSourceData, [
-                        'id' => $sourceItem->id,
-                        'created_at' => date('Y-m-d H:i:s'),
-                    ]));
-
-                    $this->externalSourceService->update($sourceData);
-                }
-
-                $accessToken = (new ExternalSourceAccessTokens())
-                    ->where('external_source_id', $sourceItem->id)
-                    ->first();
-
-                if (!$accessToken) {
-                    throw new Exception('Token not created!', 1);
-                }
-
-                $this->info("Token generated successfully! {$sourceItem->name} : {$accessToken->token}");
+                return [$source, $this->tokens->setAccessToken($source->id)];
             });
 
-            return 0;
-        } catch (\Throwable $exception) {
-            if ($exception->getCode() === 1) {
-                $this->error("Failed to add resource: {$exception->getMessage()}");
-            }
-            return 1;
+            $this->warn('Сохраните токен сейчас: повторно он не показывается.');
+            $this->line($source->name . ': ' . $rawToken);
+
+            return self::SUCCESS;
+        } catch (OutboundWebhookException $e) {
+            $this->error('Webhook URL rejected: ' . $e->reason);
+
+            return self::FAILURE;
+        } catch (\Throwable) {
+            $this->error('Не удалось создать токен.');
+
+            return self::FAILURE;
         }
     }
 }

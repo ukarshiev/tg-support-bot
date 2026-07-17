@@ -83,8 +83,10 @@ class AutoReplyFormPage extends Component
         $validated['source_hash'] = AutoReply::sourceHash((string) $validated['response']);
 
         if (AutoReply::isSystemType((string) $validated['type'])) {
+            $systemTrigger = AutoReply::systemTriggers()[$validated['type']];
             $duplicateExists = AutoReply::query()
                 ->where('type', $validated['type'])
+                ->where('trigger', $systemTrigger)
                 ->when($this->ruleId !== null, fn ($query) => $query->whereKeyNot($this->ruleId))
                 ->exists();
 
@@ -94,7 +96,7 @@ class AutoReplyFormPage extends Component
                 ]);
             }
 
-            $validated['trigger'] = AutoReply::systemTriggers()[$validated['type']];
+            $validated['trigger'] = $systemTrigger;
         }
 
         if ($this->ruleId !== null) {

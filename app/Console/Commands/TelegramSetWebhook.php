@@ -30,13 +30,14 @@ class TelegramSetWebhook extends Command
 
         $result = TelegramMethods::sendQueryTelegram('setWebhook', $queryParams);
 
-        if (isset($result->rawData)) {
+        if (isset($result->rawData) && ($result->rawData['ok'] ?? false) === true) {
             $this->info('Webhook set:');
             $this->line(json_encode($result->rawData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        } else {
-            $this->error('Error setting webhook');
+            return Command::SUCCESS;
         }
 
-        return Command::SUCCESS;
+        $this->error('Error setting webhook');
+
+        return Command::FAILURE;
     }
 }

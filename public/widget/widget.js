@@ -6,19 +6,20 @@
 
     // ── Configuration ──────────────────────────────────────────────────────
     // Values are read from the <script> tag's data-* attributes.
-    // Embed: <script src="https://stand/widget/widget.js" data-domain="https://stand" data-key="pub_xxx" defer></script>
-    const scriptTag = document.currentScript || document.querySelector('script[data-key]');
+    // Embed: backend issues a short-lived token bound to origin + external id.
+    const scriptTag = document.currentScript || document.querySelector('script[data-token][data-external-id]');
 
     if (!scriptTag) {
-        console.error('[pt-widget] Cannot locate <script data-key> tag.');
+        console.error('[pt-widget] Cannot locate the widget script tag.');
         return;
     }
 
     const DOMAIN = (scriptTag.dataset.domain || '').replace(/\/+$/, '');
-    const PUBLIC_KEY = scriptTag.dataset.key || '';
+    const SESSION_TOKEN = scriptTag.dataset.token || '';
+    const SESSION_EXTERNAL_ID = scriptTag.dataset.externalId || '';
 
-    if (!DOMAIN || !PUBLIC_KEY) {
-        console.error('[pt-widget] Missing data-domain or data-key on the <script> tag.');
+    if (!DOMAIN || !SESSION_TOKEN || !SESSION_EXTERNAL_ID) {
+        console.error('[pt-widget] Missing data-domain or widget credential on the <script> tag.');
         return;
     }
 
@@ -27,23 +28,14 @@
 
     const greetingText = scriptTag.dataset.greeting  || 'Напишите нам, мы онлайн!';
     const managerName  = scriptTag.dataset.manager   || 'Поддержка';
+    const MAX_FILE_SIZE = 12 * 1024 * 1024;
 
-    // ── ExternalId (scoped per public key) ────────────────────────────────
-    function getExternalId() {
-        const storageKey = 'widget_eid_' + PUBLIC_KEY;
-        let id = localStorage.getItem(storageKey);
-        if (!id) {
-            id = 'eid_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-            localStorage.setItem(storageKey, id);
-        }
-        return id;
-    }
-
-    const externalId = getExternalId();
+    const externalId = SESSION_EXTERNAL_ID;
 
     // ── HTTP transport ─────────────────────────────────────────────────────
     const API_BASE   = DOMAIN + '/api/widget/' + externalId;
-    const JSON_HEADERS = { 'X-Widget-Key': PUBLIC_KEY, 'Content-Type': 'application/json' };
+    const AUTH_HEADER = { 'X-Widget-Token': SESSION_TOKEN };
+    const JSON_HEADERS = { ...AUTH_HEADER, 'Content-Type': 'application/json' };
 
     async function sendMessageHttp(text) {
         const resp = await fetch(API_BASE + '/messages', {
@@ -59,7 +51,7 @@
         fd.append('uploaded_file', file);
         const resp = await fetch(API_BASE + '/files', {
             method:  'POST',
-            headers: { 'X-Widget-Key': PUBLIC_KEY }, // no Content-Type — multipart
+            headers: AUTH_HEADER, // no Content-Type — multipart
             body:    fd,
         });
         return resp.json();
@@ -67,7 +59,7 @@
 
     async function pollMessages(afterId) {
         const url = API_BASE + '/messages' + (afterId ? '?after=' + afterId : '');
-        const resp = await fetch(url, { headers: { 'X-Widget-Key': PUBLIC_KEY } });
+        const resp = await fetch(url, { headers: AUTH_HEADER });
         return resp.json();
     }
 
@@ -372,10 +364,16 @@
         attachedFiles.forEach((file, index) => {
             const item = document.createElement('div');
             item.className = 'ptw_attachment_item';
-            item.innerHTML = `
-                <span class="ptw_attachment_name">${file.name}</span>
-                <button type="button" class="ptw_attachment_remove" data-index="${index}" aria-label="Удалить файл">&times;</button>
-            `;
+            const name = document.createElement('span');
+            name.className = 'ptw_attachment_name';
+            name.textContent = file.name;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'ptw_attachment_remove';
+            remove.dataset.index = String(index);
+            remove.setAttribute('aria-label', 'Удалить файл');
+            remove.textContent = '×';
+            item.append(name, remove);
             attachmentsEl.appendChild(item);
         });
         attachmentsEl.style.display = attachedFiles.length > 0 ? 'flex' : 'none';
@@ -472,7 +470,11 @@
     container.querySelector('.ptw_text_field').addEventListener('input', updateSendButton);
 
     container.querySelector('#ptw_file_field').addEventListener('change', (e) => {
-        const newFiles = Array.from(e.target.files);
+        const newFiles = Array.from(e.target.files).filter(file => {
+            if (file.size <= MAX_FILE_SIZE) return true;
+            console.error('[pt-widget] File exceeds the 12 MB limit:', file.name);
+            return false;
+        });
         const remaining = 5 - attachedFiles.length;
         attachedFiles = [...attachedFiles, ...newFiles.slice(0, remaining)];
         renderAttachments();

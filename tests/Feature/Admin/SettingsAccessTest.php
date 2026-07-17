@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SettingsAccessTest extends TestCase
@@ -47,9 +48,7 @@ class SettingsAccessTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider adminOnlySettingsRoutes
-     */
+    #[DataProvider('adminOnlySettingsRoutes')]
     public function test_manager_is_redirected_from_admin_only_settings(string $routeName): void
     {
         $this->actingAs($this->manager())
@@ -57,9 +56,7 @@ class SettingsAccessTest extends TestCase
             ->assertRedirect(route('admin.settings.general'));
     }
 
-    /**
-     * @dataProvider adminOnlySettingsRoutes
-     */
+    #[DataProvider('adminOnlySettingsRoutes')]
     public function test_admin_can_open_every_settings_screen(string $routeName): void
     {
         $this->actingAs($this->admin())

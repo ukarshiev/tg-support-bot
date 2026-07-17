@@ -107,10 +107,30 @@ class ExternalTrafficServiceTest extends TestCase
             'message_type' => 'incoming',
         ])->orderBy('id', 'desc')->first();
 
-        $result = (new ExternalTrafficService())->show($message->id);
+        $scope = ExternalMessageDto::from([
+            'source' => $this->source,
+            'external_id' => $this->external_id,
+            'message_id' => $message->from_id,
+        ]);
+        $result = (new ExternalTrafficService())->show($message->id, $scope);
 
+        $this->assertNotNull($result);
         $this->assertEquals($result->platform, $this->source);
         $this->assertEquals($result->message_type, $message->message_type);
+    }
+
+    public function test_show_does_not_return_message_from_another_external_user(): void
+    {
+        $message = $this->createMessage();
+        $foreignScope = ExternalMessageDto::from([
+            'source' => $this->source,
+            'external_id' => 'another-session',
+            'message_id' => $message->from_id,
+        ]);
+
+        $result = (new ExternalTrafficService())->show($message->id, $foreignScope);
+
+        $this->assertNull($result);
     }
 
     public function test_send_file(): void

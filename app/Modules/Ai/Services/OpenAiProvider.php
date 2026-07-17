@@ -26,9 +26,10 @@ class OpenAiProvider extends BaseAiProvider
     public function processMessage(AiRequestDto $request): ?AiResponseDto
     {
         try {
+            $startedAt = microtime(true);
             $response = $this->makeApiCall($request);
 
-            return $this->parseApiResponse($response, $request);
+            return $this->parseApiResponse($response, $request, $startedAt);
         } catch (\Throwable $e) {
             Log::channel('app')->error($e->getMessage(), [
                 'source' => 'ai_error',
@@ -56,7 +57,9 @@ class OpenAiProvider extends BaseAiProvider
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $this->apiKey,
             'Content-Type' => 'application/json',
-        ])->post($this->baseUrl . '/chat/completions', [
+        ])->connectTimeout(3)
+            ->timeout((int) ($this->config['timeout'] ?? 30))
+            ->post($this->baseUrl . '/chat/completions', [
             'model' => $this->modelName,
             'messages' => $messages,
             'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
@@ -90,9 +93,12 @@ class OpenAiProvider extends BaseAiProvider
      *
      * @return AiResponseDto AI response DTO
      */
-    private function parseApiResponse(array $response, AiRequestDto $request): AiResponseDto
+    private function parseApiResponse(array $response, AiRequestDto $request, float $startedAt): AiResponseDto
     {
-        $content = $response['choices'][0]['message']['content'] ?? '';
+        $content = trim((string) ($response['choices'][0]['message']['content'] ?? ''));
+        if ($content === '') {
+            throw new \RuntimeException('OpenAI API returned an empty response.');
+        }
         $usage = $response['usage'] ?? [];
 
         $parsedContent = $this->parseStructuredResponse($content);
@@ -106,7 +112,7 @@ class OpenAiProvider extends BaseAiProvider
             confidenceScore: $confidenceScore,
             shouldEscalate: $shouldEscalate,
             tokensUsed: $usage['total_tokens'] ?? 0,
-            responseTime: microtime(true) - microtime(true),
+            responseTime: microtime(true) - $startedAt,
             metadata: [
                 'finish_reason' => $response['choices'][0]['finish_reason'] ?? null,
                 'model' => $response['model'] ?? null,

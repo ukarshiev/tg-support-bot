@@ -74,4 +74,42 @@ class ApiQueryAllowedIpsTest extends TestCase
 
         $this->assertSame('ok', $response->getContent());
     }
+
+    public function test_rejects_expired_revoked_and_inactive_tokens(): void
+    {
+        $source = ExternalSource::factory()->create();
+
+        foreach ([
+            ['expires_at' => now()->subSecond()],
+            ['revoked_at' => now(), 'active' => false],
+            ['active' => false],
+        ] as $state) {
+            $raw = 'ext_' . bin2hex(random_bytes(32));
+            ExternalSourceAccessTokens::create([
+                'external_source_id' => $source->id,
+                'token_hash' => hash('sha256', $raw),
+                'token_hint' => substr($raw, -6),
+                'active' => true,
+                ...$state,
+            ]);
+
+            $response = (new ApiQuery())->handle($this->makeRequest($raw, '5.6.7.8'), fn () => response('ok'));
+            $this->assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
+        }
+    }
+
+    public function test_authentication_uses_hash_and_throttles_last_used_updates(): void
+    {
+        $source = ExternalSource::factory()->create();
+        $raw = $this->tokenFor($source);
+        $token = ExternalSourceAccessTokens::where('external_source_id', $source->id)->sole();
+
+        (new ApiQuery())->handle($this->makeRequest($raw, '5.6.7.8'), fn () => response('ok'));
+        $firstUsedAt = $token->fresh()?->last_used_at;
+        $this->assertNotNull($firstUsedAt);
+
+        $token->forceFill(['last_used_at' => now()->subMinutes(6)])->saveQuietly();
+        (new ApiQuery())->handle($this->makeRequest($raw, '5.6.7.8'), fn () => response('ok'));
+        $this->assertTrue($token->fresh()->last_used_at->gt(now()->subMinute()));
+    }
 }

@@ -7,10 +7,8 @@ use App\Modules\External\DTOs\ExternalSourceDto;
 
 class ExternalSourceService
 {
-    public function __construct(
-        private ExternalSource $externalSourceModel,
-        private ExternalSourceTokensService $externalSourceTokensService,
-    ) {
+    public function __construct(private ExternalSource $externalSourceModel)
+    {
     }
 
     /**
@@ -24,13 +22,9 @@ class ExternalSourceService
      */
     public function create(ExternalSourceDto $data): ExternalSource
     {
-        $item = $this->externalSourceModel
+        return $this->externalSourceModel
             ->create($data->toArray())
             ->getModel();
-
-        $this->externalSourceTokensService->setAccessToken($item->id);
-
-        return $item;
     }
 
     /**
@@ -47,8 +41,6 @@ class ExternalSourceService
         $this->externalSourceModel
             ->where('id', $data->id)
             ->update($data->toArray());
-
-        $this->externalSourceTokensService->setAccessToken($data->id);
 
         return $this->externalSourceModel->where('id', $data->id)->first();
     }

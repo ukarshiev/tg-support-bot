@@ -22,6 +22,12 @@ return new class () extends Migration {
      */
     public function down(): void
     {
+        if (Schema::hasIndex('external_sources', 'external_sources_public_key_unique')) {
+            Schema::table('external_sources', function (Blueprint $table): void {
+                $table->dropUnique('external_sources_public_key_unique');
+            });
+        }
+
         Schema::table('external_sources', function (Blueprint $table) {
             $table->dropColumn('public_key');
         });

@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\Response;
  * WidgetController — serves JS widget client requests.
  *
  * All routes are protected by WidgetGate middleware which:
- *  - authenticates via X-Widget-Key → ExternalSource.public_key
+ *  - authenticates via a short-lived X-Widget-Token issued by External API
  *  - enforces domain/IP allowlist
  *  - applies rate limits
  *  - sets CORS headers
@@ -24,7 +24,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * No auth-related logic belongs here.
  *
- * @OA\Tag(name="Widget", description="JS widget gateway — authentication via X-Widget-Key header")
+ * @OA\Tag(name="Widget", description="JS widget gateway — short-lived X-Widget-Token authentication")
  */
 class WidgetController
 {
@@ -153,7 +153,7 @@ class WidgetController
     public function sendFile(Request $request, string $external_id): JsonResponse
     {
         $request->validate([
-            'uploaded_file' => ['required', 'file', 'max:20480'],
+            'uploaded_file' => ['required', 'file', 'max:12288'],
         ]);
 
         /** @var ExternalSource $source */

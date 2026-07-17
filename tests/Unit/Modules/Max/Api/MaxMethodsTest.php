@@ -23,7 +23,7 @@ class MaxMethodsTest extends TestCase
     public function test_send_query_returns_error_dto_when_send_image_fails(): void
     {
         Http::fake([
-            'platform-api.max.ru/*' => Http::response('Bad Request', 400),
+            'platform-api2.max.ru/*' => Http::response('Bad Request', 400),
         ]);
 
         $methods = new MaxMethods();
@@ -41,7 +41,7 @@ class MaxMethodsTest extends TestCase
     public function test_send_query_returns_error_dto_when_send_file_fails(): void
     {
         Http::fake([
-            'platform-api.max.ru/*' => Http::response('Server Error', 500),
+            'platform-api2.max.ru/*' => Http::response('Server Error', 500),
         ]);
 
         $methods = new MaxMethods();
@@ -59,7 +59,7 @@ class MaxMethodsTest extends TestCase
     public function test_send_query_returns_success_dto_when_send_image_succeeds(): void
     {
         Http::fake([
-            'platform-api.max.ru/*' => Http::response([
+            'platform-api2.max.ru/*' => Http::response([
                 'message' => [
                     'body' => ['mid' => 'msg-image-001'],
                 ],
@@ -82,7 +82,7 @@ class MaxMethodsTest extends TestCase
     public function test_send_query_returns_success_dto_when_send_file_succeeds(): void
     {
         Http::fake([
-            'platform-api.max.ru/*' => Http::response([
+            'platform-api2.max.ru/*' => Http::response([
                 'message' => [
                     'body' => ['mid' => 'msg-file-002'],
                 ],

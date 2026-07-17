@@ -162,6 +162,10 @@ class IntegrationChannelPage extends Component
             return;
         }
 
+        if ($this->channel === 'vk' && ($verifyResult['groupId'] ?? null) !== null) {
+            $settings->set('vk.group_id', (int) $verifyResult['groupId']);
+        }
+
         // Step 4: persist settings.
         match ($this->channel) {
             'telegram' => $this->saveTelegram($settings),
@@ -327,6 +331,8 @@ class IntegrationChannelPage extends Component
             }
             if (trim((string) $this->max_secret_key) === '') {
                 $this->formErrors['max_secret_key'] = 'Укажите секретный ключ Webhook.';
+            } elseif (! preg_match('/^[A-Za-z0-9_-]{5,256}$/', (string) $this->max_secret_key)) {
+                $this->formErrors['max_secret_key'] = 'Секрет MAX: 5–256 символов A–Z, a–z, 0–9, _ или -.';
             }
 
             if (! empty($this->formErrors)) {

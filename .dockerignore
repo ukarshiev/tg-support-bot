@@ -3,6 +3,8 @@
 .idea
 .vscode
 node_modules
+vendor
+public/build
 bootstrap/cache/*.php
 storage/logs/*.log
 storage/framework/cache/*
@@ -18,4 +20,4 @@ docker/*
 !docker/php-fpm/**
 *.md
 tests/
-
+backups/

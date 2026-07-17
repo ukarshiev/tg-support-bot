@@ -121,9 +121,15 @@ class ExternalTrafficService
      *
      * @return Message|null
      */
-    public function show(int $id): ?Message
+    public function show(int $id, ExternalMessageDto|ExternalListMessageDto $scope): ?Message
     {
-        return Message::find($id);
+        return Message::query()
+            ->whereKey($id)
+            ->whereHas('botUser.externalUser', function ($query) use ($scope): void {
+                $query->where('external_id', $scope->external_id)
+                    ->where('source', $scope->source);
+            })
+            ->first();
     }
 
     /**

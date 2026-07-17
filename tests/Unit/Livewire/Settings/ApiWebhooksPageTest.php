@@ -98,7 +98,7 @@ class ApiWebhooksPageTest extends TestCase
             ->assertSee('Добавить источник');
     }
 
-    public function test_add_source_creates_source_with_placeholder_name_and_token(): void
+    public function test_add_source_creates_source_without_an_unrevealed_token(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Admin]);
         $this->actingAs($admin);
@@ -110,10 +110,7 @@ class ApiWebhooksPageTest extends TestCase
         $source = ExternalSource::first();
         $this->assertNotNull($source);
         $this->assertSame('Новый источник', $source->name);
-        $this->assertDatabaseHas('external_source_access_tokens', [
-            'external_source_id' => $source->id,
-            'active' => true,
-        ]);
+        $this->assertDatabaseMissing('external_source_access_tokens', ['external_source_id' => $source->id]);
     }
 
     public function test_add_source_generates_unique_placeholder_name(): void

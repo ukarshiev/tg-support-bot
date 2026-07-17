@@ -44,6 +44,13 @@ return new class () extends Migration {
 
     public function down(): void
     {
+        foreach (['status', 'duplicate_group_key'] as $column) {
+            $indexName = 'ai_support_knowledge_chunks_' . $column . '_index';
+            if (Schema::hasIndex('ai_support_knowledge_chunks', $indexName)) {
+                Schema::table('ai_support_knowledge_chunks', fn (Blueprint $table) => $table->dropIndex($indexName));
+            }
+        }
+
         Schema::table('ai_support_knowledge_chunks', function (Blueprint $table): void {
             foreach (['source_metadata', 'duplicate_group_key', 'moderation_risks', 'moderation_reason', 'status'] as $column) {
                 if (Schema::hasColumn('ai_support_knowledge_chunks', $column)) {

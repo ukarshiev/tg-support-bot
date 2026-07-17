@@ -68,7 +68,7 @@ class TgExternalEditService extends FromTgEditService
                     'type_query' => 'edit_message',
                     'externalId' => $messageData->externalId,
                     'message' => $saveMessageData->result->toArray(),
-                ]);
+                ], $this->botUser->externalUser->externalSource->id);
             }
 
             SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([

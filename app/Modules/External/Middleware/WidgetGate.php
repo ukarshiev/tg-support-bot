@@ -7,6 +7,7 @@ namespace App\Modules\External\Middleware;
 use App\Models\ExternalSource;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -14,24 +15,14 @@ use Symfony\Component\HttpFoundation\Response;
  * WidgetGate middleware — authenticates and rate-limits JS widget requests.
  *
  * Flow:
- *   1. Read X-Widget-Key header.
- *   2. Look up ExternalSource by public_key.
- *   3. Check domain/IP allowlist via ExternalSource::isRequestAllowed().
- *   4. Apply rate limits:
- *        POST routes  → widget-send:{key}:{ip}   30 req/min
- *        GET routes   → widget-poll:{key}:{ip}  120 req/min
- *   5. Add CORS headers to the response.
- *   6. Handle OPTIONS preflight (204 + CORS headers, no business logic).
- *   7. Attach the ExternalSource to request attributes as 'widget_source'.
- *
- * Security note: the public key is NEVER logged — only its first lookup
- * determines access; once found we refer to the source by id/name.
+ * Authenticates short-lived backend-issued widget sessions, applies rate
+ * limits, and attaches the scoped ExternalSource to the request.
  */
 class WidgetGate
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // CORS preflight: the browser sends OPTIONS WITHOUT the X-Widget-Key
+        // CORS preflight: the browser sends OPTIONS without the session token
         // header (and without credentials), so it must be answered before any
         // auth/allowlist check — otherwise the preflight is rejected and the
         // real request never runs.
@@ -39,29 +30,27 @@ class WidgetGate
             return $this->corsResponse($request, response('', 204));
         }
 
-        $key = (string) $request->header('X-Widget-Key', '');
-
-        if ($key === '') {
-            return $this->corsResponse($request, $this->deny(401, 'Widget key required.'));
+        $sessionToken = (string) $request->header('X-Widget-Token', '');
+        if ($sessionToken === '') {
+            return $this->corsResponse($request, $this->deny(401, 'Widget session required.'));
         }
 
-        /** @var ExternalSource|null $source */
-        $source = ExternalSource::where('public_key', $key)->first();
-
-        if (! $source) {
-            return $this->corsResponse($request, $this->deny(401, 'Invalid widget key.'));
+        $source = $this->sourceFromSession($request, $sessionToken);
+        if ($source === null) {
+            return $this->corsResponse($request, $this->deny(401, 'Invalid widget session.'));
         }
 
-        if (! $source->isRequestAllowed($request)) {
-            return $this->corsResponse($request, $this->deny(403, 'Origin or IP not allowed.'));
-        }
+        return $this->handleAuthorized($request, $next, $source, hash('sha256', $sessionToken));
+    }
 
+    private function handleAuthorized(Request $request, Closure $next, ExternalSource $source, string $identity): Response
+    {
         // Rate limiting: POST = send, GET = poll
         if ($request->isMethod('POST')) {
-            $rateLimitKey = 'widget-send:' . $key . ':' . ($request->ip() ?? '');
+            $rateLimitKey = 'widget-send:' . $source->id . ':' . $identity;
             $maxAttempts = 30;
         } else {
-            $rateLimitKey = 'widget-poll:' . $key . ':' . ($request->ip() ?? '');
+            $rateLimitKey = 'widget-poll:' . $source->id . ':' . $identity;
             $maxAttempts = 120;
         }
 
@@ -82,11 +71,45 @@ class WidgetGate
         return $this->corsResponse($request, $response);
     }
 
+    private function sourceFromSession(Request $request, string $token): ?ExternalSource
+    {
+        try {
+            $payload = json_decode(Crypt::decryptString($token), true, flags: JSON_THROW_ON_ERROR);
+            $routeExternalId = (string) $request->route('external_id');
+            $requestOrigin = $this->normalizeOrigin((string) $request->header('Origin', ''));
+
+            if (! is_array($payload)
+                || ! isset($payload['source_id'], $payload['external_id'], $payload['origin'], $payload['expires_at'])
+                || ! hash_equals((string) $payload['external_id'], $routeExternalId)
+                || (int) $payload['expires_at'] < now()->timestamp
+                || $requestOrigin === ''
+                || ! hash_equals((string) $payload['origin'], $requestOrigin)) {
+                return null;
+            }
+
+            return ExternalSource::find((int) $payload['source_id']);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function normalizeOrigin(string $origin): string
+    {
+        $parts = parse_url($origin);
+        if (! is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+            return '';
+        }
+
+        return strtolower((string) $parts['scheme']) . '://'
+            . strtolower((string) $parts['host'])
+            . (isset($parts['port']) ? ':' . $parts['port'] : '');
+    }
+
     /**
      * Add CORS headers to the response.
      *
      * Access-Control-Allow-Origin is set to the request's Origin header value
-     * (only if the request was already allowed through isRequestAllowed()).
+     * for both successful and denied browser requests.
      *
      * @param Request  $request
      * @param Response $response
@@ -102,7 +125,7 @@ class WidgetGate
         }
 
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        $response->headers->set('Access-Control-Allow-Headers', 'X-Widget-Key, Content-Type');
+        $response->headers->set('Access-Control-Allow-Headers', 'X-Widget-Token, Content-Type');
         $response->headers->set('Access-Control-Max-Age', '86400');
         $response->headers->set('Vary', 'Origin');
 

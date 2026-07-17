@@ -35,9 +35,10 @@ class GenerateApiTokenTest extends TestCase
 
     public function test_successful_token_generation(): void
     {
+        $legacyToken = Str::random(32);
         ExternalSourceAccessTokens::create([
             'external_source_id' => $this->sourceModel->id,
-            'token' => Str::random(32),
+            'token' => $legacyToken,
         ]);
 
         // создание токена
@@ -48,6 +49,11 @@ class GenerateApiTokenTest extends TestCase
 
         $this->assertEquals(0, $exitCode);
         $this->assertDatabaseHas('external_sources', ['name' => $this->source]);
+        $this->assertStringNotContainsString($legacyToken, Artisan::output());
+
+        $newToken = ExternalSourceAccessTokens::latest('id')->firstOrFail();
+        $this->assertNull($newToken->token);
+        $this->assertNotNull($newToken->token_hash);
 
         // обновление токена
         $exitCode = Artisan::call('app:generate-token', [

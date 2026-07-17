@@ -26,10 +26,13 @@ class VkMethods
                 'random_id' => random_int(1, PHP_INT_MAX),
             ]);
 
-            $response = Http::asForm()->post(
-                'https://api.vk.com/method/' . $methodQuery,
-                $queryParams
-            );
+            $response = Http::asForm()
+                ->connectTimeout(3)
+                ->timeout(15)
+                ->post(
+                    'https://api.vk.com/method/' . $methodQuery,
+                    $queryParams
+                );
 
             $resultQuery = $response->json();
 

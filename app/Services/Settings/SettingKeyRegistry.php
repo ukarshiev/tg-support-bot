@@ -110,6 +110,11 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => true,
         ],
+        'vk.group_id' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
 
         // ── Max ──────────────────────────────────────────────────────────────
         'max.token' => [
