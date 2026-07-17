@@ -1,3 +1,10 @@
+0.35.6 – 18.07.2026 01:00
+- [Безопасность] (Plane TGSUPBOT-74) Telegram file proxy — `/api/files/{file_id}` принимает только относительные временные подписи на 15 минут, проверяемые после IP throttle 60/мин; подмена `file_id`, срока или режима выдачи возвращает `403` до обращения к Telegram.
+- [Надёжность] (Plane TGSUPBOT-74) FileService — Удалены `die()` и подавление исключений; Telegram ограничен connect timeout 3 с, общим timeout 15 с и размером 20 МБ, файл передаётся через удаляемый временный файл с безопасными кодами `404/413/429/502/504`.
+- [Совместимость] (Plane TGSUPBOT-74) External API/Widget/Admin — `file_url` и новый `attachment_urls` содержат подписанные ссылки; старый POST сохранён на один релиз как deprecated и тоже требует подпись.
+- [Безопасность] (Plane TGSUPBOT-74) Nginx/headers — Access log отключён только для `/api/files/`, чтобы не сохранять `file_id` и подпись; добавлены `nosniff`, `private, no-store` и `no-referrer`.
+- [Проверка] (Plane TGSUPBOT-74) PHPUnit/PHPStan/PostgreSQL/Docker/Trivy — 1157 тестов и 3374 assertions, PHPStan 0, migrate→rollback→migrate PASS, production build PASS, HIGH/CRITICAL 0, Gitleaks 0.
+
 0.35.5 – 16.07.2026 01:33
 - [Безопасность] (Plane TGSUPBOT-73) External integrations — Исходящие webhook защищены публичной HTTPS:443 SSRF-политикой, DNS pinning без redirect и HMAC-подписью с бесшовной ротацией current/pending ключей.
 - [Безопасность] (Plane TGSUPBOT-73) VK/MAX/External API — Входящие события работают fail-closed с постоянным сравнением секретов и привязкой VK group_id; bearer-токены переведены на SHA-256, one-time reveal, отзыв, срок и 24-часовую ротацию.
@@ -544,7 +551,6 @@
 - [Новый функционал] (Docker) start-relaxaclub-windows-docker.ps1 — Добавлен безопасный Windows Docker-запуск для relaxaclub без certbot, проверки IP через WSL и удаления Docker volume.
 - [Фикс] (Nginx) docker/nginx/default.windows-docker.conf.template — Конфиг nginx теперь генерируется без BOM, чтобы контейнер nginx не падал на директиве server.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан запуск relaxaclub через Docker Desktop/WSL и команды проверки.
-
 
 
 

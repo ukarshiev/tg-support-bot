@@ -6,7 +6,7 @@
         // (file_id "chat-attachments/…") → auth-gated relative route; everything
         // else (incoming external URLs) → used directly.
         $fileUrl = match (true) {
-            $platform === 'telegram' => url('/api/files/' . $attachment->file_id),
+            $platform === 'telegram' => \App\Helpers\TelegramHelper::getFilePublicPath((string) $attachment->file_id),
             str_starts_with((string) $attachment->file_id, 'chat-attachments/') => route('admin.chat-attachment', $attachment->id, false),
             default => $attachment->file_id,
         };

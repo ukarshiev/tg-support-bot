@@ -36,3 +36,11 @@ if (abs(time() - (int) $timestamp) > 300 || ! hash_equals($expected, $signature)
 3. Убедитесь, что plaintext `token` очищен и секретов нет в логах.
 
 Widget принимает только короткоживущий `X-Widget-Token`, который доверенный External-клиент получает через endpoint выдачи Widget-сессии.
+# Telegram file proxy
+
+Telegram-вложения выдаются только по временным подписанным URL из поля
+`file_url` External API или `attachment_urls` Widget API. Ссылка действует 15
+минут, привязана к `file_id` и режиму `inline`/`attachment` и не должна
+кэшироваться или сохраняться клиентом. Прямой `/api/files/{file_id}` без
+подписи возвращает `403`. Новый клиент использует `GET`; подписанный `POST`
+сохранён временно только для совместимости.

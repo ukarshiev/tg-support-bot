@@ -2,6 +2,7 @@
 
 namespace App\Modules\External\DTOs;
 
+use App\Helpers\TelegramHelper;
 use Spatie\LaravelData\Data;
 
 class ExternalMessageResponseDto extends Data
@@ -38,9 +39,7 @@ class ExternalMessageResponseDto extends Data
     {
         try {
             if (!empty($data['file_id'])) {
-                $data['file_url'] = route('stream_file', [
-                    'file_id' => $data['file_id'],
-                ]);
+                $data['file_url'] = TelegramHelper::getFilePublicPath((string) $data['file_id']);
             }
 
             if (!empty($data['file_id'])) {

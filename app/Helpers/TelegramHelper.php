@@ -3,6 +3,7 @@
 namespace App\Helpers;
 
 use App\Modules\Api\Services\FileService;
+use App\Modules\Api\Services\TelegramFileUrlGenerator;
 use App\Services\Settings\SettingsService;
 use phpDocumentor\Reflection\Exception;
 
@@ -28,10 +29,9 @@ class TelegramHelper
      *
      * @return string
      */
-    public static function getFilePublicPath(string $fileId): string
+    public static function getFilePublicPath(string $fileId, string $disposition = 'inline'): string
     {
-        $appUrl = trim(config('app.url'), '/');
-        return "{$appUrl}/api/files/{$fileId}";
+        return app(TelegramFileUrlGenerator::class)->generate($fileId, $disposition);
     }
 
     /**

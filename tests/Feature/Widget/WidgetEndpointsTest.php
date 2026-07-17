@@ -254,6 +254,26 @@ class WidgetEndpointsTest extends TestCase
         $this->assertCount(2, $response->json('messages'));
     }
 
+    public function test_get_messages_preserves_attachments_and_adds_signed_attachment_urls(): void
+    {
+        $botUser = $this->seedSession();
+        $message = $this->seedMessage($botUser, 'File');
+        $message->attachments()->create([
+            'file_id' => 'telegram-file-id',
+            'file_type' => 'document',
+        ]);
+
+        $response = $this->getJson(
+            "/api/widget/{$this->externalId}/messages",
+            $this->widgetHeaders(),
+        )->assertOk();
+
+        $response->assertJsonPath('messages.0.attachments.0', 'telegram-file-id');
+        $url = (string) $response->json('messages.0.attachment_urls.0');
+        $this->assertStringContainsString('/api/files/telegram-file-id?', $url);
+        $this->assertStringContainsString('signature=', $url);
+    }
+
     public function test_get_messages_with_after_param_returns_only_newer(): void
     {
         $botUser = $this->seedSession();

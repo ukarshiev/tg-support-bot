@@ -53,4 +53,18 @@ class DockerComposeNginxDependencyTest extends TestCase
         $this->assertStringContainsString('/up', $healthcheck);
         $this->assertStringContainsString('curl', $healthcheck);
     }
+
+    public function test_signed_file_requests_remain_excluded_after_internal_redirect(): void
+    {
+        $root = dirname(__DIR__, 3);
+
+        foreach (['default.conf.template', 'default.windows-docker.conf.template'] as $template) {
+            $nginx = file_get_contents($root . '/docker/nginx/' . $template);
+
+            $this->assertIsString($nginx);
+            $this->assertStringContainsString('map $request_uri $file_proxy_loggable', $nginx);
+            $this->assertStringContainsString('~^/api/files/ 0;', $nginx);
+            $this->assertStringContainsString('access_log /var/log/nginx/access.log combined if=$file_proxy_loggable;', $nginx);
+        }
+    }
 }

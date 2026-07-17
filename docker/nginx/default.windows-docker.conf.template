@@ -10,11 +10,17 @@ upstream reverb_backend {
     server reverb:8080 resolve;
 }
 
+map $request_uri $file_proxy_loggable {
+    default 1;
+    ~^/api/files/ 0;
+}
+
 server {
     listen 80;
     server_name __MAIN_DOMAIN__ www.__MAIN_DOMAIN__ localhost 127.0.0.1;
 
     client_max_body_size 12M;
+    access_log /var/log/nginx/access.log combined if=$file_proxy_loggable;
 
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
@@ -37,6 +43,13 @@ server {
     index index.php index.html;
 
     location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # Signed file URLs contain a Telegram file_id and signature. Never write
+    # either value to nginx access logs.
+    location ^~ /api/files/ {
+        access_log off;
         try_files $uri $uri/ /index.php?$query_string;
     }
 

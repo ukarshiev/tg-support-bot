@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\External\Controllers;
 
+use App\Helpers\TelegramHelper;
 use App\Models\ExternalSource;
 use App\Models\Message;
 use App\Modules\External\DTOs\ExternalMessageDto;
@@ -242,6 +243,13 @@ class WidgetController
 
         $result = $messages->map(function (Message $message): array {
             $attachments = $message->attachments->map(fn ($a) => $a->file_id)->values()->all();
+            $attachmentUrls = $message->attachments->map(function ($attachment): string {
+                $fileId = (string) $attachment->file_id;
+
+                return str_starts_with($fileId, 'http://') || str_starts_with($fileId, 'https://')
+                    ? $fileId
+                    : TelegramHelper::getFilePublicPath($fileId);
+            })->values()->all();
 
             return [
                 // Manager replies sent from the admin panel store their text on
@@ -254,6 +262,7 @@ class WidgetController
                 'direction' => $message->message_type === 'incoming' ? 'in' : 'out',
                 'created_at' => $message->created_at?->toIso8601String(),
                 'attachments' => $attachments,
+                'attachment_urls' => $attachmentUrls,
             ];
         });
 

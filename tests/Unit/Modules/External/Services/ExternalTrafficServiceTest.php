@@ -84,6 +84,24 @@ class ExternalTrafficServiceTest extends TestCase
         $this->assertNotEmpty($result['messages']);
     }
 
+    public function test_get_list_messages_returns_a_temporary_signed_file_url(): void
+    {
+        $message = $this->createMessage();
+        $message->externalMessage()->update(['file_id' => 'telegram-file-id']);
+
+        $filterDto = ExternalListMessageDto::from([
+            'external_id' => $this->external_id,
+            'source' => $this->source,
+        ]);
+
+        $result = (new ExternalTrafficService())->list($filterDto);
+        $url = (string) $result['messages'][0]['file_url'];
+
+        $this->assertStringContainsString('/api/files/telegram-file-id?', $url);
+        $this->assertStringContainsString('expires=', $url);
+        $this->assertStringContainsString('signature=', $url);
+    }
+
     public function test_get_list_messages_error_messages_not_found(): void
     {
         $filterDto = ExternalListMessageDto::from([
