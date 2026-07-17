@@ -51,7 +51,8 @@
                         "file_url": {
                             "type": "string",
                             "format": "uri",
-                            "example": "https://tg-support-bot.ru/api/files/BQACAgIAAx0CAgAB"
+                            "example": "https://tg-support-bot.ru/api/files/BQACAgIAAx0CAgAB?disposition=inline&expires=1784332800&signature=...",
+                            "description": "Временная подписанная ссылка, действующая 15 минут"
                         },
                         "file_type": {
                             "type": "string",

@@ -6,6 +6,9 @@ use App\Models\Message;
 use App\Observers\MessageObserver;
 use App\Platform\PlatformChannelRegistry;
 use App\Services\Settings\SettingsService;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -32,6 +35,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Message::observe(MessageObserver::class);
-        //
+
+        RateLimiter::for('file-proxy', function (Request $request): Limit {
+            return Limit::perMinute((int) config('file_proxy.requests_per_minute', 60))
+                ->by((string) $request->ip());
+        });
     }
 }

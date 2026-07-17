@@ -2,22 +2,15 @@
 
 namespace App\Modules\Api\Services;
 
+use App\Modules\Api\Exceptions\FileProxyException;
 use App\Services\Settings\SettingsService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-/**
- * Class FileService
- *
- * @package App\Modules\Api\Services
- */
 class FileService
 {
-    /**
-     * @var string
-     */
     private string $botToken;
 
     public function __construct()
@@ -25,107 +18,171 @@ class FileService
         $this->botToken = (string) app(SettingsService::class)->get('telegram.token');
     }
 
-    /**
-     * Передать файл на просмотр
-     *
-     * @param string $fileId
-     *
-     * @return StreamedResponse
-     */
-    public function streamFile(string $fileId): StreamedResponse
+    public function streamFile(string $fileId, string $disposition = 'inline'): StreamedResponse
     {
+        if ($fileId === '' || !in_array($disposition, ['inline', 'attachment'], true)) {
+            throw new FileProxyException('invalid_request', 403);
+        }
+
+        $file = $this->getTelegramFile($fileId);
+        $filePath = $file['result']['file_path'] ?? null;
+        $fileSize = $file['result']['file_size'] ?? null;
+
+        if (!is_string($filePath) || $filePath === '') {
+            throw new FileProxyException('file_not_found', 404);
+        }
+
+        $maxBytes = (int) config('file_proxy.max_bytes', 20 * 1024 * 1024);
+        if (is_numeric($fileSize) && (int) $fileSize > $maxBytes) {
+            throw new FileProxyException('file_too_large', 413);
+        }
+
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'tg-file-');
+        if ($temporaryPath === false) {
+            throw new FileProxyException('temporary_storage_failed', 502);
+        }
+
         try {
-            if (empty($fileId)) {
-                throw new \Exception('File id не найден!');
+            $response = $this->downloadTelegramFile($filePath, $temporaryPath, $maxBytes);
+            $contentLength = (int) ($response->header('Content-Length') ?: filesize($temporaryPath));
+
+            if ($contentLength > $maxBytes || filesize($temporaryPath) > $maxBytes) {
+                throw new FileProxyException('file_too_large', 413);
             }
 
-            $fileData = $this->getTelegramFile($fileId);
+            $filename = $this->safeFilename($filePath);
+            $headers = [
+                'Content-Type' => $this->getFileContentType($filePath),
+                'Content-Disposition' => $disposition . '; filename="' . $filename . '"',
+                'Content-Length' => (string) filesize($temporaryPath),
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store',
+                'Referrer-Policy' => 'no-referrer',
+            ];
 
-            $filePath = $fileData['result']['file_path'] ?? null;
-            if (!$filePath) {
-                abort(404, 'Файл не найден!');
-            }
+            register_shutdown_function(static function () use ($temporaryPath): void {
+                if (is_file($temporaryPath)) {
+                    @unlink($temporaryPath);
+                }
+            });
 
-            $fileResponse = $this->downloadTelegramFile($filePath);
-
-            $contentType = $this->getFileContentType($filePath);
-            return response()->stream(function () use ($fileResponse) {
-                echo $fileResponse->body();
-            }, 200, [
-                'Content-Type' => $contentType,
-                'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
-            ]);
+            return response()->stream(static function () use ($temporaryPath): void {
+                try {
+                    $stream = fopen($temporaryPath, 'rb');
+                    if ($stream !== false) {
+                        fpassthru($stream);
+                        fclose($stream);
+                    }
+                } finally {
+                    if (is_file($temporaryPath)) {
+                        @unlink($temporaryPath);
+                    }
+                }
+            }, 200, $headers);
         } catch (\Throwable $e) {
-            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
-            die();
+            if (is_file($temporaryPath)) {
+                @unlink($temporaryPath);
+            }
+
+            throw $e;
         }
     }
 
-    /**
-     * @param string $fileId
-     *
-     * @return \Illuminate\Http\Response
-     */
-    public function downloadFile(string $fileId): \Illuminate\Http\Response
+    public function downloadFile(string $fileId): StreamedResponse
     {
-        try {
-            if (empty($fileId)) {
-                throw new \Exception('File id не найден!');
-            }
-
-            $fileData = $this->getTelegramFile($fileId);
-
-            $filePath = $fileData['result']['file_path'] ?? null;
-            if (!$filePath) {
-                abort(404, 'Файл не найден!');
-            }
-
-            $fileResponse = $this->downloadTelegramFile($filePath);
-
-            $contentType = $this->getFileContentType($filePath);
-            return response($fileResponse->body())
-                ->header('Content-Type', $contentType)
-                ->header('Content-Disposition', 'attachment; filename="' . basename($filePath) . '"');
-        } catch (\Throwable $e) {
-            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
-            die();
-        }
+        return $this->streamFile($fileId, 'attachment');
     }
 
-    /**
-     * @param string $fileId
-     *
-     * @return array
-     */
     public function getTelegramFile(string $fileId): array
     {
-        return Http::get("https://api.telegram.org/bot{$this->botToken}/getFile", [
-            'file_id' => $fileId,
-        ])->json();
-    }
-
-    /**
-     * @param string $filePath
-     *
-     * @return Response
-     */
-    protected function downloadTelegramFile(string $filePath): Response
-    {
-        $fileUrl = "https://api.telegram.org/file/bot{$this->botToken}/{$filePath}";
-
-        $fileResponse = Http::get($fileUrl);
-        if (!$fileResponse->ok()) {
-            abort(502, 'Не удалось получить файл');
+        if ($this->botToken === '') {
+            throw new FileProxyException('upstream_unavailable', 502);
         }
 
-        return $fileResponse;
+        try {
+            $response = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
+                ->timeout((int) config('file_proxy.timeout', 15))
+                ->withoutRedirecting()
+                ->get("https://api.telegram.org/bot{$this->botToken}/getFile", [
+                    'file_id' => $fileId,
+                ]);
+        } catch (ConnectionException $e) {
+            throw new FileProxyException('upstream_timeout', 504, $e);
+        }
+
+        $this->assertTelegramResponse($response);
+        $json = $response->json();
+
+        if (!is_array($json) || !array_key_exists('ok', $json)) {
+            throw new FileProxyException('upstream_invalid_response', 502);
+        }
+
+        if ($json['ok'] !== true) {
+            throw new FileProxyException('file_not_found', 404);
+        }
+
+        return $json;
     }
 
-    /**
-     * @param string $filePath
-     *
-     * @return string
-     */
+    protected function downloadTelegramFile(string $filePath, string $temporaryPath, int $maxBytes): Response
+    {
+        $sizeExceeded = false;
+
+        try {
+            $response = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
+                ->timeout((int) config('file_proxy.timeout', 15))
+                ->withoutRedirecting()
+                ->withOptions([
+                    'sink' => $temporaryPath,
+                    'progress' => static function (int $downloadSize, int $downloaded, int $uploadSize, int $uploaded) use ($maxBytes, &$sizeExceeded): void {
+                        if ($downloadSize > $maxBytes || $downloaded > $maxBytes) {
+                            $sizeExceeded = true;
+                            throw new \RuntimeException('file_size_limit_exceeded');
+                        }
+                    },
+                ])
+                ->get("https://api.telegram.org/file/bot{$this->botToken}/{$filePath}");
+        } catch (ConnectionException $e) {
+            if ($sizeExceeded) {
+                throw new FileProxyException('file_too_large', 413, $e);
+            }
+
+            throw new FileProxyException('upstream_timeout', 504, $e);
+        } catch (\Throwable $e) {
+            if ($sizeExceeded) {
+                throw new FileProxyException('file_too_large', 413, $e);
+            }
+
+            throw new FileProxyException('upstream_error', 502, $e);
+        }
+
+        $this->assertTelegramResponse($response);
+
+        return $response;
+    }
+
+    private function assertTelegramResponse(Response $response): void
+    {
+        if ($response->status() === 429) {
+            throw new FileProxyException('upstream_rate_limited', 429);
+        }
+
+        if ($response->serverError()) {
+            throw new FileProxyException('upstream_error', 502);
+        }
+
+        if ($response->clientError()) {
+            throw new FileProxyException('file_not_found', 404);
+        }
+    }
+
+    private function safeFilename(string $filePath): string
+    {
+        $filename = preg_replace('/[^A-Za-z0-9._-]/', '_', basename($filePath));
+
+        return is_string($filename) && $filename !== '' ? $filename : 'telegram-file';
+    }
+
     protected function getFileContentType(string $filePath): string
     {
         $mapping = [
@@ -133,11 +190,16 @@ class FileService
             'jpeg' => 'image/jpeg',
             'png' => 'image/png',
             'gif' => 'image/gif',
+            'webp' => 'image/webp',
             'pdf' => 'application/pdf',
             'zip' => 'application/zip',
+            'txt' => 'text/plain; charset=UTF-8',
+            'mp3' => 'audio/mpeg',
+            'ogg' => 'audio/ogg',
+            'mp4' => 'video/mp4',
         ];
 
-        $extension = pathinfo($filePath, PATHINFO_EXTENSION);
-        return !empty($mapping[$extension]) ? $mapping[$extension] : 'application/octet-stream';
+        return $mapping[strtolower(pathinfo($filePath, PATHINFO_EXTENSION))]
+            ?? 'application/octet-stream';
     }
 }

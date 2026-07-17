@@ -1,7 +1,8 @@
 {
     "/api/files/{file_id}": {
         "post": {
-            "summary": "Передача файла на скачивание по Telegram File ID",
+            "summary": "Устаревшая передача файла на скачивание по подписанной ссылке",
+            "deprecated": true,
             "operationId": "api_files_file_post",
             "tags": [
                 "Files"
@@ -16,12 +17,36 @@
                     },
                     "description": "Telegram File ID",
                     "example": "BQACAgIAAx0CAgAB"
+                },
+                {
+                    "name": "expires",
+                    "in": "query",
+                    "required": true,
+                    "schema": {"type": "integer"}
+                },
+                {
+                    "name": "disposition",
+                    "in": "query",
+                    "required": true,
+                    "schema": {"type": "string", "enum": ["attachment"]}
+                },
+                {
+                    "name": "signature",
+                    "in": "query",
+                    "required": true,
+                    "schema": {"type": "string"}
                 }
             ],
             "responses": {
                 "200": {
                     "description": "Файл отправлен на скачивание!"
-                }
+                },
+                "403": {"description": "Подпись отсутствует, изменена или истекла"},
+                "404": {"description": "Файл не найден"},
+                "413": {"description": "Файл превышает 20 МБ"},
+                "429": {"description": "Превышен лимит запросов"},
+                "502": {"description": "Ошибка ответа Telegram"},
+                "504": {"description": "Таймаут Telegram"}
             }
         }
     }

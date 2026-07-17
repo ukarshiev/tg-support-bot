@@ -1314,7 +1314,7 @@
                                 @foreach($mediaAttachments as $attachment)
                                     @php
                                         $fileUrl = $activeBotUser->platform === 'telegram'
-                                            ? url('/api/files/' . $attachment->file_id)
+                                            ? \App\Helpers\TelegramHelper::getFilePublicPath((string) $attachment->file_id)
                                             : $attachment->file_id;
                                         $isImage = in_array($attachment->file_type, ['photo', 'sticker']);
                                     @endphp

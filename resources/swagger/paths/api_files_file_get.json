@@ -16,12 +16,38 @@
                     },
                     "description": "Telegram File ID",
                     "example": "BQACAgIAAx0CAgAB"
+                },
+                {
+                    "name": "expires",
+                    "in": "query",
+                    "required": true,
+                    "schema": {"type": "integer"},
+                    "description": "Срок действия временной ссылки (Unix timestamp)"
+                },
+                {
+                    "name": "disposition",
+                    "in": "query",
+                    "required": true,
+                    "schema": {"type": "string", "enum": ["inline", "attachment"]}
+                },
+                {
+                    "name": "signature",
+                    "in": "query",
+                    "required": true,
+                    "schema": {"type": "string"},
+                    "description": "Подпись Laravel; ссылка выдаётся External API или Widget API"
                 }
             ],
             "responses": {
                 "200": {
                     "description": "Файл получен!"
-                }
+                },
+                "403": {"description": "Подпись отсутствует, изменена или истекла"},
+                "404": {"description": "Файл не найден"},
+                "413": {"description": "Файл превышает 20 МБ"},
+                "429": {"description": "Превышен лимит запросов или Telegram временно ограничил запрос"},
+                "502": {"description": "Ошибка ответа Telegram"},
+                "504": {"description": "Таймаут Telegram"}
             }
         }
     }

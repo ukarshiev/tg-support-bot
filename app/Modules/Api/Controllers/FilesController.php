@@ -3,55 +3,34 @@
 namespace App\Modules\Api\Controllers;
 
 use App\Modules\Api\Services\FileService;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-/**
- * Class FilesController
- *
- * @package App\Modules\Api\Controllers
- */
 class FilesController
 {
-    protected FileService $fileService;
-
-    public function __construct(FileService $fileService)
+    public function __construct(private FileService $fileService)
     {
-        $this->fileService = $fileService;
+    }
+
+    public function getFileStream(Request $request, string $fileId): StreamedResponse
+    {
+        return $this->fileService->streamFile(
+            $fileId,
+            (string) $request->query('disposition', 'inline'),
+        );
     }
 
     /**
-     * Stream file for viewing.
-     *
-     * @param string $fileId
-     *
-     * @return StreamedResponse
+     * @deprecated Use the signed GET endpoint with disposition=attachment.
      */
-    public function getFileStream(string $fileId): StreamedResponse
+    public function getFileDownload(Request $request, string $fileId): StreamedResponse
     {
-        try {
-            return $this->fileService->streamFile($fileId);
-        } catch (\Throwable $e) {
-            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
-            die();
-        }
-    }
+        $response = $this->fileService->streamFile(
+            $fileId,
+            (string) $request->query('disposition', 'attachment'),
+        );
+        $response->headers->set('Deprecation', 'true');
 
-    /**
-     * Download file.
-     *
-     * @param string $fileId
-     *
-     * @return Response
-     */
-    public function getFileDownload(string $fileId): Response
-    {
-        try {
-            return $this->fileService->downloadFile($fileId);
-        } catch (\Throwable $e) {
-            Log::channel('app')->info($e->getMessage(), ['source' => 'tg_request']);
-            die();
-        }
+        return $response;
     }
 }

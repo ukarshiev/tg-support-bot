@@ -26,12 +26,13 @@ class TelegramHelperTest extends TestCase
     {
         $appUrl = trim(config('app.url'), '/');
         $fileId = 'test_file_id';
-        $successValue = "{$appUrl}/api/files/{$fileId}";
 
         $filePath = TelegramHelper::getFilePublicPath($fileId);
 
-        $this->assertNotEmpty($filePath);
-        $this->assertEquals($successValue, $filePath);
+        $this->assertStringStartsWith("{$appUrl}/api/files/{$fileId}?", $filePath);
+        $this->assertStringContainsString('disposition=inline', $filePath);
+        $this->assertStringContainsString('expires=', $filePath);
+        $this->assertStringContainsString('signature=', $filePath);
     }
 
     /**
