@@ -1,58 +1,58 @@
-FROM php:8.3-fpm
+FROM php:8.3-fpm-bookworm@sha256:2a397791f5ee422190bb673d79332be53ff545205f6df19e2664bd664ebbd739 AS php-base
 
-# Используем bash с pipefail для всех RUN
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Установка системных пакетов и Node.js
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git curl zip unzip libpq-dev libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev shellcheck && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
+RUN read -r -a phpize_deps <<< "$(printenv PHPIZE_DEPS)" && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libfreetype6 libicu72 libjpeg62-turbo libpng16-16 libpq5 libzip4 \
+        libfreetype6-dev libicu-dev libjpeg62-turbo-dev libpng-dev libpq-dev libzip-dev "${phpize_deps[@]}" && \
     docker-php-ext-configure gd --with-freetype --with-jpeg && \
     docker-php-ext-install pdo pdo_pgsql pgsql intl zip gd pcntl && \
     pecl install redis && docker-php-ext-enable redis && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    apt-get purge -y --auto-remove \
+        libfreetype6-dev libicu-dev libjpeg62-turbo-dev libpng-dev libpq-dev libzip-dev "${phpize_deps[@]}" && \
+    rm -rf /var/lib/apt/lists/* /tmp/pear
 
-# Настройки PHP
 COPY ./docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
 COPY ./docker/php-fpm/zz-relaxa-pool.conf /usr/local/etc/php-fpm.d/zz-relaxa-pool.conf
 
-# Установка Composer
-COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
-ENV COMPOSER_ALLOW_SUPERUSER=1
-
-# WORKDIR до COPY проекта
 WORKDIR /var/www
 
-# Копируем проект
+FROM php-base AS composer-build
+
+COPY --from=composer:2.8@sha256:5248900ab8b5f7f880c2d62180e40960cd87f60149ec9a1abfd62ac72a02577c /usr/bin/composer /usr/local/bin/composer
 COPY . .
+RUN rm -f bootstrap/cache/*.php && \
+    composer install --no-dev --no-interaction --prefer-dist \
+        --classmap-authoritative --no-progress
 
-# Очищаем кэш фреймворка до установки зависимостей
-RUN rm -f bootstrap/cache/*.php
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend-build
 
-# Права доступа на storage и bootstrap/cache
-RUN mkdir -p storage/logs \
-    storage/framework/sessions \
-    storage/framework/views \
-    storage/framework/cache && \
-    chown -R www-data:www-data storage bootstrap/cache && \
+WORKDIR /build
+COPY package.json package-lock.json vite.app.config.js ./
+COPY resources ./resources
+RUN npm ci && npm run build
+
+FROM php-base AS runtime
+
+ENV APP_ENV=production \
+    APP_DEBUG=false \
+    LARAVEL_GIT_COMMIT=false
+
+COPY . .
+COPY --from=composer-build /var/www/vendor ./vendor
+COPY --from=frontend-build /build/public/build ./public/build
+
+RUN rm -rf node_modules tests .git .github && \
+    rm -f bootstrap/cache/*.php && \
+    mkdir -p storage/logs storage/framework/sessions storage/framework/views \
+        storage/framework/cache bootstrap/cache && \
+    cp -a public /var/www_public_image && \
+    chown -R www-data:www-data storage bootstrap/cache public /var/www_public_image && \
     find storage bootstrap/cache -type d -exec chmod 775 {} + && \
     find storage bootstrap/cache -type f -exec chmod 664 {} +
 
-# Отключаем получение git commit info для Laravel/npm
-ENV LARAVEL_GIT_COMMIT=false
-
-# Установка PHP зависимостей
-RUN composer install --no-interaction --prefer-dist --optimize-autoloader
-
-# Установка Node.js зависимостей и сборка фронтенда
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi && \
-    npm run build
-
-# Сохраняем собранный public отдельно: при старте app он копируется в Docker-volume app_public для nginx.
-RUN cp -a public /var/www_public_image && chown -R www-data:www-data /var/www_public_image
-
-# Меняем пользователя на www-data
 USER www-data
 
 EXPOSE 9000

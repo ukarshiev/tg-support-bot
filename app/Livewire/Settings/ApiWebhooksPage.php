@@ -116,7 +116,8 @@ class ApiWebhooksPage extends Component
      * Create a new External Source and redirect to its edit page.
      *
      * The source is created with a unique placeholder name (set properly on the
-     * edit page) and an auto-issued bearer token.
+     * edit page). The administrator explicitly issues the bearer token on that
+     * page so its raw value can be shown exactly once.
      *
      * @param ExternalSourceService $service
      */

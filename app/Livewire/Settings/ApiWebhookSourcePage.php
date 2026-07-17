@@ -7,10 +7,12 @@ namespace App\Livewire\Settings;
 use App\Models\ExternalSource;
 use App\Models\User;
 use App\Modules\External\Services\Source\ExternalSourceTokensService;
+use App\Services\Webhook\OutboundWebhookException;
+use App\Services\Webhook\OutboundWebhookUrlPolicy;
+use App\Services\Webhook\WebhookSigningSecretService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
-use Throwable;
 
 /**
  * Per-source External Source configuration page.
@@ -38,9 +40,6 @@ class ApiWebhookSourcePage extends Component
     /** @var string|null Last 6 chars of the active token (for masked display) */
     public ?string $tokenLast6 = null;
 
-    /** @var string|null Raw token value for clipboard copy (only when token present) */
-    public ?string $copyToken = null;
-
     /** @var string Webhook URL being edited */
     public string $webhookUrl = '';
 
@@ -65,14 +64,11 @@ class ApiWebhookSourcePage extends Component
     /** @var bool Webhook URL was saved successfully in this request */
     public bool $saved = false;
 
-    /** @var string|null Current public key for widget gateway (last 8 chars visible, rest masked) */
-    public ?string $publicKey = null;
+    public ?string $currentWebhookKeyId = null;
 
-    /** @var string|null One-time reveal: raw new public key after generation */
-    public ?string $newPublicKey = null;
+    public ?string $pendingWebhookKeyId = null;
 
-    /** @var string|null Error message for public key operations */
-    public ?string $publicKeyError = null;
+    public ?string $newWebhookSigningSecret = null;
 
     /**
      * Mount the component with the source ID from the route.
@@ -102,7 +98,8 @@ class ApiWebhookSourcePage extends Component
         $this->sourceName = $externalSource->name;
         $this->webhookUrl = (string) ($externalSource->webhook_url ?? '');
         $this->allowedIps = implode("\n", $externalSource->allowed_ips ?? []);
-        $this->publicKey = $externalSource->public_key;
+        $this->currentWebhookKeyId = $externalSource->webhook_key_id;
+        $this->pendingWebhookKeyId = $externalSource->pending_webhook_key_id;
 
         $this->loadToken();
     }
@@ -146,7 +143,7 @@ class ApiWebhookSourcePage extends Component
      * (one entry per line) is parsed into a deduplicated list; every entry must
      * be a valid IP. An empty allowlist means requests are allowed from any IP.
      */
-    public function saveWebhookUrl(): void
+    public function saveWebhookUrl(OutboundWebhookUrlPolicy $urlPolicy): void
     {
         $this->nameError = null;
         $this->webhookError = null;
@@ -175,10 +172,18 @@ class ApiWebhookSourcePage extends Component
 
         $url = trim($this->webhookUrl);
 
-        if ($url !== '' && ! filter_var($url, FILTER_VALIDATE_URL)) {
-            $this->webhookError = 'Введите корректный URL (например: https://example.com/webhook).';
+        if ($url !== '') {
+            try {
+                $urlPolicy->validate($url);
+            } catch (OutboundWebhookException $e) {
+                $this->webhookError = match ($e->reason) {
+                    'private_address' => 'Webhook не может указывать на локальный или служебный адрес.',
+                    'dns_failed' => 'Домен webhook не удалось разрешить через DNS.',
+                    default => 'Разрешён только публичный HTTPS URL на порту 443.',
+                };
 
-            return;
+                return;
+            }
         }
 
         $ips = $this->parseAllowedIps();
@@ -206,9 +211,8 @@ class ApiWebhookSourcePage extends Component
     }
 
     /**
-     * Parse and validate the allowed-IPs/domains textarea.
+     * Parse and validate the allowed-IPs textarea.
      *
-     * Accepts IP addresses and domain entries (exact or wildcard *.example.com).
      * Returns a deduplicated list, or null when a line is invalid (in which case
      * $allowedIpsError is set).
      *
@@ -227,18 +231,8 @@ class ApiWebhookSourcePage extends Component
                 continue;
             }
 
-            if (filter_var($entry, FILTER_VALIDATE_IP)) {
-                // Valid IP address
-                $entries[] = $entry;
-                continue;
-            }
-
-            // Allow wildcard domains: *.example.com
-            $check = str_starts_with($entry, '*.') ? substr($entry, 2) : $entry;
-
-            // Validate as a hostname: letters, digits, hyphens, dots; no leading/trailing dots
-            if (! preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)+$/', $check)) {
-                $this->allowedIpsError = "Некорректный IP-адрес или домен: {$entry}";
+            if (! filter_var($entry, FILTER_VALIDATE_IP)) {
+                $this->allowedIpsError = "Некорректный IP-адрес: {$entry}";
 
                 return null;
             }
@@ -249,41 +243,30 @@ class ApiWebhookSourcePage extends Component
         return array_values(array_unique($entries));
     }
 
-    /**
-     * Generate (or rotate) the public key for widget gateway access.
-     *
-     * The raw key is stored in $newPublicKey for a one-time reveal only.
-     * It is never logged.
-     *
-     * @param ExternalSourceTokensService $svc
-     */
-    public function generatePublicKey(ExternalSourceTokensService $svc): void
+    public function createPendingWebhookSigningSecret(WebhookSigningSecretService $service): void
     {
-        $this->publicKeyError = null;
-        $this->newPublicKey = null;
-
         $externalSource = ExternalSource::find($this->sourceId);
-
         if (! $externalSource) {
-            $this->publicKeyError = 'Источник не найден.';
-
             return;
         }
 
-        try {
-            $this->newPublicKey = $svc->rotatePublicKey($externalSource);
-            $this->publicKey = $externalSource->fresh()?->public_key;
-        } catch (Throwable $e) {
-            $this->publicKeyError = $e->getMessage();
-        }
+        $created = $service->createPending($externalSource);
+        $this->pendingWebhookKeyId = $created['key_id'];
+        $this->newWebhookSigningSecret = $created['secret'];
     }
 
-    /**
-     * Dismiss the one-time public key reveal banner.
-     */
-    public function dismissPublicKey(): void
+    public function activatePendingWebhookSigningSecret(WebhookSigningSecretService $service): void
     {
-        $this->newPublicKey = null;
+        $externalSource = ExternalSource::find($this->sourceId);
+        if (! $externalSource) {
+            return;
+        }
+
+        $service->activatePending($externalSource);
+        $fresh = $externalSource->fresh();
+        $this->currentWebhookKeyId = $fresh?->webhook_key_id;
+        $this->pendingWebhookKeyId = $fresh?->pending_webhook_key_id;
+        $this->newWebhookSigningSecret = null;
     }
 
     /**
@@ -308,22 +291,18 @@ class ApiWebhookSourcePage extends Component
         if (! $externalSource) {
             $this->hasToken = false;
             $this->tokenLast6 = null;
-            $this->copyToken = null;
-
             return;
         }
 
         /** @var \App\Models\ExternalSourceAccessTokens|null $token */
-        $token = $externalSource->accessTokens->first();
+        $token = $externalSource->activeToken();
 
         if ($token) {
             $this->hasToken = true;
-            $this->tokenLast6 = substr($token->token, -6);
-            $this->copyToken = $token->token;
+            $this->tokenLast6 = $token->token_hint;
         } else {
             $this->hasToken = false;
             $this->tokenLast6 = null;
-            $this->copyToken = null;
         }
     }
 }

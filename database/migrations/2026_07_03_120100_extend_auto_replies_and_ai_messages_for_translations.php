@@ -34,6 +34,13 @@ return new class () extends Migration {
      */
     public function down(): void
     {
+        foreach (['translation_status', 'source_hash'] as $column) {
+            $indexName = 'ai_messages_' . $column . '_index';
+            if (Schema::hasIndex('ai_messages', $indexName)) {
+                Schema::table('ai_messages', fn (Blueprint $table) => $table->dropIndex($indexName));
+            }
+        }
+
         Schema::table('ai_messages', function (Blueprint $table): void {
             $table->dropColumn([
                 'text_source',
@@ -47,6 +54,13 @@ return new class () extends Migration {
                 'translated_at',
             ]);
         });
+
+        foreach (['type', 'source_hash'] as $column) {
+            $indexName = 'auto_replies_' . $column . '_index';
+            if (Schema::hasIndex('auto_replies', $indexName)) {
+                Schema::table('auto_replies', fn (Blueprint $table) => $table->dropIndex($indexName));
+            }
+        }
 
         Schema::table('auto_replies', function (Blueprint $table): void {
             $table->dropColumn(['type', 'source_locale', 'source_hash']);

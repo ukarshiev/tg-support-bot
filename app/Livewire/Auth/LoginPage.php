@@ -63,7 +63,7 @@ class LoginPage extends Component
             ]);
         }
 
-        if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], true)) {
+        if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], false)) {
             RateLimiter::hit($key);
 
             throw ValidationException::withMessages([

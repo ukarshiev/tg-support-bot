@@ -1,6 +1,6 @@
 services:
     redis:
-        image: redis:7-alpine
+        image: redis:7.4.9-alpine@sha256:9de71018be8413f419688ac34e19dbac432d1c6d9593d2ded99a82eebefeb18f
         container_name: tg_support_redis
         restart: always
         env_file:
@@ -26,7 +26,7 @@ services:
     app:
         build: .
         container_name: pet
-        user: root
+        user: "33:33"
         restart: always
         healthcheck:
             test: ["CMD-SHELL", "php -v >/dev/null && php artisan about --only=environment >/dev/null"]
@@ -35,6 +35,8 @@ services:
             retries: 3
             start_period: 40s
         depends_on:
+            assets_init:
+                condition: service_completed_successfully
             pgdb:
                 condition: service_healthy
             redis:
@@ -42,7 +44,7 @@ services:
         env_file:
             - .env
         working_dir: /var/www/
-        command: sh -lc 'rm -rf /var/www/public/* && cp -a /var/www_public_image/. /var/www/public/ && php-fpm'
+        command: php-fpm
         volumes:
             - app_public:/var/www/public
             - app_storage:/var/www/storage
@@ -53,9 +55,19 @@ services:
             - 8.8.8.8
             - 1.1.1.1
 
+    assets_init:
+        build: .
+        user: root
+        restart: "no"
+        command: sh -lc 'rm -rf /target/* && cp -a /var/www_public_image/. /target/ && chown -R 33:33 /target'
+        volumes:
+            - app_public:/target
+        networks:
+            - pet
+
     pgdb:
         container_name: pgdb
-        image: postgres
+        image: postgres:18.4@sha256:4aabea78cf39b90e834caf3af7d602a18565f6fe2508705c8d01aa63245c2e20
         tty: true
         restart: always
         healthcheck:
@@ -76,7 +88,7 @@ services:
             - pet
 
     nginx:
-        image: nginx:latest
+        image: nginx:1.31.2@sha256:ec4ed8b5299e5e90694af7750eb6dffd2627317d30544d056b0371f8082f7bce
         container_name: nginx
         restart: unless-stopped
         healthcheck:

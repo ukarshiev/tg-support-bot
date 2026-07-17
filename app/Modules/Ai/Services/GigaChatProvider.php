@@ -30,11 +30,12 @@ class GigaChatProvider extends BaseAiProvider
     public function processMessage(AiRequestDto $request): ?AiResponseDto
     {
         try {
+            $startedAt = microtime(true);
             $this->ensureValidToken();
 
             $response = $this->makeApiCall($request);
 
-            return $this->parseApiResponse($response, $request);
+            return $this->parseApiResponse($response, $request, $startedAt);
         } catch (\Throwable $e) {
             Log::channel('app')->error($e->getMessage(), [
                 'source' => 'ai_error',
@@ -100,9 +101,10 @@ class GigaChatProvider extends BaseAiProvider
             'Authorization' => 'Basic ' . ($this->config['client_secret'] ?? ''),
             'RqUID' => (string) \Illuminate\Support\Str::uuid(),
             'Content-Type' => 'application/x-www-form-urlencoded',
-        ])->withOptions([
-            'verify' => storage_path($this->config['path_cert'] ?? ''),
-        ])->asForm()->post('https://ngw.devices.sberbank.ru:9443/api/v2/oauth', [
+        ])->withOptions($this->tlsOptions())
+            ->connectTimeout(3)
+            ->timeout(15)
+            ->asForm()->post('https://ngw.devices.sberbank.ru:9443/api/v2/oauth', [
             'scope' => $this->config['scope'] ?? 'GIGACHAT_API_PERS',
         ]);
 
@@ -111,8 +113,11 @@ class GigaChatProvider extends BaseAiProvider
         }
 
         $data = $response->json();
-        $this->accessToken = $data['access_token'];
-        $this->tokenExpiresAt = $data['expires_at'];
+        if (empty($data['access_token']) || ! is_numeric($data['expires_at'] ?? null)) {
+            throw new \RuntimeException('GigaChat token response is incomplete.');
+        }
+        $this->accessToken = (string) $data['access_token'];
+        $this->tokenExpiresAt = (int) $data['expires_at'];
     }
 
     /**
@@ -132,9 +137,10 @@ class GigaChatProvider extends BaseAiProvider
             'Authorization' => 'Bearer ' . $this->accessToken,
             'Content-Type' => 'application/json',
             'RqUID' => (string) \Illuminate\Support\Str::uuid(),
-        ])->withOptions([
-            'verify' => storage_path($this->config['path_cert'] ?? ''),
-        ])->post(($this->config['base_url'] ?? '') . '/chat/completions', [
+        ])->withOptions($this->tlsOptions())
+            ->connectTimeout(3)
+            ->timeout((int) ($this->config['timeout'] ?? 30))
+            ->post(($this->config['base_url'] ?? '') . '/chat/completions', [
             'model' => $this->config['model'] ?? 'GigaChat-2-Max',
             'messages' => $messages,
             'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
@@ -169,9 +175,12 @@ class GigaChatProvider extends BaseAiProvider
      *
      * @return AiResponseDto AI response DTO
      */
-    private function parseApiResponse(array $response, AiRequestDto $request): AiResponseDto
+    private function parseApiResponse(array $response, AiRequestDto $request, float $startedAt): AiResponseDto
     {
-        $content = $response['choices'][0]['message']['content'] ?? '';
+        $content = trim((string) ($response['choices'][0]['message']['content'] ?? ''));
+        if ($content === '') {
+            throw new \RuntimeException('GigaChat API returned an empty response.');
+        }
         $usage = $response['usage'] ?? [];
 
         $parsedContent = $this->parseStructuredResponse($content);
@@ -185,7 +194,7 @@ class GigaChatProvider extends BaseAiProvider
             confidenceScore: $confidenceScore,
             shouldEscalate: $shouldEscalate,
             tokensUsed: $usage['total_tokens'] ?? 0,
-            responseTime: microtime(true) - microtime(true),
+            responseTime: microtime(true) - $startedAt,
             metadata: [
                 'finish_reason' => $response['choices'][0]['finish_reason'] ?? null,
                 'model' => $response['model'] ?? null,
@@ -225,5 +234,21 @@ class GigaChatProvider extends BaseAiProvider
             'confidence_score' => $confidenceScore,
             'should_escalate' => $shouldEscalate,
         ];
+    }
+
+    /** @return array{verify: string}|array{} */
+    private function tlsOptions(): array
+    {
+        $configuredPath = trim((string) ($this->config['path_cert'] ?? ''));
+        if ($configuredPath === '') {
+            return [];
+        }
+
+        $certificatePath = storage_path($configuredPath);
+        if (! is_file($certificatePath)) {
+            throw new \RuntimeException('Configured GigaChat CA certificate was not found.');
+        }
+
+        return ['verify' => $certificatePath];
     }
 }

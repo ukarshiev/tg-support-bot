@@ -24,30 +24,41 @@ class ExternalSourceTokensServiceTest extends TestCase
         $this->service = app(ExternalSourceTokensService::class);
     }
 
-    public function test_creates_token_for_new_source(): void
+    public function test_creates_one_time_raw_token_and_stores_only_hash_and_hint(): void
     {
-        $this->service->setAccessToken($this->source->id);
+        $raw = $this->service->setAccessToken($this->source->id);
+        $stored = ExternalSourceAccessTokens::sole();
 
-        $this->assertDatabaseHas('external_source_access_tokens', [
-            'external_source_id' => $this->source->id,
-            'active' => 1,
-        ]);
-
-        $token = ExternalSourceAccessTokens::where('external_source_id', $this->source->id)->first();
-        $this->assertEquals(64, strlen($token->token));
+        $this->assertStringStartsWith('ext_', $raw);
+        $this->assertSame(68, strlen($raw));
+        $this->assertNull($stored->token);
+        $this->assertSame(hash('sha256', $raw), $stored->token_hash);
+        $this->assertSame(substr($raw, -6), $stored->token_hint);
+        $this->assertTrue($stored->active);
     }
 
-    public function test_updates_token_for_existing_source(): void
+    public function test_rotation_creates_new_token_and_gives_previous_token_24_hour_window(): void
+    {
+        $firstRaw = $this->service->setAccessToken($this->source->id);
+        $first = ExternalSourceAccessTokens::sole();
+
+        $secondRaw = $this->service->setAccessToken($this->source->id);
+        $first->refresh();
+
+        $this->assertNotSame($firstRaw, $secondRaw);
+        $this->assertCount(2, ExternalSourceAccessTokens::all());
+        $this->assertNotNull($first->expires_at);
+        $this->assertTrue($first->expires_at->between(now()->addHours(23), now()->addHours(25)));
+    }
+
+    public function test_revoke_disables_token_immediately(): void
     {
         $this->service->setAccessToken($this->source->id);
+        $token = ExternalSourceAccessTokens::sole();
 
-        $firstToken = ExternalSourceAccessTokens::where('external_source_id', $this->source->id)->value('token');
-
-        $this->service->setAccessToken($this->source->id);
-
-        $secondToken = ExternalSourceAccessTokens::where('external_source_id', $this->source->id)->value('token');
-
-        $this->assertNotEquals($firstToken, $secondToken);
+        $this->assertTrue($this->service->revoke($token->id, $this->source->id));
+        $this->assertNotNull($token->fresh()?->revoked_at);
+        $this->assertFalse((bool) $token->fresh()?->active);
     }
 
     public function test_throws_exception_when_source_not_found(): void

@@ -110,26 +110,29 @@ class WebhookRegistrationService
      *
      * @param string $token VK access token to verify.
      *
-     * @return array{success: bool, message: string}
+     * @return array{success: bool, message: string, groupId: int|null}
      */
     public function verifyVk(string $token): array
     {
         if ($token === '') {
-            return ['success' => false, 'message' => 'Токен VK не задан.'];
+            return ['success' => false, 'message' => 'Токен VK не задан.', 'groupId' => null];
         }
 
         try {
             $result = VkMethods::sendQueryVk('groups.getById', [], $token);
 
             if ($result->response_code !== 500 && empty($result->error_message)) {
-                return ['success' => true, 'message' => 'Токен VK прошёл проверку.'];
+                $group = is_array($result->response) ? ($result->response[0] ?? null) : null;
+                $groupId = is_array($group) && isset($group['id']) ? (int) $group['id'] : null;
+
+                return ['success' => true, 'message' => 'Токен VK прошёл проверку.', 'groupId' => $groupId];
             }
 
             $errMsg = $result->error_message ?? 'неизвестная ошибка';
 
-            return ['success' => false, 'message' => 'Ошибка VK API: ' . $errMsg];
+            return ['success' => false, 'message' => 'Ошибка VK API: ' . $errMsg, 'groupId' => null];
         } catch (\Throwable) {
-            return ['success' => false, 'message' => 'Не удалось связаться с API платформы.'];
+            return ['success' => false, 'message' => 'Не удалось связаться с API платформы.', 'groupId' => null];
         }
     }
 
@@ -151,7 +154,7 @@ class WebhookRegistrationService
         }
 
         try {
-            $baseUrl = 'https://platform-api.max.ru';
+            $baseUrl = rtrim((string) config('services.max.base_url'), '/');
 
             $response = Http::withHeaders(['Authorization' => $token])
                 ->timeout(10)
@@ -273,16 +276,15 @@ class WebhookRegistrationService
         // every webhook; MaxQuery middleware checks it against `max.secret_key`.
         // Without sending it here, incoming webhooks are rejected with 403.
         $secret = (string) $this->settings->get('max.secret_key');
+        if (! preg_match('/^[A-Za-z0-9_-]{5,256}$/', $secret)) {
+            return ['success' => false, 'message' => 'Секрет MAX не настроен или имеет неверный формат.'];
+        }
 
         $appUrl = config('app.url');
         $webhookUrl = $appUrl . '/api/max/bot';
-        $baseUrl = 'https://platform-api.max.ru';
+        $baseUrl = rtrim((string) config('services.max.base_url'), '/');
 
-        $payload = ['url' => $webhookUrl];
-
-        if ($secret !== '') {
-            $payload['secret'] = $secret;
-        }
+        $payload = ['url' => $webhookUrl, 'secret' => $secret];
 
         $response = Http::withHeaders(['Authorization' => $token])
             ->post("{$baseUrl}/subscriptions", $payload);

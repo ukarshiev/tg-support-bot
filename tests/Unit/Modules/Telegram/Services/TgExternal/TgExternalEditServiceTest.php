@@ -4,11 +4,11 @@ namespace Tests\Unit\Modules\Telegram\Services\TgExternal;
 
 use App\Models\BotUser;
 use App\Models\ExternalMessage;
+use App\Models\ExternalSource;
 use App\Models\Message;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Telegram\Services\TgExternal\TgExternalEditService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\External\ExternalMessageDtoMock;
 use Tests\Mocks\Tg\TelegramUpdateDto_ExternalMock;
@@ -29,9 +29,9 @@ class TgExternalEditServiceTest extends TestCase
         ExternalMessage::truncate();
         Message::truncate();
 
-        Artisan::call('app:generate-token', [
-            'source' => 'live_chat',
-            'hook_url' => 'http://test.ru',
+        ExternalSource::create([
+            'name' => 'live_chat',
+            'webhook_url' => 'https://example.com/webhook',
         ]);
     }
 

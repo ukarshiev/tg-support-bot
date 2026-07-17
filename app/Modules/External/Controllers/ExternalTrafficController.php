@@ -56,7 +56,11 @@ class ExternalTrafficController
      */
     public function show(int $id): JsonResponse
     {
-        return response()->json($this->externalTrafficService->show($id));
+        $message = $this->externalTrafficService->show($id, $this->dataHook);
+
+        return $message === null
+            ? response()->json(['message' => 'Message not found.'], 404)
+            : response()->json($message);
     }
 
     /**

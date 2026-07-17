@@ -7,6 +7,8 @@ namespace App\Livewire\Settings;
 use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -120,6 +122,17 @@ class TeamMemberEditPage extends Component
             return;
         }
 
+        if ($member->isAdmin()
+            && $validated['role'] !== UserRole::Admin->value
+            && User::query()->where('role', UserRole::Admin->value)->count() === 1) {
+            $this->addError('role', 'Нельзя понизить единственного администратора.');
+
+            return;
+        }
+
+        $securityContextChanged = $member->role->value !== $validated['role']
+            || ! empty($validated['password']);
+
         $data = [
             'name' => $validated['name'],
             'email' => $validated['email'],
@@ -136,6 +149,12 @@ class TeamMemberEditPage extends Component
         }
 
         $member->update($data);
+
+        if ($securityContextChanged && Schema::hasTable(config('session.table', 'sessions'))) {
+            DB::table(config('session.table', 'sessions'))
+                ->where('user_id', $member->id)
+                ->delete();
+        }
 
         $this->redirectRoute('admin.settings.team');
     }

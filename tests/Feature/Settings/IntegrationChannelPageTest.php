@@ -538,7 +538,7 @@ class IntegrationChannelPageTest extends TestCase
     public function test_register_webhook_max_success(): void
     {
         Http::fake([
-            'https://platform-api.max.ru/*' => Http::response(['result' => 'ok'], 200),
+            'https://platform-api2.max.ru/*' => Http::response(['result' => 'ok'], 200),
         ]);
 
         $admin = User::factory()->create(['role' => UserRole::Admin]);

@@ -59,3 +59,4 @@ yarn-error.log
 /logs/
 /test-results/
 /.local-support-credentials.txt
+/backups/

@@ -1,3 +1,16 @@
+0.35.5 – 16.07.2026 01:33
+- [Безопасность] (Plane TGSUPBOT-73) External integrations — Исходящие webhook защищены публичной HTTPS:443 SSRF-политикой, DNS pinning без redirect и HMAC-подписью с бесшовной ротацией current/pending ключей.
+- [Безопасность] (Plane TGSUPBOT-73) VK/MAX/External API — Входящие события работают fail-closed с постоянным сравнением секретов и привязкой VK group_id; bearer-токены переведены на SHA-256, one-time reveal, отзыв, срок и 24-часовую ротацию.
+- [Безопасность] (Plane TGSUPBOT-73) Widget — Legacy X-Widget-Key отключён; оставлены только короткоживущие X-Widget-Token с привязкой к источнику, клиенту, origin и сроку.
+- [Миграция] (Plane TGSUPBOT-73) external_source_access_tokens — Existing plaintext токен backfill-ится без смены значения; добавлены preflight и безопасная команда финализации через 24 часа.
+- [Проверка] (Plane TGSUPBOT-73) PHPUnit/PHPStan/PostgreSQL/Docker/Trivy — 1142 теста и 3317 assertions, PHPStan 0, migrate→rollback→migrate и legacy backfill PASS, production build PASS, HIGH/CRITICAL 0.
+
+0.35.4 – 14.07.2026 07:22
+- [Критический фикс] (Системные автоответы) TGSUPBOT-70 AutoReplyFormPage — Проверка уникальности теперь учитывает только настоящий системный шаблон со стабильным триггером; старое обычное правило больше не блокирует изменение приветствия ложной ошибкой о дубликате.
+- [Миграция] (Совместимость данных) TGSUPBOT-70 auto_replies — Старые записи с системным типом и обычным триггером переводятся в тип «Обычный автоответ» с сохранением текста и переводов.
+- [Проверка] (Regression) TGSUPBOT-70 AutoReplyFormPageTest, SystemAutoReplyResolverTest — Зафиксированы успешное редактирование системного шаблона при legacy-записи и безопасная нормализация данных.
+- [Документация] (Languages/Operations) docs — Описаны причина конфликта, поведение миграции и команды применения.
+
 0.35.3 – 14.07.2026 05:40
 - [Критический фикс] (Telegram Language Selector) SelectLanguage — Одно сообщение выбора языка теперь принимает только первое нажатие, после чего клавиатура отключается; последовательные нажатия арабского и английского больше не создают два приветствия.
 - [Проверка] (Regression) SendStartMessageTest — Зафиксированы атомарная блокировка по `message_id` selector-а, сохранение первого выбранного языка и удаление активных кнопок.
@@ -485,8 +498,8 @@
 - [Документация] (Windows Docker) docs/windows-docker.md — Обновлено описание тёмной темы чата и команды применения после изменения frontend-ассетов.
 
 0.5.0 – 01.07.2026 05:48
-- [Новый функционал] (Telegram) app/Console/Commands/TelegramPollUpdates.php — Добавлен long polling режим 	elegram:poll-updates, который забирает сообщения через исходящие запросы Telegram API и передаёт их в существующий webhook-обработчик.
-- [Новый функционал] (Docker) docker-compose.yml — Добавлен сервис 	elegram_poller, чтобы бот работал за домашним роутером/Synology даже при недоступном входящем webhook от Telegram.
+- [Новый функционал] (Telegram) app/Console/Commands/TelegramPollUpdates.php — Добавлен long polling режим telegram:poll-updates, который забирает сообщения через исходящие запросы Telegram API и передаёт их в существующий webhook-обработчик.
+- [Новый функционал] (Docker) docker-compose.yml — Добавлен сервис telegram_poller, чтобы бот работал за домашним роутером/Synology даже при недоступном входящем webhook от Telegram.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан poller-режим, диагностика логов и команды применения для полного пути Telegram → админка → support-группа.
 0.4.4 – 01.07.2026 05:43
 - [Улучшение] (Graphify) docs/graphify.md — Убрана жёстко зафиксированная цифра размера графа, чтобы документация не устаревала после каждого обновления Graphify.
@@ -531,9 +544,6 @@
 - [Новый функционал] (Docker) start-relaxaclub-windows-docker.ps1 — Добавлен безопасный Windows Docker-запуск для relaxaclub без certbot, проверки IP через WSL и удаления Docker volume.
 - [Фикс] (Nginx) docker/nginx/default.windows-docker.conf.template — Конфиг nginx теперь генерируется без BOM, чтобы контейнер nginx не падал на директиве server.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан запуск relaxaclub через Docker Desktop/WSL и команды проверки.
-
-
-
 
 
 

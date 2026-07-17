@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\External\Controllers\ExternalTrafficController;
+use App\Modules\External\Controllers\WidgetSessionController;
 use App\Modules\External\Middleware\ApiQuery;
 use Illuminate\Support\Facades\Route;
 
@@ -11,6 +12,8 @@ Route::group([
     Route::group([
         'prefix' => '{external_id}',
     ], function () {
+        Route::post('/widget-session', [WidgetSessionController::class, 'store'])->name('widget_session.store');
+
         Route::group([
             'prefix' => 'messages',
         ], function () {

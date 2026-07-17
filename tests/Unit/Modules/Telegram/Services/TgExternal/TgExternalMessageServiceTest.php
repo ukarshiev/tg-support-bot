@@ -3,12 +3,12 @@
 namespace Tests\Unit\Modules\Telegram\Services\TgExternal;
 
 use App\Models\BotUser;
+use App\Models\ExternalSource;
 use App\Models\Message;
 use App\Modules\External\DTOs\ExternalMessageDto;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Telegram\Services\TgExternal\TgExternalMessageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\TelegramUpdateDto_ExternalMock;
 use Tests\TestCase;
@@ -35,7 +35,9 @@ class TgExternalMessageServiceTest extends TestCase
 
         $this->source = 'live_chat';
         $this->external_id = time();
-        $this->url = 'http://test.ru';
+        $this->url = 'https://example.com/webhook';
+
+        ExternalSource::create(['name' => $this->source, 'webhook_url' => $this->url]);
 
         $this->botUser = (new BotUser())->getOrCreateExternalBotUser(ExternalMessageDto::from([
             'source' => $this->source,
@@ -45,11 +47,6 @@ class TgExternalMessageServiceTest extends TestCase
         ]));
         $this->botUser->topic_id = 123;
         $this->botUser->save();
-
-        Artisan::call('app:generate-token', [
-            'source' => $this->source,
-            'hook_url' => $this->url,
-        ]);
     }
 
     public function test_send_text_message(): void

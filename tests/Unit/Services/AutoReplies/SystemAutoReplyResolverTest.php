@@ -132,6 +132,38 @@ class SystemAutoReplyResolverTest extends TestCase
         ]);
     }
 
+    public function test_legacy_noncanonical_system_type_is_normalized_to_regular(): void
+    {
+        $legacy = AutoReply::create([
+            'type' => AutoReply::TYPE_WELCOME,
+            'trigger' => 'start',
+            'response' => 'Старое обычное правило',
+            'enabled' => true,
+        ]);
+        AutoReplyTranslation::create([
+            'auto_reply_id' => $legacy->id,
+            'locale' => 'en',
+            'text' => 'Legacy regular rule',
+            'status' => AutoReplyTranslation::STATUS_READY,
+            'source' => AutoReplyTranslation::SOURCE_MANUAL,
+        ]);
+        $migration = require database_path('migrations/2026_07_14_072000_normalize_legacy_system_auto_reply_types.php');
+
+        $migration->up();
+
+        $this->assertDatabaseHas('auto_replies', [
+            'id' => $legacy->id,
+            'type' => AutoReply::TYPE_REGULAR,
+            'trigger' => 'start',
+            'response' => 'Старое обычное правило',
+        ]);
+        $this->assertDatabaseHas('auto_reply_translations', [
+            'auto_reply_id' => $legacy->id,
+            'locale' => 'en',
+            'text' => 'Legacy regular rule',
+        ]);
+    }
+
     public function test_system_backfill_does_not_treat_cross_type_trigger_as_target_record(): void
     {
         AutoReply::query()

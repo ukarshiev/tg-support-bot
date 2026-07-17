@@ -33,15 +33,20 @@ class GoogleTranslationProvider implements TranslationProvider
         }
 
         try {
-            $response = Http::timeout(12)
+            $payload = [
+                'key' => $apiKey,
+                'q' => $request->text,
+                'target' => $request->targetLocale,
+                'format' => 'text',
+            ];
+            if ($request->sourceLocale !== 'auto') {
+                $payload['source'] = $request->sourceLocale;
+            }
+
+            $response = Http::connectTimeout(3)
+                ->timeout(12)
                 ->asForm()
-                ->post('https://translation.googleapis.com/language/translate/v2', [
-                    'key' => $apiKey,
-                    'q' => $request->text,
-                    'source' => $request->sourceLocale,
-                    'target' => $request->targetLocale,
-                    'format' => 'text',
-                ]);
+                ->post('https://translation.googleapis.com/language/translate/v2', $payload);
 
             if ($response->status() === 429) {
                 return TranslationResult::failure('rate_limited', 'Google Translate вернул 429.', $this->key());

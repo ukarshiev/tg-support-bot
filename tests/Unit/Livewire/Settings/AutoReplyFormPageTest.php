@@ -117,6 +117,31 @@ class AutoReplyFormPageTest extends TestCase
         ]);
     }
 
+    public function test_legacy_non_system_rule_does_not_block_system_reply_edit(): void
+    {
+        $systemReply = AutoReply::query()
+            ->where('type', AutoReply::TYPE_WELCOME)
+            ->where('trigger', AutoReply::TRIGGER_WELCOME)
+            ->firstOrFail();
+        AutoReply::create([
+            'type' => AutoReply::TYPE_WELCOME,
+            'trigger' => 'start',
+            'response' => 'Старое обычное правило',
+            'enabled' => true,
+        ]);
+
+        Livewire::test(AutoReplyFormPage::class, ['rule' => $systemReply->id])
+            ->set('response', 'Новое системное приветствие')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('admin.settings.auto-replies'));
+
+        $this->assertDatabaseHas('auto_replies', [
+            'id' => $systemReply->id,
+            'response' => 'Новое системное приветствие',
+        ]);
+    }
+
     public function test_cannot_create_duplicate_system_reply_type(): void
     {
         Livewire::test(AutoReplyFormPage::class)

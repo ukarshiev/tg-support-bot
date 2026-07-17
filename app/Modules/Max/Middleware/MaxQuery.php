@@ -18,21 +18,21 @@ class MaxQuery
      */
     public function handle(Request $request, Closure $next): Response
     {
-        try {
-            $secretCode = (string) app(SettingsService::class)->get('max.secret_key');
-            if ($secretCode !== $request->header('X-Max-Bot-Api-Secret')) {
-                throw new \RuntimeException('Secret-Key is invalid!');
-            }
+        $secretCode = (string) app(SettingsService::class)->get('max.secret_key');
+        if ($secretCode === '') {
+            Log::channel('app')->critical('MAX webhook secret is not configured');
 
-            $this->logRequest($request);
-
-            return $next($request);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Access is forbidden',
-                'error' => $e->getMessage(),
-            ], Response::HTTP_FORBIDDEN);
+            return response()->json(['message' => 'Webhook is unavailable'], Response::HTTP_SERVICE_UNAVAILABLE);
         }
+
+        $receivedSecret = (string) $request->header('X-Max-Bot-Api-Secret', '');
+        if ($receivedSecret === '' || ! hash_equals($secretCode, $receivedSecret)) {
+            return response()->json(['message' => 'Access is forbidden'], Response::HTTP_FORBIDDEN);
+        }
+
+        $this->logRequest($request);
+
+        return $next($request);
     }
 
     /**

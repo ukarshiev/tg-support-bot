@@ -4,10 +4,12 @@ namespace Tests\Feature\Widget;
 
 use App\Models\BotUser;
 use App\Models\ExternalSource;
+use App\Models\ExternalSourceAccessTokens;
 use App\Models\ExternalUser;
 use App\Models\Message;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -20,15 +22,13 @@ use Tests\TestCase;
  *  POST   /api/widget/{external_id}/files     — sendFile
  *  GET    /api/widget/{external_id}/messages  — getMessages
  *
- * All routes are authenticated by WidgetGate (X-Widget-Key header).
+ * All routes are authenticated by a short-lived X-Widget-Token.
  */
 class WidgetEndpointsTest extends TestCase
 {
     use RefreshDatabase;
 
     private ExternalSource $source;
-
-    private string $publicKey;
 
     private string $externalId;
 
@@ -38,12 +38,10 @@ class WidgetEndpointsTest extends TestCase
 
         Queue::fake();
 
-        $this->publicKey = 'pub_' . str_repeat('w', 36);
         $this->externalId = 'session-abc-123';
 
         $this->source = ExternalSource::factory()->create([
             'name' => 'widget_test',
-            'public_key' => $this->publicKey,
             'allowed_ips' => null,
         ]);
     }
@@ -84,6 +82,67 @@ class WidgetEndpointsTest extends TestCase
         return $message;
     }
 
+    private function widgetSessionToken(?string $externalId = null, string $origin = 'https://client.example'): string
+    {
+        return Crypt::encryptString(json_encode([
+            'source_id' => $this->source->id,
+            'external_id' => $externalId ?? $this->externalId,
+            'origin' => $origin,
+            'expires_at' => now()->addHour()->timestamp,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array<string, string> */
+    private function widgetHeaders(): array
+    {
+        return [
+            'Origin' => 'https://client.example',
+            'X-Widget-Token' => $this->widgetSessionToken(),
+        ];
+    }
+
+    public function test_signed_session_is_bound_to_external_id_and_origin(): void
+    {
+        $token = $this->widgetSessionToken();
+
+        $this->getJson("/api/widget/{$this->externalId}/messages", [
+            'Origin' => 'https://client.example',
+            'X-Widget-Token' => $token,
+        ])->assertOk();
+
+        $this->getJson('/api/widget/another-session/messages', [
+            'Origin' => 'https://client.example',
+            'X-Widget-Token' => $token,
+        ])->assertUnauthorized();
+
+        $this->getJson("/api/widget/{$this->externalId}/messages", [
+            'Origin' => 'https://evil.example',
+            'X-Widget-Token' => $token,
+        ])->assertUnauthorized();
+    }
+
+    public function test_trusted_external_client_can_issue_widget_session(): void
+    {
+        $accessToken = str_repeat('t', 64);
+        ExternalSourceAccessTokens::create([
+            'external_source_id' => $this->source->id,
+            'token' => $accessToken,
+            'active' => true,
+        ]);
+
+        $response = $this->postJson(
+            "/api/external/{$this->externalId}/widget-session",
+            ['origin' => 'https://client.example'],
+            ['Authorization' => 'Bearer ' . $accessToken],
+        );
+
+        $response->assertOk()->assertJsonStructure(['token', 'expires_at']);
+        $this->getJson("/api/widget/{$this->externalId}/messages", [
+            'Origin' => 'https://client.example',
+            'X-Widget-Token' => $response->json('token'),
+        ])->assertOk();
+    }
+
     // ── POST /api/widget/{external_id}/messages ───────────────────────────────
 
     public function test_send_message_creates_incoming_message(): void
@@ -91,7 +150,7 @@ class WidgetEndpointsTest extends TestCase
         $response = $this->postJson(
             "/api/widget/{$this->externalId}/messages",
             ['text' => 'Hello support'],
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertOk()
@@ -103,7 +162,7 @@ class WidgetEndpointsTest extends TestCase
         $response = $this->postJson(
             "/api/widget/{$this->externalId}/messages",
             [],
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertUnprocessable();
@@ -114,7 +173,7 @@ class WidgetEndpointsTest extends TestCase
         $response = $this->postJson(
             "/api/widget/{$this->externalId}/messages",
             ['text' => str_repeat('x', 4001)],
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertUnprocessable();
@@ -131,7 +190,7 @@ class WidgetEndpointsTest extends TestCase
         $response = $this->postJson(
             "/api/widget/{$this->externalId}/files",
             ['uploaded_file' => $file],
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertOk()
@@ -143,7 +202,7 @@ class WidgetEndpointsTest extends TestCase
         $response = $this->postJson(
             "/api/widget/{$this->externalId}/files",
             [],
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertUnprocessable();
@@ -155,7 +214,7 @@ class WidgetEndpointsTest extends TestCase
     {
         $response = $this->getJson(
             "/api/widget/{$this->externalId}/messages",
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertOk()
@@ -170,7 +229,7 @@ class WidgetEndpointsTest extends TestCase
 
         $response = $this->getJson(
             "/api/widget/{$this->externalId}/messages",
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertOk();
@@ -189,7 +248,7 @@ class WidgetEndpointsTest extends TestCase
 
         $response = $this->getJson(
             "/api/widget/{$this->externalId}/messages?after={$msg3->id}",
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertOk();
@@ -213,7 +272,7 @@ class WidgetEndpointsTest extends TestCase
 
         $response = $this->getJson(
             "/api/widget/{$this->externalId}/messages",
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertOk();
@@ -228,7 +287,7 @@ class WidgetEndpointsTest extends TestCase
 
         $response = $this->getJson(
             "/api/widget/{$this->externalId}/messages",
-            ['X-Widget-Key' => $this->publicKey]
+            $this->widgetHeaders()
         );
 
         $response->assertOk();
@@ -237,7 +296,7 @@ class WidgetEndpointsTest extends TestCase
         $this->assertSame(['in', 'out'], $directions);
     }
 
-    // ── Auth guard — all three routes require X-Widget-Key ────────────────────
+    // ── Auth guard — all three routes require X-Widget-Token ──────────────────
 
     public function test_send_message_returns_401_without_key(): void
     {

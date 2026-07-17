@@ -44,7 +44,8 @@ class YandexTranslationProvider implements TranslationProvider
                 $payload['sourceLanguageCode'] = $request->sourceLocale;
             }
 
-            $response = Http::timeout(12)
+            $response = Http::connectTimeout(3)
+                ->timeout(12)
                 ->withHeaders(['Authorization' => 'Api-Key ' . $apiKey])
                 ->post('https://translate.api.cloud.yandex.net/translate/v2/translate', $payload);
 

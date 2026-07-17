@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Livewire\Settings\TeamMemberEditPage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -16,9 +17,12 @@ class TeamMemberEditPageTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function actingAdmin(): void
+    private function actingAdmin(): User
     {
-        $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+
+        return $admin;
     }
 
     public function test_prefills_fields_from_user(): void
@@ -83,6 +87,40 @@ class TeamMemberEditPageTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertTrue(Hash::check('brandnew1', $member->fresh()->password));
+    }
+
+    public function test_password_change_revokes_member_sessions(): void
+    {
+        $this->actingAdmin();
+        $member = User::factory()->manager()->create();
+        DB::table('sessions')->insert([
+            'id' => 'member-session',
+            'user_id' => $member->id,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'test',
+            'payload' => '',
+            'last_activity' => now()->timestamp,
+        ]);
+
+        Livewire::test(TeamMemberEditPage::class, ['user' => $member->id])
+            ->set('password', 'brandnew1')
+            ->set('password_confirmation', 'brandnew1')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseMissing('sessions', ['id' => 'member-session']);
+    }
+
+    public function test_cannot_demote_the_only_admin(): void
+    {
+        $admin = $this->actingAdmin();
+
+        Livewire::test(TeamMemberEditPage::class, ['user' => $admin->id])
+            ->set('role', UserRole::Manager->value)
+            ->call('save')
+            ->assertHasErrors(['role']);
+
+        $this->assertTrue($admin->fresh()->isAdmin());
     }
 
     public function test_email_unique_ignores_self(): void

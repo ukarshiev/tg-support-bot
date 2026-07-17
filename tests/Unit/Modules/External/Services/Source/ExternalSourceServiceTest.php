@@ -21,7 +21,7 @@ class ExternalSourceServiceTest extends TestCase
         $this->service = app(ExternalSourceService::class);
     }
 
-    public function test_create_source_with_token(): void
+    public function test_create_source_without_unrevealed_token(): void
     {
         $dto = ExternalSourceDto::from([
             'name' => 'test_source',
@@ -34,10 +34,7 @@ class ExternalSourceServiceTest extends TestCase
 
         $this->assertInstanceOf(ExternalSource::class, $result);
         $this->assertDatabaseHas('external_sources', ['name' => 'test_source']);
-        $this->assertDatabaseHas('external_source_access_tokens', [
-            'external_source_id' => $result->id,
-            'active' => 1,
-        ]);
+        $this->assertDatabaseMissing('external_source_access_tokens', ['external_source_id' => $result->id]);
     }
 
     public function test_update_source_updates_webhook_url(): void
@@ -59,9 +56,6 @@ class ExternalSourceServiceTest extends TestCase
 
         $this->assertInstanceOf(ExternalSource::class, $result);
         $this->assertDatabaseHas('external_sources', ['webhook_url' => 'https://example.com/hook-updated']);
-        $this->assertDatabaseHas('external_source_access_tokens', [
-            'external_source_id' => $source->id,
-            'active' => 1,
-        ]);
+        $this->assertDatabaseMissing('external_source_access_tokens', ['external_source_id' => $source->id]);
     }
 }

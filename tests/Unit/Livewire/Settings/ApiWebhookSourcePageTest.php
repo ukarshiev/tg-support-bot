@@ -9,6 +9,7 @@ use App\Livewire\Settings\ApiWebhookSourcePage;
 use App\Models\ExternalSource;
 use App\Models\ExternalSourceAccessTokens;
 use App\Models\User;
+use App\Services\Webhook\DnsResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -16,6 +17,15 @@ use Tests\TestCase;
 class ApiWebhookSourcePageTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->mock(DnsResolver::class, function ($mock): void {
+            $mock->shouldReceive('resolve')->andReturn(['93.184.216.34']);
+        });
+    }
 
     // ── Access control ────────────────────────────────────────────────────────
 
@@ -72,9 +82,12 @@ class ApiWebhookSourcePageTest extends TestCase
             ->assertSee('My Integration')
             ->assertSee('Ключ API')
             ->assertSee('URL вебхука')
-            ->assertSee('Разрешённые IP/домены')
+            ->assertSee('Разрешённые IP')
             ->assertSee('REST API')
             ->assertSee('Swagger')
+            ->assertSee('Подпись исходящих webhook')
+            ->assertDontSee('Публичный ключ виджета')
+            ->assertDontSee('Скопировать')
             // Removed sections must no longer render.
             ->assertDontSee('Секретный ключ')
             ->assertDontSee('События');
@@ -86,7 +99,7 @@ class ApiWebhookSourcePageTest extends TestCase
         $this->actingAs($admin);
 
         $source = ExternalSource::factory()->create(['name' => 'Source']);
-        ExternalSourceAccessTokens::factory()->create([
+        ExternalSourceAccessTokens::create([
             'external_source_id' => $source->id,
             'token' => str_repeat('a', 58) . 'XYZ012',
             'active' => true,
@@ -126,7 +139,7 @@ class ApiWebhookSourcePageTest extends TestCase
 
         $newToken = $component->get('newToken');
         $this->assertNotNull($newToken);
-        $this->assertSame(64, strlen($newToken));
+        $this->assertSame(68, strlen($newToken));
     }
 
     public function test_regenerate_token_replaces_existing_token(): void
@@ -144,16 +157,16 @@ class ApiWebhookSourcePageTest extends TestCase
         $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
             ->call('regenerateToken');
 
-        // Still only one record (upsert behaviour).
-        $this->assertSame(1, ExternalSourceAccessTokens::where('external_source_id', $source->id)->count());
+        // Rotation keeps the old token for the 24-hour rollback window.
+        $this->assertSame(2, ExternalSourceAccessTokens::where('external_source_id', $source->id)->count());
 
         // Token value changed.
-        $tokenRecord = ExternalSourceAccessTokens::where('external_source_id', $source->id)->first();
-        $this->assertNotEquals(str_repeat('a', 64), $tokenRecord->token);
+        $tokenRecord = ExternalSourceAccessTokens::where('external_source_id', $source->id)->latest('id')->first();
+        $this->assertNull($tokenRecord->token);
 
         // New token surfaced in prop.
         $newToken = $component->get('newToken');
-        $this->assertSame(64, strlen($newToken));
+        $this->assertSame(68, strlen($newToken));
     }
 
     public function test_dismiss_new_token_clears_reveal(): void
@@ -339,7 +352,7 @@ class ApiWebhookSourcePageTest extends TestCase
         $source = ExternalSource::factory()->create(['name' => 'Source']);
 
         $component = Livewire::test(ApiWebhookSourcePage::class, ['source' => $source->id])
-            ->set('allowedIps', "203.0.113.10\nnot-an-ip")
+            ->set('allowedIps', "203.0.113.10\nnot an ip")
             ->call('saveWebhookUrl');
 
         $this->assertNotNull($component->get('allowedIpsError'));

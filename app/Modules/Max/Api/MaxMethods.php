@@ -95,7 +95,7 @@ class MaxMethods
     private function sendMessageWithKeyboard(int $userId, string $text, array $keyboard): string
     {
         $token = (string) app(SettingsService::class)->get('max.token');
-        $baseUrl = 'https://platform-api.max.ru';
+        $baseUrl = rtrim((string) config('services.max.base_url'), '/');
 
         $body = [
             'text' => $text,
@@ -108,6 +108,8 @@ class MaxMethods
         ];
 
         $response = Http::withHeaders(['Authorization' => $token])
+            ->connectTimeout(3)
+            ->timeout(15)
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
         Log::channel('app')->info('MaxMethods::sendMessageWithKeyboard response', [
@@ -137,7 +139,7 @@ class MaxMethods
     private function sendImageMessage(int $userId, string $fileToken, string $text = ''): string
     {
         $token = (string) app(SettingsService::class)->get('max.token');
-        $baseUrl = 'https://platform-api.max.ru';
+        $baseUrl = rtrim((string) config('services.max.base_url'), '/');
 
         $body = [
             'text' => $text,
@@ -150,6 +152,8 @@ class MaxMethods
         ];
 
         $response = Http::withHeaders(['Authorization' => $token])
+            ->connectTimeout(3)
+            ->timeout(15)
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
         Log::channel('app')->info('MaxMethods::sendImageMessage response', [
@@ -178,7 +182,7 @@ class MaxMethods
     private function sendAudioMessage(int $userId, string $fileToken): string
     {
         $token = (string) app(SettingsService::class)->get('max.token');
-        $baseUrl = 'https://platform-api.max.ru';
+        $baseUrl = rtrim((string) config('services.max.base_url'), '/');
 
         $body = [
             'attachments' => [
@@ -190,6 +194,8 @@ class MaxMethods
         ];
 
         $response = Http::withHeaders(['Authorization' => $token])
+            ->connectTimeout(3)
+            ->timeout(15)
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
         Log::channel('app')->info('MaxMethods::sendAudioMessage response', [
@@ -219,7 +225,7 @@ class MaxMethods
     private function sendFileMessage(int $userId, string $fileToken, string $text = ''): string
     {
         $token = (string) app(SettingsService::class)->get('max.token');
-        $baseUrl = 'https://platform-api.max.ru';
+        $baseUrl = rtrim((string) config('services.max.base_url'), '/');
 
         $body = [
             'text' => $text,
@@ -232,6 +238,8 @@ class MaxMethods
         ];
 
         $response = Http::withHeaders(['Authorization' => $token])
+            ->connectTimeout(3)
+            ->timeout(15)
             ->post("{$baseUrl}/messages?user_id={$userId}", $body);
 
         Log::channel('app')->info('MaxMethods::sendFileMessage response', [

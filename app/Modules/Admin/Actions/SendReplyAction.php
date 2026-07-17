@@ -495,6 +495,6 @@ class SendReplyAction
                 'text' => $text,
                 'date' => date('d.m.Y H:i'),
             ],
-        ]);
+        ], $botUser->externalUser->externalSource->id);
     }
 }

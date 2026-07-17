@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Http\Request;
 
 /**
  * @property int                     $id
@@ -14,7 +13,6 @@ use Illuminate\Http\Request;
  * @property string                  $webhook_url
  * @property int                     $user_id
  * @property array<int, string>|null $allowed_ips
- * @property string|null             $public_key
  * @property-read User $user
  */
 class ExternalSource extends Model
@@ -26,11 +24,16 @@ class ExternalSource extends Model
         'webhook_url',
         'user_id',
         'allowed_ips',
-        'public_key',
+        'webhook_key_id',
+        'webhook_signing_secret',
+        'pending_webhook_key_id',
+        'pending_webhook_signing_secret',
     ];
 
     protected $casts = [
         'allowed_ips' => 'array',
+        'webhook_signing_secret' => 'encrypted',
+        'pending_webhook_signing_secret' => 'encrypted',
     ];
 
     /**
@@ -44,7 +47,6 @@ class ExternalSource extends Model
     /**
      * Whether the given request IP is allowed for this source.
      *
-     * Delegates to isRequestAllowed() using only the IP address.
      * An empty/NULL allowlist means no restriction — any IP is allowed.
      *
      * @param string|null $ip
@@ -60,83 +62,6 @@ class ExternalSource extends Model
         }
 
         return $ip !== null && in_array($ip, $allowed, true);
-    }
-
-    /**
-     * Whether the given HTTP request is allowed for this source.
-     *
-     * Checks each entry in the allowed_ips list. Entries can be:
-     *  - A valid IP address (compared to $request->ip())
-     *  - A domain string (compared to the host from the Origin or Referer header)
-     *    - Entries with a leading "*." are wildcard patterns matching exactly one
-     *      subdomain level: "*.example.com" matches "foo.example.com" but not
-     *      "example.com" or "foo.bar.example.com"
-     *    - Non-wildcard entries require a case-insensitive exact host match
-     *
-     * An empty/NULL allowlist means no restriction — any request is allowed.
-     *
-     * @param Request $request
-     *
-     * @return bool
-     */
-    public function isRequestAllowed(Request $request): bool
-    {
-        $allowed = array_values(array_filter(array_map('trim', $this->allowed_ips ?? [])));
-
-        if (empty($allowed)) {
-            return true;
-        }
-
-        $requestIp = $request->ip();
-
-        $originHost = null;
-        $origin = $request->header('Origin');
-        if ($origin) {
-            $parsed = parse_url($origin);
-            $originHost = isset($parsed['host']) ? strtolower($parsed['host']) : null;
-        }
-
-        if ($originHost === null) {
-            $referer = $request->header('Referer');
-            if ($referer) {
-                $parsed = parse_url($referer);
-                $originHost = isset($parsed['host']) ? strtolower($parsed['host']) : null;
-            }
-        }
-
-        foreach ($allowed as $entry) {
-            if (filter_var($entry, FILTER_VALIDATE_IP)) {
-                // IP entry: compare to request IP
-                if ($requestIp !== null && $requestIp === $entry) {
-                    return true;
-                }
-            } else {
-                // Domain entry: compare to the host from Origin / Referer
-                if ($originHost === null) {
-                    continue;
-                }
-
-                if (str_starts_with($entry, '*.')) {
-                    // Wildcard: *.example.com matches foo.example.com only (one subdomain level)
-                    $base = strtolower(substr($entry, 2));
-                    $suffix = '.' . $base;
-                    if (str_ends_with($originHost, $suffix)) {
-                        $sub = substr($originHost, 0, strlen($originHost) - strlen($suffix));
-                        // Reject if the sub-part itself contains a dot (more than one level)
-                        if ($sub !== '' && ! str_contains($sub, '.')) {
-                            return true;
-                        }
-                    }
-                } else {
-                    // Exact domain match (case-insensitive)
-                    if ($originHost === strtolower($entry)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -157,6 +82,9 @@ class ExternalSource extends Model
         /** @var ExternalSourceAccessTokens|null */
         return ExternalSourceAccessTokens::where('external_source_id', $this->id)
             ->where('active', true)
+            ->whereNull('revoked_at')
+            ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->latest('id')
             ->first();
     }
 }

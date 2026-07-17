@@ -141,10 +141,10 @@ class WebhookRegistrationServiceTest extends TestCase
     public function test_register_max_returns_success_on_200_response(): void
     {
         Http::fake([
-            'https://platform-api.max.ru/*' => Http::response(['result' => 'ok'], 200),
+            'https://platform-api2.max.ru/*' => Http::response(['result' => 'ok'], 200),
         ]);
 
-        $settings = $this->makeSettings(['max.token' => 'max_token']);
+        $settings = $this->makeSettings(['max.token' => 'max_token', 'max.secret_key' => 'max_secret']);
         $service = new WebhookRegistrationService($settings);
 
         $result = $service->registerMax();
@@ -156,10 +156,10 @@ class WebhookRegistrationServiceTest extends TestCase
     public function test_register_max_returns_error_on_non_200_response(): void
     {
         Http::fake([
-            'https://platform-api.max.ru/*' => Http::response(['error' => 'invalid token'], 401),
+            'https://platform-api2.max.ru/*' => Http::response(['error' => 'invalid token'], 401),
         ]);
 
-        $settings = $this->makeSettings(['max.token' => 'bad_token']);
+        $settings = $this->makeSettings(['max.token' => 'bad_token', 'max.secret_key' => 'max_secret']);
         $service = new WebhookRegistrationService($settings);
 
         $result = $service->registerMax();
@@ -171,7 +171,7 @@ class WebhookRegistrationServiceTest extends TestCase
     public function test_register_max_sends_secret_in_subscription_payload(): void
     {
         Http::fake([
-            'https://platform-api.max.ru/*' => Http::response(['result' => 'ok'], 200),
+            'https://platform-api2.max.ru/*' => Http::response(['result' => 'ok'], 200),
         ]);
 
         $settings = $this->makeSettings([
@@ -187,7 +187,7 @@ class WebhookRegistrationServiceTest extends TestCase
         // MAX must receive the secret so it echoes it back in X-Max-Bot-Api-Secret
         // (otherwise MaxQuery rejects every incoming webhook with 403).
         Http::assertSent(function ($request) {
-            return $request->url() === 'https://platform-api.max.ru/subscriptions'
+            return $request->url() === 'https://platform-api2.max.ru/subscriptions'
                 && ($request['secret'] ?? null) === 'max_secret'
                 && str_contains((string) ($request['url'] ?? ''), '/api/max/bot');
         });
@@ -319,6 +319,7 @@ class WebhookRegistrationServiceTest extends TestCase
         $result = $service->verifyVk('vk1.a.valid_token');
 
         $this->assertTrue($result['success']);
+        $this->assertSame(1, $result['groupId']);
         $this->assertStringContainsString('прошёл проверку', $result['message']);
     }
 
@@ -355,7 +356,7 @@ class WebhookRegistrationServiceTest extends TestCase
     public function test_verify_max_returns_success_on_200_response(): void
     {
         Http::fake([
-            'https://platform-api.max.ru/*' => Http::response(['id' => 1, 'name' => 'TestBot'], 200),
+            'https://platform-api2.max.ru/*' => Http::response(['id' => 1, 'name' => 'TestBot'], 200),
         ]);
 
         $settings = $this->makeSettings([]);
@@ -370,7 +371,7 @@ class WebhookRegistrationServiceTest extends TestCase
     public function test_verify_max_returns_error_on_non_200_response(): void
     {
         Http::fake([
-            'https://platform-api.max.ru/*' => Http::response(['error' => 'unauthorized'], 401),
+            'https://platform-api2.max.ru/*' => Http::response(['error' => 'unauthorized'], 401),
         ]);
 
         $settings = $this->makeSettings([]);

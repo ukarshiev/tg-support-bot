@@ -70,7 +70,6 @@ class ParserMethods
                 ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
                 ->timeout(self::REQUEST_TIMEOUT_SECONDS)
                 ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
-                ->withoutVerifying()
                 ->get($urlQuery)
                 ->json();
 

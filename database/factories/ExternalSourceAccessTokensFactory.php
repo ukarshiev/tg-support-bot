@@ -20,9 +20,13 @@ class ExternalSourceAccessTokensFactory extends Factory
      */
     public function definition(): array
     {
+        $token = 'ext_' . Str::random(64);
+
         return [
             'external_source_id' => ExternalSource::factory(),
-            'token' => Str::random(64),
+            'token' => null,
+            'token_hash' => hash('sha256', $token),
+            'token_hint' => substr($token, -6),
             'active' => true,
         ];
     }

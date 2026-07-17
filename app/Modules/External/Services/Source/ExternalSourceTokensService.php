@@ -6,6 +6,7 @@ namespace App\Modules\External\Services\Source;
 
 use App\Models\ExternalSource;
 use App\Models\ExternalSourceAccessTokens;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ExternalSourceTokensService
@@ -17,8 +18,8 @@ class ExternalSourceTokensService
     /**
      * Create or regenerate the bearer token for the given external source.
      *
-     * The previous token record (if any) is replaced with a new 64-character
-     * token that is set to active=true. The raw token value is returned so the
+     * A new prefixed token is created while the previous active token receives
+     * a 24-hour expiry. The raw token value is returned so the
      * caller can surface a one-time reveal in the UI — it is never logged.
      *
      * @param int $sourceId
@@ -35,25 +36,25 @@ class ExternalSourceTokensService
             throw new \Exception('Токен не создался. Ресурс не найден!');
         }
 
-        $newAccessToken = $this->generateToken();
+        return DB::transaction(function () use ($sourceId): string {
+            $newAccessToken = $this->generateToken();
 
-        $accessTokenData = [
-            'token' => $newAccessToken,
-            'active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ];
+            $this->externalSourceAccessTokens
+                ->where('external_source_id', $sourceId)
+                ->where('active', true)
+                ->whereNull('revoked_at')
+                ->update(['expires_at' => now()->addDay(), 'updated_at' => now()]);
 
-        $accessTokensItem = $this->externalSourceAccessTokens->where('external_source_id', $sourceId)->first();
-        if (! $accessTokensItem) {
-            $this->externalSourceAccessTokens->create(array_merge($accessTokenData, [
+            $this->externalSourceAccessTokens->create([
                 'external_source_id' => $sourceId,
-            ]));
-        } else {
-            $accessTokensItem->update($accessTokenData);
-        }
+                'token' => null,
+                'token_hash' => hash('sha256', $newAccessToken),
+                'token_hint' => substr($newAccessToken, -6),
+                'active' => true,
+            ]);
 
-        return $newAccessToken;
+            return $newAccessToken;
+        });
     }
 
     /**
@@ -81,42 +82,21 @@ class ExternalSourceTokensService
         return true;
     }
 
-    /**
-     * Generate a new public key for widget gateway access and persist it on the source.
-     *
-     * The previous public_key value is replaced. The raw key is returned so the caller
-     * can surface a one-time reveal in the UI — it is never logged.
-     *
-     * @param ExternalSource $source
-     *
-     * @return string The new raw public key (one-time reveal only — never log this value).
-     */
-    public function rotatePublicKey(ExternalSource $source): string
+    public function revoke(int $tokenId, int $sourceId): bool
     {
-        $key = $this->generatePublicKey();
-
-        $source->update(['public_key' => $key]);
-
-        return $key;
+        return $this->externalSourceAccessTokens
+            ->whereKey($tokenId)
+            ->where('external_source_id', $sourceId)
+            ->update(['active' => false, 'revoked_at' => now()]) === 1;
     }
 
     /**
-     * Generate a cryptographically random public key (~40 chars) for widget gateway use.
-     *
-     * @return string
-     */
-    public function generatePublicKey(): string
-    {
-        return 'pub_' . Str::random(36);
-    }
-
-    /**
-     * Generate a cryptographically random 64-character token.
+     * Generate a prefixed token with 64 cryptographically random characters.
      *
      * @return string
      */
     private function generateToken(): string
     {
-        return Str::random(64);
+        return 'ext_' . Str::random(64);
     }
 }

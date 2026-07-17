@@ -23,7 +23,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // access could spoof X-Forwarded-For. This is acceptable because all
         // production traffic is routed through a trusted nginx reverse proxy and
         // direct external access to the application container is blocked.
-        $middleware->trustProxies(at: '*');
+        $trustedProxies = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('TRUSTED_PROXIES', '127.0.0.1,172.16.0.0/12')),
+        )));
+        $middleware->trustProxies(at: $trustedProxies);
 
         // Auth redirects for the admin area (replaces Filament's panel routing):
         // - unauthenticated visitors → the login screen;
@@ -48,8 +52,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
             Log::channel('app')->error('File: ' . $e->getFile() . '; Line: ' . $e->getLine() . '; Error: ' . $e->getMessage());
 
-            if (env('APP_DEBUG') === false) {
-                return response('ok', 200);
-            }
+            // Returning a successful response here hides every application error,
+            // including validation failures, and makes callers acknowledge failed
+            // webhooks as processed. Let Laravel render the original exception so
+            // that its HTTP status and standard JSON error shape are preserved.
+            return null;
         });
     })->create();

@@ -73,6 +73,22 @@ return new class () extends Migration {
 
     public function down(): void
     {
+        foreach ([
+            'source_locale',
+            'target_locale',
+            'question_translation_status',
+            'answer_translation_status',
+            'question_ru_manually_edited',
+            'answer_ru_manually_edited',
+        ] as $indexedColumn) {
+            $indexName = 'ai_support_knowledge_chunks_' . $indexedColumn . '_index';
+            if (Schema::hasIndex('ai_support_knowledge_chunks', $indexName)) {
+                Schema::table('ai_support_knowledge_chunks', function (Blueprint $table) use ($indexName): void {
+                    $table->dropIndex($indexName);
+                });
+            }
+        }
+
         Schema::table('ai_support_knowledge_chunks', function (Blueprint $table): void {
             foreach ([
                 'answer_ru_manually_edited',
