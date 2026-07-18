@@ -11,7 +11,9 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Throwable;
 
 class TranslateMessageHistoryJob implements ShouldQueue
 {
@@ -20,12 +22,29 @@ class TranslateMessageHistoryJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $tries = 3;
+
+    /** @var array<int, int> */
+    public array $backoff = [5, 30, 120];
+
     public function __construct(
         public readonly int $messageId,
         public readonly int $messageTranslationId,
         public readonly ?int $translationJobId = null,
     ) {
         $this->onQueue('translation');
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [
+            (new WithoutOverlapping('message-history:' . $this->messageTranslationId))
+                ->releaseAfter(30)
+                ->expireAfter(300),
+        ];
     }
 
     public function handle(TranslationService $translation): void
@@ -106,5 +125,26 @@ class TranslateMessageHistoryJob implements ShouldQueue
             'finished_at' => now(),
             'error_message' => mb_substr($error, 0, 1024),
         ]);
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        $error = mb_substr($exception?->getMessage() ?: 'Задание перевода завершилось ошибкой.', 0, 1024);
+
+        MessageTranslation::where('id', $this->messageTranslationId)
+            ->whereIn('status', ['queued', 'running'])
+            ->update([
+                'status' => 'failed',
+                'error_message' => $error,
+            ]);
+
+        if ($this->translationJobId !== null) {
+            TranslationJob::where('id', $this->translationJobId)
+                ->update([
+                    'status' => TranslationJob::STATUS_FAILED,
+                    'finished_at' => now(),
+                    'error_message' => $error,
+                ]);
+        }
     }
 }

@@ -1,4 +1,4 @@
-# Последняя редакция: 14.07.2026 05:40 UTC+3
+# Последняя редакция: 18.07.2026 01:07 UTC+3
 
 # Качество и эксплуатация
 
@@ -85,7 +85,7 @@
 Регрессия закрыта тестом:
 
 ```bash
-docker compose run --rm --no-deps -v ${PWD}:/work -w /work app php artisan test tests/Unit/Infrastructure/DockerComposeNginxDependencyTest.php
+docker compose run --rm --no-deps -v ${PWD}:/work -w /work app php vendor/bin/phpunit --do-not-cache-result tests/Unit/Infrastructure/DockerComposeNginxDependencyTest.php
 ```
 
 
@@ -104,7 +104,7 @@ docker compose run --rm --no-deps -v ${PWD}:/work -w /work app php artisan test 
 Проверка:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Feature/Commands/TelegramPollUpdatesCommandTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php --filter="poller|start|language|selector|callback"
+docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Feature/Commands/TelegramPollUpdatesCommandTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php --filter="poller|start|language|selector|callback"
 ```
 
 ## Служебный Telegram-диалог каждые 24 часа
@@ -140,7 +140,7 @@ docker compose logs -f app queue scheduler telegram_poller
 Для срочной проверки Telegram-входящих и Auto AI:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
+docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
 ```
 
 Что покрывают тесты:
@@ -156,7 +156,7 @@ docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Unit/Mo
 Для проверки KAR-336:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Unit/Modules/Translation/PlaceholderProtectorTest.php tests/Unit/Modules/Translation/TranslationServiceTest.php tests/Unit/Livewire/Settings/AutoRepliesPageTest.php tests/Unit/Livewire/Settings/AutoReplyFormPageTest.php tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Jobs/TranslateAutoReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
+docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Unit/Modules/Translation/PlaceholderProtectorTest.php tests/Unit/Modules/Translation/TranslationServiceTest.php tests/Unit/Livewire/Settings/AutoRepliesPageTest.php tests/Unit/Livewire/Settings/AutoReplyFormPageTest.php tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Jobs/TranslateAutoReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
 ```
 
 Что покрывает:
@@ -186,7 +186,7 @@ docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Unit/Mo
 Проверка:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
+docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
 ```
 
 Что должно быть:
@@ -222,7 +222,7 @@ docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Feature
 Проверка:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php artisan test tests/Feature/Jobs/SendTelegramMessageJobTest.php tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Unit/Livewire/Chat/ConversationPageTest.php
+docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Feature/Jobs/SendTelegramMessageJobTest.php tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Unit/Livewire/Chat/ConversationPageTest.php
 ```
 
 Что сделать, чтобы применить изменения:
@@ -281,3 +281,4 @@ docker compose exec -T queue php artisan horizon:status
 Служебный canary разрешено направлять только в отдельный тестовый Telegram-аккаунт. Команда не меняет имя, username и постоянный язык аккаунта, не удаляет историю и восстанавливает исходный язык после проверки. Личный рабочий аккаунт оператора использовать запрещено.
 
 Текущий выделенный canary-аккаунт: `@relaxa_support`. Проверка включена один раз в сутки, в 00:00 по часовому поясу приложения (`Europe/Moscow`), для `/start`, `/lang` и welcome на PL/EN/AR.
+

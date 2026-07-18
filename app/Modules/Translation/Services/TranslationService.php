@@ -4,6 +4,7 @@ namespace App\Modules\Translation\Services;
 
 use App\Models\TranslationCacheEntry;
 use App\Models\TranslationUsageLog;
+use App\Modules\Translation\Contracts\BatchTranslationProvider;
 use App\Modules\Translation\DTOs\TranslationRequest;
 use App\Modules\Translation\DTOs\TranslationResult;
 use App\Modules\Translation\Support\PlaceholderProtector;
@@ -16,6 +17,10 @@ class TranslationService
     private const CIRCUIT_PREFIX = 'translation_provider_circuit:';
 
     private const FAILURE_PREFIX = 'translation_provider_failures:';
+
+    private const BATCH_MAX_TEXTS = 25;
+
+    private const BATCH_MAX_CHARS = 5000;
 
     public function __construct(
         private readonly SettingsService $settings,
@@ -113,6 +118,49 @@ class TranslationService
         return TranslationResult::failure('all_providers_failed', 'Не удалось выполнить перевод ни одним провайдером.');
     }
 
+    /**
+     * @param array<int, TranslationRequest> $requests
+     *
+     * @return array<int, TranslationResult>
+     */
+    public function translateMany(array $requests): array
+    {
+        $results = [];
+        $pending = [];
+
+        foreach ($requests as $index => $request) {
+            $text = trim($request->text);
+
+            if ($text === '') {
+                $results[$index] = TranslationResult::failure('empty_text', 'Нет текста для перевода.');
+                continue;
+            }
+
+            if ($request->sourceLocale === $request->targetLocale) {
+                $results[$index] = TranslationResult::success($text, 'same_locale', true);
+                continue;
+            }
+
+            $cached = $this->cachedResult($request, $text);
+            if ($cached !== null) {
+                $results[$index] = $cached;
+                continue;
+            }
+
+            $pending[$index] = $request;
+        }
+
+        foreach ($this->groupRequests($pending) as $group) {
+            foreach ($this->chunkRequests($group) as $chunk) {
+                $results += $this->translateUncachedChunk($chunk);
+            }
+        }
+
+        ksort($results);
+
+        return $results;
+    }
+
     public function translateWithProvider(string $providerKey, TranslationRequest $request): TranslationResult
     {
         $text = trim($request->text);
@@ -177,6 +225,202 @@ class TranslationService
     public static function sourceHash(string $text): string
     {
         return hash('sha256', trim($text));
+    }
+
+    private function cachedResult(TranslationRequest $request, string $text): ?TranslationResult
+    {
+        $cached = TranslationCacheEntry::where([
+            'source_locale' => $request->sourceLocale,
+            'target_locale' => $request->targetLocale,
+            'source_hash' => self::sourceHash($text),
+            'status' => 'ready',
+        ])->first();
+
+        if ($cached !== null && is_string($cached->translated_text) && $cached->translated_text !== '') {
+            return TranslationResult::success($cached->translated_text, (string) $cached->provider, true);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int, TranslationRequest> $requests
+     *
+     * @return array<string, array<int, TranslationRequest>>
+     */
+    private function groupRequests(array $requests): array
+    {
+        $groups = [];
+
+        foreach ($requests as $index => $request) {
+            $key = implode('|', [
+                $request->sourceLocale,
+                $request->targetLocale,
+                $request->purpose,
+                $request->allowExternal ? 'external' : 'internal',
+            ]);
+            $groups[$key][$index] = $request;
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @param array<int, TranslationRequest> $requests
+     *
+     * @return array<int, array<int, TranslationRequest>>
+     */
+    private function chunkRequests(array $requests): array
+    {
+        $chunks = [];
+        $current = [];
+        $chars = 0;
+
+        foreach ($requests as $index => $request) {
+            $length = mb_strlen(trim($request->text));
+
+            if ($current !== [] && (count($current) >= self::BATCH_MAX_TEXTS || $chars + $length > self::BATCH_MAX_CHARS)) {
+                $chunks[] = $current;
+                $current = [];
+                $chars = 0;
+            }
+
+            $current[$index] = $request;
+            $chars += $length;
+        }
+
+        if ($current !== []) {
+            $chunks[] = $current;
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * @param array<int, TranslationRequest> $requests
+     *
+     * @return array<int, TranslationResult>
+     */
+    private function translateUncachedChunk(array $requests): array
+    {
+        /** @var TranslationRequest $prototype */
+        $prototype = reset($requests);
+        $protected = [];
+        $maps = [];
+        $texts = [];
+
+        foreach ($requests as $index => $request) {
+            $text = trim($request->text);
+            [$protectedText, $placeholderMap] = $this->placeholders->protect($text);
+            $texts[$index] = $text;
+            $protected[$index] = $protectedText;
+            $maps[$index] = $placeholderMap;
+        }
+
+        foreach ($this->providerOrder() as $providerKey) {
+            $provider = $this->providers->get($providerKey);
+            if ($provider === null || $this->isCircuitOpen($providerKey)) {
+                continue;
+            }
+
+            if ($provider->isExternal() && !$this->externalTranslationAllowed($prototype)) {
+                foreach ($requests as $request) {
+                    $this->logUsage($providerKey, $request, false, 'external_disabled', 'Внешний перевод запрещён настройкой.');
+                }
+                continue;
+            }
+
+            $providerResults = $provider instanceof BatchTranslationProvider
+                ? $provider->translateBatch($prototype, array_values($protected))
+                : $this->translateChunkOneByOne($providerKey, array_values($requests));
+
+            $results = [];
+            $successCount = 0;
+            $indexes = array_keys($requests);
+
+            foreach ($indexes as $position => $index) {
+                $result = $providerResults[$position] ?? TranslationResult::failure('empty_response', 'Провайдер не вернул перевод.', $providerKey);
+                $request = $requests[$index];
+
+                $this->logUsage(
+                    $providerKey,
+                    $request,
+                    $result->success,
+                    $result->errorCode,
+                    $result->errorMessage,
+                );
+
+                if ($result->success && is_string($result->text)) {
+                    $successCount++;
+                    $translated = $this->placeholders->restore($result->text, $maps[$index]);
+                    $this->storeCache($request, $texts[$index], $translated, $providerKey);
+                    $results[$index] = TranslationResult::success($translated, $providerKey);
+                } else {
+                    $results[$index] = $result;
+                }
+            }
+
+            if ($successCount > 0) {
+                $this->resetFailures($providerKey);
+
+                return $results;
+            }
+
+            if ($this->hasTransientProviderError($providerResults)) {
+                $this->registerFailure($providerKey);
+            }
+        }
+
+        foreach ($requests as $index => $request) {
+            $results[$index] = TranslationResult::failure('all_providers_failed', 'Не удалось выполнить перевод ни одним провайдером.');
+        }
+
+        return $results;
+    }
+
+    /**
+     * @param array<int, TranslationRequest> $requests
+     *
+     * @return array<int, TranslationResult>
+     */
+    private function translateChunkOneByOne(string $providerKey, array $requests): array
+    {
+        return array_map(
+            fn (TranslationRequest $request): TranslationResult => $this->translateWithProvider($providerKey, $request),
+            $requests,
+        );
+    }
+
+    /**
+     * @param array<int, TranslationResult> $results
+     */
+    private function hasTransientProviderError(array $results): bool
+    {
+        foreach ($results as $result) {
+            if (in_array($result->errorCode, ['rate_limited', 'provider_error', 'timeout_or_network'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function storeCache(TranslationRequest $request, string $sourceText, string $translated, string $providerKey): void
+    {
+        TranslationCacheEntry::updateOrCreate(
+            [
+                'source_locale' => $request->sourceLocale,
+                'target_locale' => $request->targetLocale,
+                'source_hash' => self::sourceHash($sourceText),
+            ],
+            [
+                'source_text' => $sourceText,
+                'translated_text' => $translated,
+                'provider' => $providerKey,
+                'status' => 'ready',
+                'meta' => ['purpose' => $request->purpose],
+            ]
+        );
     }
 
     /**

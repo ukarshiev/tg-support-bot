@@ -83,4 +83,48 @@ class TranslationServiceTest extends TestCase
             'error_code' => 'external_disabled',
         ]);
     }
+
+    public function test_translate_many_uses_cache_and_translates_only_missing_texts(): void
+    {
+        app(SettingsService::class)->set('translation.provider_order', ['fake']);
+
+        TranslationCacheEntry::create([
+            'source_locale' => 'tr',
+            'target_locale' => 'ru',
+            'source_hash' => TranslationService::sourceHash('Hazır'),
+            'source_text' => 'Hazır',
+            'translated_text' => 'Готово',
+            'provider' => 'fake',
+            'status' => 'ready',
+        ]);
+
+        $results = app(TranslationService::class)->translateMany([
+            new TranslationRequest('tr', 'ru', 'Hazır', 'chat_history'),
+            new TranslationRequest('tr', 'ru', 'Merhaba', 'chat_history'),
+        ]);
+
+        $this->assertCount(2, $results);
+        $this->assertTrue($results[0]->fromCache);
+        $this->assertSame('Готово', $results[0]->text);
+        $this->assertSame('[ru] Merhaba', $results[1]->text);
+        $this->assertSame(1, TranslationUsageLog::query()->where('provider', 'fake')->count());
+    }
+
+    public function test_translate_many_splits_large_batch_by_safe_limits(): void
+    {
+        app(SettingsService::class)->set('translation.provider_order', ['fake']);
+
+        $requests = [];
+        for ($i = 1; $i <= 26; $i++) {
+            $requests[] = new TranslationRequest('tr', 'ru', 'Metin ' . $i, 'chat_history');
+        }
+
+        $results = app(TranslationService::class)->translateMany($requests);
+
+        $this->assertCount(26, $results);
+        $this->assertSame('[ru] Metin 1', $results[0]->text);
+        $this->assertSame('[ru] Metin 26', $results[25]->text);
+        $this->assertSame(26, TranslationUsageLog::query()->where('provider', 'fake')->count());
+        $this->assertSame(26, TranslationCacheEntry::query()->count());
+    }
 }

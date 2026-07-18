@@ -1,4 +1,4 @@
-# Последняя редакция: 14.07.2026 00:10 UTC+3
+# Последняя редакция: 18.07.2026 05:07 UTC+3
 
 # Веб-чат оператора
 
@@ -243,17 +243,19 @@ sequenceDiagram
     participant UI as /admin/chats
     participant LW as ConversationPage
     participant DB as message_translations / translation_jobs
-    participant Q as TranslateMessageHistoryJob
+    participant Q as TranslateMessageHistoryBatchJob
     participant T as TranslationService
 
     UI->>LW: открыть чат или сменить язык
-    LW->>DB: создать queued-переводы только без готового результата
-    LW->>Q: поставить jobs для видимой истории
-    Q->>T: перевести через cache/fallback провайдеров
+    LW->>DB: создать queued-переводы только без готового/ошибочного результата
+    LW->>Q: поставить batch-job для видимой истории
+    Q->>T: перевести пачкой через cache/fallback провайдеров
     Q->>DB: сохранить ready/failed
-    UI->>LW: poll каждые 5 секунд
+    UI->>LW: poll каждые 3 секунды, пока есть pending-переводы
     LW-->>UI: показать перевод, skeleton или Повторить
 ```
+
+Пачка ограничена безопасно: до 25 текстов и до 5000 символов за раз. Failed-перевод не ставится в очередь автоматически повторно: он ждёт ручной кнопки `Повторить`, чтобы оператор понимал, что именно перезапускается.
 
 ## Drawer контакта
 
@@ -299,6 +301,7 @@ sequenceDiagram
 
 ## Что сделать, чтобы применить изменения:
 
-1) `docker compose build app queue scheduler telegram_poller ai_telegram_poller && docker compose up -d app queue scheduler telegram_poller ai_telegram_poller` — Почему: изменён backend-код Laravel, queue и poller должны получить новый образ.
+1) `docker compose build app queue scheduler telegram_poller ai_telegram_poller && docker compose up -d app queue scheduler telegram_poller ai_telegram_poller` — Почему: изменён backend-код Laravel и queue-job, контейнеры должны получить новый образ.
 2) `docker compose restart nginx` — Почему: nginx должен заново увидеть пересозданный `app`.
 3) `docker compose logs -f app queue scheduler telegram_poller ai_telegram_poller nginx` — Почему: проверить mirror welcome, очередь и ошибки Telegram API.
+

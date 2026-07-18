@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Chat;
 
+use App\Jobs\TranslateMessageHistoryBatchJob;
 use App\Jobs\TranslateMessageHistoryJob;
 use App\Models\AiMessage;
 use App\Models\AutoReply;
@@ -1157,7 +1158,7 @@ class ConversationPage extends Component
 
     public function retryMessageTranslation(int $messageId): void
     {
-        if (!$this->activeBotUser || !$this->chatHistoryTranslationActive) {
+        if (!$this->activeBotUser) {
             return;
         }
 
@@ -1169,7 +1170,24 @@ class ConversationPage extends Component
             return;
         }
 
-        $this->queueTranslationForMessage($message, force: true);
+        $failedTranslation = $message->translations()
+            ->where('status', 'failed')
+            ->latest('id')
+            ->first();
+
+        if ($failedTranslation !== null && is_string($failedTranslation->source_locale)) {
+            $this->chatTranslationLocale = $failedTranslation->source_locale;
+            $this->chatHistoryTranslationActive = $failedTranslation->source_locale !== 'ru';
+        }
+
+        $queued = $this->queueTranslationForMessage($message, force: true, dispatchImmediately: true);
+
+        if (!$queued) {
+            $this->toast('Не найден перевод для повторной постановки в очередь', 'error');
+
+            return;
+        }
+
         $this->loadMessages();
         $this->toast('Повторный перевод поставлен в очередь');
     }
@@ -1235,13 +1253,27 @@ class ConversationPage extends Component
             return;
         }
 
+        $translationIds = [];
+        $monitorIds = [];
+
         ($messages ?? $this->chatMessages)
             ->reject(fn (Message $message): bool => $this->isLanguageSelectorMessage($message))
             ->filter(fn (Message $message): bool => trim((string) ($message->text ?? $message->externalMessage?->text)) !== '')
             ->take(-self::MESSAGES_PER_PAGE)
-            ->each(function (Message $message): void {
-                $this->queueTranslationForMessage($message);
+            ->each(function (Message $message) use (&$translationIds, &$monitorIds): void {
+                $queued = $this->queueTranslationForMessage($message, dispatchImmediately: false);
+
+                if ($queued === null) {
+                    return;
+                }
+
+                $translationIds[] = $queued['translation_id'];
+                $monitorIds[] = $queued['monitor_id'];
             });
+
+        if ($translationIds !== []) {
+            TranslateMessageHistoryBatchJob::dispatch($translationIds, $monitorIds);
+        }
 
         $this->refreshHistoryTranslationPendingState();
     }
@@ -1258,16 +1290,19 @@ class ConversationPage extends Component
         return $this->shouldHideMessageFromHistory($message);
     }
 
-    private function queueTranslationForMessage(Message $message, bool $force = false): void
+    /**
+     * @return array{translation_id: int, monitor_id: int}|null
+     */
+    private function queueTranslationForMessage(Message $message, bool $force = false, bool $dispatchImmediately = false): ?array
     {
         $locale = $this->chatTranslationLocale ?: 'ru';
         if ($locale === 'ru') {
-            return;
+            return null;
         }
 
         $sourceText = trim((string) ($message->text ?? $message->externalMessage?->text));
         if ($sourceText === '') {
-            return;
+            return null;
         }
 
         $direction = $message->message_type === 'incoming' ? 'client_to_operator' : 'system_to_operator';
@@ -1282,8 +1317,12 @@ class ConversationPage extends Component
             ->where('source_hash', TranslationService::sourceHash($sourceText))
             ->first();
 
-        if ($existing !== null && !$force && in_array($existing->status, ['queued', 'running', 'ready'], true)) {
-            return;
+        if ($existing !== null && !$force && in_array($existing->status, ['queued', 'running', 'ready', 'failed'], true)) {
+            return null;
+        }
+
+        if ($force && $existing === null) {
+            return null;
         }
 
         $messageTranslation = MessageTranslation::updateOrCreate(
@@ -1321,7 +1360,14 @@ class ConversationPage extends Component
             ],
         ]);
 
-        TranslateMessageHistoryJob::dispatch($message->id, $messageTranslation->id, $monitor->id);
+        if ($dispatchImmediately) {
+            TranslateMessageHistoryJob::dispatch($message->id, $messageTranslation->id, $monitor->id);
+        }
+
+        return [
+            'translation_id' => $messageTranslation->id,
+            'monitor_id' => $monitor->id,
+        ];
     }
 
     private function refreshHistoryTranslationPendingState(): void

@@ -595,6 +595,7 @@
 
                 @if($chatHistoryTranslationHasPending)
                     <div class="mb-3 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-text-secondary"
+                         wire:poll.3s="pollUpdates"
                          title="Перевод истории обновляется автоматически">
                         Перевод истории готовится. Экран обновится сам.
                     </div>

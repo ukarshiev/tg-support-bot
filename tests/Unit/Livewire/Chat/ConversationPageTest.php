@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Livewire\Chat;
 
+use App\Jobs\TranslateMessageHistoryBatchJob;
 use App\Jobs\TranslateMessageHistoryJob;
 use App\Livewire\Chat\ConversationPage;
 use App\Models\AiMessage;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -31,6 +33,7 @@ class ConversationPageTest extends TestCase
     {
         parent::setUp();
 
+        Cache::flush();
         $this->actingAs(User::factory()->create());
     }
 
@@ -457,7 +460,7 @@ class ConversationPageTest extends TestCase
         $this->assertDatabaseMissing('message_translations', [
             'message_id' => $selector->id,
         ]);
-        Queue::assertPushed(TranslateMessageHistoryJob::class);
+        Queue::assertPushed(TranslateMessageHistoryBatchJob::class);
     }
 
     public function test_russian_chat_shows_flag_without_queuing_history_translation(): void
@@ -489,6 +492,7 @@ class ConversationPageTest extends TestCase
 
         $this->assertDatabaseCount('message_translations', 0);
         Queue::assertNotPushed(TranslateMessageHistoryJob::class);
+        Queue::assertNotPushed(TranslateMessageHistoryBatchJob::class);
     }
 
     public function test_chat_without_selected_language_shows_not_selected(): void
@@ -528,6 +532,7 @@ class ConversationPageTest extends TestCase
 
         $this->assertDatabaseCount('message_translations', 0);
         Queue::assertNotPushed(TranslateMessageHistoryJob::class);
+        Queue::assertNotPushed(TranslateMessageHistoryBatchJob::class);
     }
 
     public function test_manual_chat_language_change_is_saved_only_to_chat_context(): void
@@ -826,6 +831,53 @@ class ConversationPageTest extends TestCase
             'message_id' => $other->id,
             'status' => 'queued',
         ]);
+        Queue::assertPushed(TranslateMessageHistoryJob::class, 1);
+        Queue::assertNotPushed(TranslateMessageHistoryBatchJob::class);
+    }
+
+    public function test_failed_message_translation_waits_for_manual_retry(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 11007,
+            'platform' => 'telegram',
+            'preferred_language_code' => 'tr',
+            'preferred_language_name' => 'Türkçe',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        $message = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Hata',
+        ]);
+
+        MessageTranslation::create([
+            'message_id' => $message->id,
+            'source_locale' => 'tr',
+            'target_locale' => 'ru',
+            'source_text' => 'Hata',
+            'direction' => 'client_to_operator',
+            'status' => 'failed',
+            'source' => 'auto',
+            'source_hash' => \App\Modules\Translation\Services\TranslationService::sourceHash('Hata'),
+            'error_message' => 'Провайдер недоступен',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Не удалось перевести');
+
+        $this->assertDatabaseHas('message_translations', [
+            'message_id' => $message->id,
+            'status' => 'failed',
+        ]);
+        Queue::assertNotPushed(TranslateMessageHistoryJob::class);
+        Queue::assertNotPushed(TranslateMessageHistoryBatchJob::class);
     }
 
     public function test_select_chat_zero_clears_active_dialog(): void

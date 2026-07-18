@@ -1,3 +1,13 @@
+0.36.1 – 18.07.2026 05:07
+- [Фикс] (Plane TGSUPBOT-57 / Linear ID: KAR-319) UI перевода истории — Pending-переводы теперь обновляют экран каждые 3 секунды через локальный `wire:poll.3s`, поэтому retry и batch-перевод не зависают визуально до общего 30-секундного poll.
+
+0.36.0 – 18.07.2026 01:07
+- [Новый функционал] (Plane TGSUPBOT-57 / Linear ID: KAR-319) Перевод истории чата — Добавлен batch-job для видимой истории: до 25 сообщений и 5000 символов за пачку, с повторным использованием кэша и fallback на одиночный перевод.
+- [Фикс] (Plane TGSUPBOT-57 / Linear ID: KAR-319) Retry перевода — Failed-сообщение больше не переходит в очередь автоматически при открытии/скролле; кнопка `Повторить` перезапускает только выбранное сообщение.
+- [Надёжность] (Plane TGSUPBOT-57 / Linear ID: KAR-319) Очередь translation — Для jobs добавлены tries/backoff, lock от параллельного выполнения, статусы `translation_jobs` и безопасное схлопывание дублей `message_translations`.
+- [Проверка] (Plane TGSUPBOT-57 / Linear ID: KAR-319) PHPUnit — Пройдены 78 тестов и 216 assertions по ConversationPage, TranslationService, batch-job и странице очереди переводов.
+- [Документация] (Plane TGSUPBOT-57 / Linear ID: KAR-319) docs — Обновлены схемы и команды проверки на `vendor/bin/phpunit --do-not-cache-result`, без устаревшего `php artisan test`.
+
 0.35.6 – 18.07.2026 01:00
 - [Безопасность] (Plane TGSUPBOT-74) Telegram file proxy — `/api/files/{file_id}` принимает только относительные временные подписи на 15 минут, проверяемые после IP throttle 60/мин; подмена `file_id`, срока или режима выдачи возвращает `403` до обращения к Telegram.
 - [Надёжность] (Plane TGSUPBOT-74) FileService — Удалены `die()` и подавление исключений; Telegram ограничен connect timeout 3 с, общим timeout 15 с и размером 20 МБ, файл передаётся через удаляемый временный файл с безопасными кодами `404/413/429/502/504`.
@@ -551,6 +561,7 @@
 - [Новый функционал] (Docker) start-relaxaclub-windows-docker.ps1 — Добавлен безопасный Windows Docker-запуск для relaxaclub без certbot, проверки IP через WSL и удаления Docker volume.
 - [Фикс] (Nginx) docker/nginx/default.windows-docker.conf.template — Конфиг nginx теперь генерируется без BOM, чтобы контейнер nginx не падал на директиве server.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан запуск relaxaclub через Docker Desktop/WSL и команды проверки.
+
 
 
 
