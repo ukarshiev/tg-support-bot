@@ -21,13 +21,17 @@ use Illuminate\Support\Facades\Log;
  * Type coercion uses the DB row's stored `type` column when a row exists,
  * otherwise falls back to the SettingKeyRegistry declaration.
  *
- * Cache: each key is stored under "settings.{key}:{type}" forever and
- * invalidated on set() / forget(). The sentinel CACHE_NULL is cached when
- * there is no DB row (to avoid repeated DB hits on hot paths).
+ * Cache: each key is stored under "settings.{key}" for a short bounded period
+ * and refreshed immediately on set() / forget(). A finite lifetime is
+ * intentional: after a PostgreSQL restore Redis may still contain values from
+ * the previous database state, so settings must eventually self-heal without a
+ * broad cache flush. The sentinel CACHE_NULL uses the same lifetime.
  */
 class SettingsService
 {
     private const CACHE_PREFIX = 'settings.';
+
+    private const CACHE_TTL_SECONDS = 300;
 
     /**
      * Sentinel stored in the cache when there is no DB row for a key.
@@ -75,13 +79,13 @@ class SettingsService
         if ($setting !== null) {
             // Decrypt if secret, then cache as "type:value".
             $plain = $this->decryptIfSecret($key, $setting->value);
-            Cache::forever($this->cacheKey($key), $this->packCacheEntry($setting->type, $plain));
+            $this->putCacheEntry($key, $this->packCacheEntry($setting->type, $plain));
 
             return $this->coerceByType($plain, $setting->type);
         }
 
         // No DB row — cache the sentinel so we skip DB on next read.
-        Cache::forever($this->cacheKey($key), self::CACHE_NULL);
+        $this->putCacheEntry($key, self::CACHE_NULL);
 
         return $this->resolveDefault($key, $default);
     }
@@ -110,7 +114,7 @@ class SettingsService
         $setting->value = $raw;
         $setting->save();
 
-        Cache::forever($this->cacheKey($key), $this->packCacheEntry($meta['type'], $plain));
+        $this->putCacheEntry($key, $this->packCacheEntry($meta['type'], $plain));
     }
 
     /**
@@ -248,5 +252,14 @@ class SettingsService
     private function cacheKey(string $key): string
     {
         return self::CACHE_PREFIX . $key;
+    }
+
+    /**
+     * Cache a setting briefly so an external database restore cannot leave the
+     * application pinned to stale Redis data forever.
+     */
+    private function putCacheEntry(string $key, string $entry): void
+    {
+        Cache::put($this->cacheKey($key), $entry, self::CACHE_TTL_SECONDS);
     }
 }

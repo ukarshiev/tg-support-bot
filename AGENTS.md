@@ -94,6 +94,14 @@ docker compose exec -T pgdb pg_dump -U <user> -d <database> > backups/<database>
 - убедиться, что нет `bootstrap/cache/config.php`, который может подменить настройки;
 - если есть сомнения — не запускать тесты и спросить Владыку.
 
+Единственный разрешённый локальный запуск PHPUnit:
+
+```powershell
+.\scripts\run-isolated-tests.ps1 [путь-к-тесту]
+```
+
+Скрипт отключает сеть контейнера, не подключает Compose volumes, монтирует репозиторий только для чтения и принудительно использует SQLite `:memory:`. Запуск `phpunit`, `php artisan test` или `docker compose run ... app` напрямую запрещён: production-сервис `app` может унаследовать PostgreSQL и общий `bootstrap/cache/config.php`.
+
 ### Smoke, Playwright и любые UI/e2e-проверки
 
 Smoke/e2e/UI-проверки считаются потенциально опасными, потому что они могут:

@@ -313,4 +313,38 @@ class SettingsServiceTest extends TestCase
         $this->assertNull($first);
         $this->assertNull($second);
     }
+
+    public function test_cached_value_self_heals_after_database_restore_when_ttl_expires(): void
+    {
+        Setting::create([
+            'key' => 'ai.provider',
+            'value' => 'openai',
+            'type' => 'string',
+            'is_secret' => false,
+        ]);
+
+        $this->assertSame('openai', $this->service->get('ai.provider'));
+
+        // Simulate pg_restore replacing the row while Redis still contains the
+        // value from the database state that existed before the restore.
+        Setting::where('key', 'ai.provider')->update(['value' => 'deepseek']);
+        $this->assertSame('openai', $this->service->get('ai.provider'));
+
+        $this->travel(301)->seconds();
+
+        $this->assertSame('deepseek', $this->service->get('ai.provider'));
+    }
+
+    public function test_cached_null_self_heals_after_database_restore_when_ttl_expires(): void
+    {
+        $this->assertNull($this->service->get('ai.deepseek_client_secret'));
+
+        $this->service->set('ai.deepseek_client_secret', 'restored-secret');
+        Cache::put('settings.ai.deepseek_client_secret', '__settings_null__', 300);
+        $this->assertNull($this->service->get('ai.deepseek_client_secret'));
+
+        $this->travel(301)->seconds();
+
+        $this->assertSame('restored-secret', $this->service->get('ai.deepseek_client_secret'));
+    }
 }

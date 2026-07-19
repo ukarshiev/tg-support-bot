@@ -17,6 +17,7 @@ class AiBotPollUpdatesCommandTest extends TestCase
         app(SettingsService::class)->set('telegram_ai.secret', 'ai-secret');
 
         Http::fake([
+            'https://api.telegram.org/botai-token/getMe' => Http::response(['ok' => true, 'result' => ['id' => 2]], 200),
             'https://api.telegram.org/botai-token/deleteWebhook' => Http::response(['ok' => true], 200),
             'https://api.telegram.org/botai-token/getUpdates' => Http::response([
                 'ok' => true,

@@ -1,4 +1,4 @@
-# Последняя редакция: 18.07.2026 01:07 UTC+3
+# Последняя редакция: 19.07.2026 02:03 UTC+3
 
 # Качество и эксплуатация
 
@@ -64,7 +64,9 @@
 - `pgdb` — проверяет PostgreSQL через `pg_isready`;
 - `nginx` — проверяет конфиг и реальный ответ Laravel `/up` через PHP-FPM;
 - `queue` — проверяет PHP/Laravel окружение воркера;
-- `scheduler` — проверяет PHP/Laravel окружение планировщика.
+- `scheduler` — проверяет PHP/Laravel окружение планировщика;
+- `telegram_poller` — требует heartbeat не старше 90 секунд после успешного `getUpdates` основного бота;
+- `ai_telegram_poller` — аналогично проверяет реальную связь AI-бота с Telegram.
 
 Это помогает быстро увидеть, какой контейнер «болеет», без чтения всех логов подряд.
 
@@ -80,12 +82,32 @@
 - healthcheck обращается к Laravel `/up`, а не ограничивается формальной проверкой `nginx -t`;
 - при отказе внутреннего webhook оба Telegram poller выдерживают паузу и не создают горячий цикл запросов и логов.
 
+## Инцидент 19.07.2026: контейнер running, но Telegram не работает
+
+Основной poller получал `401 Unauthorized`, AI poller — `404 Not Found`, однако Docker показывал оба контейнера как running. Причина — отсутствие проверки реального Telegram API.
+
+Теперь каждый poller:
+
+- проверяет токен через `getMe` до отключения webhook;
+- считает `401/404` постоянной ошибкой токена и ждёт замену 60 секунд;
+- ограничивает одинаковые error-записи интервалом пять минут;
+- обновляет heartbeat только после успешного `getUpdates`;
+- становится `unhealthy`, если heartbeat отсутствует или старше 90 секунд.
+
+Проверка без отправки сообщений и записи в БД:
+
+```bash
+docker compose ps
+docker compose exec -T telegram_poller php artisan telegram:poller-health main --max-age=90
+docker compose exec -T ai_telegram_poller php artisan telegram:poller-health ai --max-age=90
+```
+
 Фактическая причина инцидента 14.07.2026: после пересоздания `app` nginx продолжал обращаться к старому IP PHP-FPM. Контейнер считался healthy, потому что прежний healthcheck проверял только синтаксис конфига. Результатом были `502 Bad Gateway` и остановка Telegram offset на одном update.
 
 Регрессия закрыта тестом:
 
 ```bash
-docker compose run --rm --no-deps -v ${PWD}:/work -w /work app php vendor/bin/phpunit --do-not-cache-result tests/Unit/Infrastructure/DockerComposeNginxDependencyTest.php
+.\scripts\run-isolated-tests.ps1 tests/Unit/Infrastructure/DockerComposeNginxDependencyTest.php
 ```
 
 
@@ -104,7 +126,7 @@ docker compose run --rm --no-deps -v ${PWD}:/work -w /work app php vendor/bin/ph
 Проверка:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Feature/Commands/TelegramPollUpdatesCommandTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php --filter="poller|start|language|selector|callback"
+.\scripts\run-isolated-tests.ps1 tests/Feature/Commands/TelegramPollUpdatesCommandTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php --filter="poller|start|language|selector|callback"
 ```
 
 ## Служебный Telegram-диалог каждые 24 часа
@@ -140,7 +162,7 @@ docker compose logs -f app queue scheduler telegram_poller
 Для срочной проверки Telegram-входящих и Auto AI:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
+.\scripts\run-isolated-tests.ps1 tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
 ```
 
 Что покрывают тесты:
@@ -156,7 +178,7 @@ docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-no
 Для проверки KAR-336:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Unit/Modules/Translation/PlaceholderProtectorTest.php tests/Unit/Modules/Translation/TranslationServiceTest.php tests/Unit/Livewire/Settings/AutoRepliesPageTest.php tests/Unit/Livewire/Settings/AutoReplyFormPageTest.php tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Jobs/TranslateAutoReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
+.\scripts\run-isolated-tests.ps1 tests/Unit/Modules/Translation/PlaceholderProtectorTest.php tests/Unit/Modules/Translation/TranslationServiceTest.php tests/Unit/Livewire/Settings/AutoRepliesPageTest.php tests/Unit/Livewire/Settings/AutoReplyFormPageTest.php tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Jobs/TranslateAutoReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
 ```
 
 Что покрывает:
@@ -186,7 +208,7 @@ docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-no
 Проверка:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
+.\scripts\run-isolated-tests.ps1 tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
 ```
 
 Что должно быть:
@@ -222,7 +244,7 @@ docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-no
 Проверка:
 
 ```bash
-docker compose run --rm -T -v ${PWD}:/var/www app php vendor/bin/phpunit --do-not-cache-result tests/Feature/Jobs/SendTelegramMessageJobTest.php tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Unit/Livewire/Chat/ConversationPageTest.php
+.\scripts\run-isolated-tests.ps1 tests/Feature/Jobs/SendTelegramMessageJobTest.php tests/Feature/Jobs/TopicCreateJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php tests/Unit/Modules/Telegram/Actions/SendStartMessageTest.php tests/Unit/Livewire/Chat/ConversationPageTest.php
 ```
 
 Что сделать, чтобы применить изменения:

@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\TelegramPollerApiResult;
 use App\Services\Settings\SettingsService;
+use App\Support\TelegramPollingRuntime;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -23,6 +25,8 @@ class TelegramPollUpdates extends Command
 
         $token = (string) app(SettingsService::class)->get('telegram.token');
         $secret = (string) app(SettingsService::class)->get('telegram.secret_key');
+        $runtime = app(TelegramPollingRuntime::class);
+        $runtime->resetHeartbeat('main');
 
         if ($token === '' || $secret === '') {
             $this->error('telegram.token or telegram.secret_key is empty.');
@@ -36,10 +40,20 @@ class TelegramPollUpdates extends Command
         $sleepSeconds = max(1, (int) $this->option('sleep'));
         $timeoutSeconds = max(1, min(50, (int) $this->option('timeout')));
 
-        while (! $this->deleteWebhook($apiBase, $sleepSeconds)) {
+        while (($preflight = $runtime->preflight('main', 'Telegram poller', $token)) !== TelegramPollerApiResult::Success) {
             if ($this->option('once')) {
                 return Command::FAILURE;
             }
+
+            sleep($runtime->retryDelay($preflight, $sleepSeconds));
+        }
+
+        while (($deleteWebhook = $this->deleteWebhook($apiBase, $runtime)) !== TelegramPollerApiResult::Success) {
+            if ($this->option('once')) {
+                return Command::FAILURE;
+            }
+
+            sleep($runtime->retryDelay($deleteWebhook, $sleepSeconds));
         }
 
         do {
@@ -53,30 +67,24 @@ class TelegramPollUpdates extends Command
                         'allowed_updates' => ['message', 'edited_message', 'callback_query'],
                     ], static fn ($value) => $value !== null));
             } catch (\Throwable $e) {
-                Log::channel('app')->warning('Telegram poller: getUpdates transport failed, retrying', [
-                    'source' => 'telegram_poller_get_updates_transport_failed',
-                    'error' => $this->sanitizeTelegramError($e->getMessage()),
-                ]);
+                $runtime->reportTransportFailure('main', 'Telegram poller', 'get_updates', $e);
                 sleep($sleepSeconds);
                 continue;
             }
 
             if (! $response->json('ok')) {
                 $body = $response->body();
-                Log::channel('app')->error('Telegram poller: getUpdates failed', [
-                    'source' => 'telegram_poller_get_updates_failed',
-                    'status' => $response->status(),
-                    'body' => $this->sanitizeTelegramError($body),
-                ]);
+                $failure = $runtime->classifyResponse('main', 'Telegram poller', 'get_updates', $response);
 
                 if (str_contains($body, "can't use getUpdates method while webhook is active")) {
-                    $this->deleteWebhook($apiBase, $sleepSeconds);
+                    $failure = $this->deleteWebhook($apiBase, $runtime);
                 }
 
-                sleep($sleepSeconds);
+                sleep($runtime->retryDelay($failure, $sleepSeconds));
                 continue;
             }
 
+            $runtime->beat('main');
             $updates = $response->json('result') ?? [];
 
             foreach ($updates as $update) {
@@ -96,10 +104,8 @@ class TelegramPollUpdates extends Command
                         'X-Telegram-Bot-Api-Secret-Token' => $secret,
                     ])->connectTimeout(2)->timeout(8)->post($internalWebhookUrl, $update);
                 } catch (\Throwable $e) {
-                    Log::channel('app')->warning('Telegram poller: internal webhook transport failed, retrying update later', [
-                        'source' => 'telegram_poller_internal_webhook_transport_failed',
+                    $runtime->reportTransportFailure('main', 'Telegram poller', 'internal_webhook', $e, [
                         'update_id' => $updateId,
-                        'error' => $this->sanitizeTelegramError($e->getMessage()),
                     ]);
                     sleep($sleepSeconds);
                     continue 2;
@@ -109,7 +115,7 @@ class TelegramPollUpdates extends Command
                     Log::channel('app')->error('Telegram poller: internal webhook rejected update; offset is not advanced', [
                         'source' => 'telegram_poller_internal_webhook_rejected',
                         'status' => $webhookResponse->status(),
-                        'body' => $this->sanitizeTelegramError($webhookResponse->body()),
+                        'body' => $runtime->sanitize($webhookResponse->body()),
                         'update_id' => $updateId,
                     ]);
                     sleep($sleepSeconds);
@@ -126,7 +132,7 @@ class TelegramPollUpdates extends Command
         return Command::SUCCESS;
     }
 
-    private function deleteWebhook(string $apiBase, int $sleepSeconds): bool
+    private function deleteWebhook(string $apiBase, TelegramPollingRuntime $runtime): TelegramPollerApiResult
     {
         try {
             $deleteWebhook = Http::connectTimeout(2)
@@ -136,31 +142,15 @@ class TelegramPollUpdates extends Command
                     'drop_pending_updates' => false,
                 ]);
         } catch (\Throwable $e) {
-            Log::channel('app')->warning('Telegram poller: deleteWebhook transport failed, retrying', [
-                'source' => 'telegram_poller_delete_webhook_transport_failed',
-                'error' => $this->sanitizeTelegramError($e->getMessage()),
-            ]);
-            sleep($sleepSeconds);
-            return false;
+            return $runtime->reportTransportFailure('main', 'Telegram poller', 'delete_webhook', $e);
         }
 
         if (! $deleteWebhook->json('ok')) {
-            Log::channel('app')->warning('Telegram poller: deleteWebhook returned non-ok, retrying', [
-                'source' => 'telegram_poller_delete_webhook_non_ok',
-                'status' => $deleteWebhook->status(),
-                'body' => $this->sanitizeTelegramError($deleteWebhook->body()),
-            ]);
-            sleep($sleepSeconds);
-            return false;
+            return $runtime->classifyResponse('main', 'Telegram poller', 'delete_webhook', $deleteWebhook);
         }
 
         $this->info('Telegram polling started. Existing webhook is disabled.');
 
-        return true;
-    }
-
-    private function sanitizeTelegramError(string $message): string
-    {
-        return preg_replace('/bot[0-9]+:[A-Za-z0-9_-]+/', 'bot[hidden]', $message) ?? $message;
+        return TelegramPollerApiResult::Success;
     }
 }

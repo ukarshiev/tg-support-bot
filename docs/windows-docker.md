@@ -1,4 +1,4 @@
-# Последняя редакция: 11.07.2026 07:57 UTC+3
+# Последняя редакция: 19.07.2026 02:03 UTC+3
 
 # Windows Docker-запуск relaxaclub
 
@@ -18,15 +18,23 @@
 2. создаёт `docker/nginx/default.conf` для HTTP внутри Docker;
 3. собирает и запускает контейнеры;
 4. ставит PHP-зависимости по `composer.lock`;
-5. применяет миграции;
+5. по умолчанию пропускает миграции;
 6. чистит кэши Laravel;
 7. перезапускает `app`, `nginx`, `queue`, `scheduler`.
 
 APP_KEY не меняется, если он уже задан. Если нужно принудительно заменить ключ:
 
 ```powershell
-.\start-relaxaclub-windows-docker.ps1 -RegenerateAppKey
+.\start-relaxaclub-windows-docker.ps1 -RegenerateAppKey -ConfirmProductionChange
 ```
+
+Миграции разрешены только отдельным production-флагом. Перед `migrate --force` скрипт сам создаёт и проверяет дамп в `backups/`:
+
+```powershell
+.\start-relaxaclub-windows-docker.ps1 -ApplyMigrations -ConfirmProductionChange
+```
+
+Эту команду можно выполнять только после сообщения Владыке о подключённой БД, ожидаемых изменениях и способе отката, а также после его явного подтверждения.
 
 
 ## Telegram webhook через Synology reverse proxy
@@ -70,8 +78,11 @@ docker compose exec app php artisan telegram:set-webhook
 Что важно:
 
 - `deleteWebhook` выполняется с retry и не печатает токен в лог;
+- перед polling выполняется `getMe`, поэтому отозванный или неверный токен определяется до `deleteWebhook`;
 - `getUpdates` ловит транспортные ошибки и продолжает цикл;
 - внутренний webhook при transport error не двигает offset, чтобы update не потерялся;
+- успешный `getUpdates` обновляет heartbeat в Redis, а Docker помечает poller `unhealthy`, если heartbeat старше 90 секунд;
+- постоянные `401/404` повторяются раз в минуту, а одинаковая запись в лог — не чаще раза в пять минут;
 - в `docker-compose.yml` основной poller запускается с `--timeout=10`, а не `25`, чтобы кнопки и `/start` не ждали длинный цикл.
 
 ## Telegram poller для домашней сети
@@ -108,6 +119,8 @@ flowchart LR
 
 ```bash
 docker compose logs -f telegram_poller ai_telegram_poller queue app
+docker compose exec -T telegram_poller php artisan telegram:poller-health main --max-age=90
+docker compose exec -T ai_telegram_poller php artisan telegram:poller-health ai --max-age=90
 ```
 
 Если сообщение пришло в Telegram, но не видно в админке, сначала смотреть:
@@ -138,6 +151,14 @@ flowchart LR
 - PHP-код и зависимости берутся из Docker-образа — это быстро.
 - `public/build` отдаётся из общего Docker-volume `app_public`, поэтому HTML, CSS и JS всегда совпадают. При старте `app` ассеты копируются туда из свежего Docker-образа.
 - `storage` и `bootstrap/cache` вынесены в Docker-volume, чтобы runtime-данные не пропадали.
+
+После восстановления PostgreSQL Redis может несколько минут хранить прежние
+значения настроек. `SettingsService` ограничивает жизнь такого кэша пятью
+минутами, после чего настройки автоматически перечитываются из PostgreSQL.
+Если восстановленные настройки нужны немедленно, безопасно очистите только
+Laravel cache командой `docker compose exec -T app php artisan cache:clear`;
+не используйте `redis-cli FLUSHALL` или `FLUSHDB`, потому что в Redis также
+находятся очереди и смещения Telegram-поллеров.
 - После изменения кода, Blade, CSS/JS или зависимостей нужно пересобрать контейнеры.
 
 Контрольный замер после правки:
@@ -172,7 +193,7 @@ flowchart LR
 ## Что сделать, чтобы применить изменения:
 
 1) `docker compose up -d --build` — Почему: изменены `Dockerfile` и `docker-compose.yml`, нужно пересобрать образ, обновить `app_public` и пересоздать сервисы.
-2) `docker compose exec app php artisan migrate --force` — Почему: гарантировать наличие таблиц Laravel queue (`jobs`, `failed_jobs`).
+2) `.\start-relaxaclub-windows-docker.ps1 -ApplyMigrations -ConfirmProductionChange` — Почему: только после явного разрешения создать свежий dump и применить миграции; по умолчанию миграции запрещены.
 3) `docker compose exec app php artisan telegram:set-webhook` — Почему: переустановить webhook Telegram с безопасным `max_connections=5`.
 4) `docker compose logs -f app nginx queue scheduler telegram_poller` — Почему: проверить ошибки приложения, nginx, очереди и планировщика.
 

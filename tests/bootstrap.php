@@ -22,8 +22,22 @@ declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
+use Tests\Support\DatabaseSafetyGuard;
+
+$defaultConfigCache = dirname(__DIR__) . '/bootstrap/cache/config.php';
+$configuredConfigCache = getenv('APP_CONFIG_CACHE');
+
+DatabaseSafetyGuard::assertCachedConfigIsSafe($defaultConfigCache);
+
+if (is_string($configuredConfigCache) && $configuredConfigCache !== '' && $configuredConfigCache !== $defaultConfigCache) {
+    DatabaseSafetyGuard::assertCachedConfigIsSafe($configuredConfigCache);
+}
+
+$isolatedConfigCache = sys_get_temp_dir() . '/tg-support-bot-phpunit-' . getmypid() . '-config.php';
+
 $testEnvironment = [
     'APP_ENV' => 'testing',
+    'APP_CONFIG_CACHE' => $isolatedConfigCache,
     'APP_MAINTENANCE_DRIVER' => 'file',
     'BCRYPT_ROUNDS' => '4',
     'CACHE_STORE' => 'array',

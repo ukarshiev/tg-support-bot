@@ -308,6 +308,7 @@ class TranslationService
         $protected = [];
         $maps = [];
         $texts = [];
+        $results = [];
 
         foreach ($requests as $index => $request) {
             $text = trim($request->text);

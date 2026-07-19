@@ -28,4 +28,16 @@ class ReleaseScriptSafetyTest extends TestCase
         $this->assertNotFalse($migratePosition);
         $this->assertLessThan($migratePosition, $clearPosition);
     }
+
+    public function test_windows_release_requires_explicit_confirmation_and_backup_before_migrations(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start-relaxaclub-windows-docker.ps1');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('[switch]$ApplyMigrations', $script);
+        $this->assertStringContainsString('[switch]$ConfirmProductionChange', $script);
+        $this->assertStringContainsString('pg_dump', $script);
+        $this->assertStringContainsString('Skip database migrations', $script);
+        $this->assertLessThan(strpos($script, 'php artisan migrate --force'), strpos($script, 'pg_dump'));
+    }
 }

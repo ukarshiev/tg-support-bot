@@ -4,6 +4,7 @@ namespace Tests\Unit\Console\Commands;
 
 use App\Models\ExternalSource;
 use App\Models\ExternalSourceAccessTokens;
+use App\Services\Webhook\DnsResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -22,6 +23,12 @@ class GenerateApiTokenTest extends TestCase
     public function setUp(): void
     {
         parent::setUp();
+
+        $this->mock(DnsResolver::class, function ($mock): void {
+            $mock->shouldReceive('resolve')
+                ->with('example.com')
+                ->andReturn(['93.184.216.34']);
+        });
 
         $this->source = 'phpunit-source';
         $this->url = 'https://example.com/hook';

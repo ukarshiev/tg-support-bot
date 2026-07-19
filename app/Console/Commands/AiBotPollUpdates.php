@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\TelegramPollerApiResult;
 use App\Services\Settings\SettingsService;
+use App\Support\TelegramPollingRuntime;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -19,6 +21,8 @@ class AiBotPollUpdates extends Command
         $settings = app(SettingsService::class);
         $token = (string) $settings->get('telegram_ai.token');
         $secret = (string) $settings->get('telegram_ai.secret');
+        $runtime = app(TelegramPollingRuntime::class);
+        $runtime->resetHeartbeat('ai');
 
         if ($token === '' || $secret === '') {
             $this->error('telegram_ai.token or telegram_ai.secret is empty.');
@@ -33,10 +37,20 @@ class AiBotPollUpdates extends Command
         $sleepSeconds = max(1, (int) $this->option('sleep'));
         $timeoutSeconds = max(1, min(50, (int) $this->option('timeout')));
 
-        while (! $this->deleteWebhook($apiBase, $sleepSeconds)) {
+        while (($preflight = $runtime->preflight('ai', 'AI bot poller', $token)) !== TelegramPollerApiResult::Success) {
             if ($this->option('once')) {
                 return Command::FAILURE;
             }
+
+            sleep($runtime->retryDelay($preflight, $sleepSeconds));
+        }
+
+        while (($deleteWebhook = $this->deleteWebhook($apiBase, $runtime)) !== TelegramPollerApiResult::Success) {
+            if ($this->option('once')) {
+                return Command::FAILURE;
+            }
+
+            sleep($runtime->retryDelay($deleteWebhook, $sleepSeconds));
         }
 
         $this->info('AI bot polling started. Existing AI bot webhook is disabled.');
@@ -52,23 +66,18 @@ class AiBotPollUpdates extends Command
                         'allowed_updates' => ['callback_query'],
                     ], static fn ($value) => $value !== null));
             } catch (\Throwable $e) {
-                Log::channel('app')->warning('AI bot poller: getUpdates transport failed; offset is preserved', [
-                    'source' => 'ai_bot_poller_get_updates_transport_failed',
-                    'error' => $this->sanitizeTelegramError($e->getMessage()),
-                ]);
+                $runtime->reportTransportFailure('ai', 'AI bot poller', 'get_updates', $e);
                 sleep($sleepSeconds);
                 continue;
             }
 
             if (! $response->json('ok')) {
-                Log::channel('app')->error('AI bot poller: getUpdates failed', [
-                    'status' => $response->status(),
-                    'body' => $this->sanitizeTelegramError($response->body()),
-                ]);
-                sleep($sleepSeconds);
+                $failure = $runtime->classifyResponse('ai', 'AI bot poller', 'get_updates', $response);
+                sleep($runtime->retryDelay($failure, $sleepSeconds));
                 continue;
             }
 
+            $runtime->beat('ai');
             $updates = $response->json('result') ?? [];
 
             foreach ($updates as $update) {
@@ -78,10 +87,8 @@ class AiBotPollUpdates extends Command
                         'X-Telegram-Bot-Api-Secret-Token' => $secret,
                     ])->connectTimeout(2)->timeout(8)->post($internalWebhookUrl, $update);
                 } catch (\Throwable $e) {
-                    Log::channel('app')->warning('AI bot poller: internal webhook transport failed; offset is preserved', [
-                        'source' => 'ai_bot_poller_internal_webhook_transport_failed',
+                    $runtime->reportTransportFailure('ai', 'AI bot poller', 'internal_webhook', $e, [
                         'update_id' => $updateId,
-                        'error' => $this->sanitizeTelegramError($e->getMessage()),
                     ]);
                     sleep($sleepSeconds);
                     continue 2;
@@ -91,7 +98,7 @@ class AiBotPollUpdates extends Command
                     Log::channel('app')->error('AI bot poller: internal webhook rejected update; offset is not advanced', [
                         'source' => 'ai_bot_poller_rejected',
                         'status' => $webhookResponse->status(),
-                        'body' => $this->sanitizeTelegramError($webhookResponse->body()),
+                        'body' => $runtime->sanitize($webhookResponse->body()),
                         'update_id' => $updateId,
                     ]);
                     sleep($sleepSeconds);
@@ -117,7 +124,7 @@ class AiBotPollUpdates extends Command
         return Command::SUCCESS;
     }
 
-    private function deleteWebhook(string $apiBase, int $sleepSeconds): bool
+    private function deleteWebhook(string $apiBase, TelegramPollingRuntime $runtime): TelegramPollerApiResult
     {
         try {
             $response = Http::connectTimeout(2)
@@ -125,31 +132,13 @@ class AiBotPollUpdates extends Command
                 ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
                 ->post("{$apiBase}/deleteWebhook", ['drop_pending_updates' => false]);
         } catch (\Throwable $e) {
-            Log::channel('app')->warning('AI bot poller: deleteWebhook transport failed, retrying', [
-                'source' => 'ai_bot_poller_delete_webhook_transport_failed',
-                'error' => $this->sanitizeTelegramError($e->getMessage()),
-            ]);
-            sleep($sleepSeconds);
-
-            return false;
+            return $runtime->reportTransportFailure('ai', 'AI bot poller', 'delete_webhook', $e);
         }
 
         if (! $response->json('ok')) {
-            Log::channel('app')->warning('AI bot poller: deleteWebhook returned non-ok, retrying', [
-                'source' => 'ai_bot_poller_delete_webhook_non_ok',
-                'status' => $response->status(),
-                'body' => $this->sanitizeTelegramError($response->body()),
-            ]);
-            sleep($sleepSeconds);
-
-            return false;
+            return $runtime->classifyResponse('ai', 'AI bot poller', 'delete_webhook', $response);
         }
 
-        return true;
-    }
-
-    private function sanitizeTelegramError(string $message): string
-    {
-        return preg_replace('/bot[0-9]+:[A-Za-z0-9_-]+/', 'bot[hidden]', $message) ?? $message;
+        return TelegramPollerApiResult::Success;
     }
 }

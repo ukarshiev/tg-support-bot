@@ -1,4 +1,4 @@
-# Последняя редакция: 14.07.2026 03:57 UTC+3
+# Последняя редакция: 19.07.2026 02:03 UTC+3
 
 # Realtime Telegram pipeline
 
@@ -63,6 +63,8 @@ Connection: upgrade
 `TELEGRAM_INGRESS_MODE=polling|webhook` задаёт единственный активный режим. Polling хранит offset в Redis и не делает лишнюю паузу после пустого long-poll. Webhook и `getUpdates` одновременно для одного токена запрещены.
 
 Nginx использует Docker resolver `127.0.0.11` и динамические upstream для `app` и `reverb`. После пересоздания PHP-FPM новый IP подхватывается без ручного рестарта nginx. Если внутренний webhook временно недоступен, offset не меняется, но перед повтором выдерживается пауза: это сохраняет событие без бесконечного цикла и разрастания логов.
+
+Перед `deleteWebhook` оба poller вызывают `getMe`. Ответы `401/404` считаются постоянной ошибкой токена и не создают секундный горячий цикл. После каждого успешного `getUpdates` в Redis обновляется отдельный heartbeat (`main`/`ai`); Docker healthcheck считает poller здоровым только при heartbeat не старше 90 секунд.
 
 ## Backup и rollback
 

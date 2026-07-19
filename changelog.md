@@ -1,3 +1,15 @@
+0.36.2 – 19.07.2026 02:03
+- [Критический фикс] (Plane TGSUPBOT-69) SettingsService — после восстановления PostgreSQL настройки AI/DeepSeek больше не могут навсегда остаться скрытыми из-за старого Redis-кэша: время жизни значений и пустых sentinel ограничено пятью минутами; данные DeepSeek восстановлены без повторного ввода и успешно проверены через API.
+- [Критическая безопасность] (Plane TGSUPBOT-69) PHPUnit/БД — Тестовый bootstrap теперь fail-closed отклоняет любой Laravel config cache, кроме SQLite `:memory:`; добавлен запуск без сети, production Compose volumes и права записи в репозиторий.
+- [Эксплуатация] (Plane TGSUPBOT-69) scripts/run-isolated-tests.ps1, project-tools — Все локальные PHP-тесты направлены через изолированный Docker runner; прямой `docker compose run ... app` запрещён как причина очистки боевой PostgreSQL.
+- [Критический фикс] (Plane TGSUPBOT-69) Telegram pollers — Перед polling добавлен `getMe` preflight: отозванные/неверные токены `401/404` больше не маскируются бесконечным циклом `deleteWebhook`, а повторное сообщение об ошибке ограничено одним разом в пять минут.
+- [Мониторинг] (Plane TGSUPBOT-69) Docker health — Основной и AI poller публикуют heartbeat только после успешного `getUpdates`; отдельная health-команда и Compose healthcheck показывают `unhealthy`, если реальной связи с Telegram нет.
+- [Безопасность] (Plane TGSUPBOT-69) Windows production start — Миграции и смена `APP_KEY` требуют явного подтверждения; перед разрешённой миграцией скрипт обязан создать непустой PostgreSQL dump и не запускает миграции по умолчанию.
+- [Фикс] (Plane TGSUPBOT-69 / Linear ID: KAR-319) Перевод истории — Уточнён тип failed-перевода и гарантирована инициализация batch-результата, чтобы retry и fallback всех провайдеров проходили статическую проверку без неопределённого состояния.
+- [Проверка] (Plane TGSUPBOT-69) PHPUnit — Добавлены регрессии на валидный токен, `401/404`, transport timeout, свежий/просроченный heartbeat, Docker healthcheck и безопасный Windows-запуск.
+- [Восстановление] (Plane TGSUPBOT-69) Production — PostgreSQL восстановлена из подтверждённого дампа после отдельного rollback-бэкапа; через штатные формы заменены только два Telegram-токена, оба `getMe` вернули `200`, все обязательные контейнеры healthy и `/up` отвечает `200`.
+- [Проверка] (Plane TGSUPBOT-69) Quality gates — Полный изолированный PHPUnit: 1183 теста и 3468 assertions; PHPStan без ошибок; изменённые PHP-файлы прошли Pint; чистая Docker-сборка frontend и production-образа успешна, npm audit не нашёл уязвимостей.
+
 0.36.1 – 18.07.2026 05:07
 - [Фикс] (Plane TGSUPBOT-57 / Linear ID: KAR-319) UI перевода истории — Pending-переводы теперь обновляют экран каждые 3 секунды через локальный `wire:poll.3s`, поэтому retry и batch-перевод не зависают визуально до общего 30-секундного poll.
 

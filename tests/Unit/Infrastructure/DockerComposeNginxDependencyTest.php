@@ -38,6 +38,19 @@ class DockerComposeNginxDependencyTest extends TestCase
         }
     }
 
+    public function test_internal_pollers_have_real_telegram_heartbeat_healthchecks(): void
+    {
+        $compose = Yaml::parseFile(dirname(__DIR__, 3) . '/docker-compose.yml');
+
+        foreach (['telegram_poller' => 'main', 'ai_telegram_poller' => 'ai'] as $service => $channel) {
+            $healthcheck = implode(' ', $compose['services'][$service]['healthcheck']['test'] ?? []);
+
+            $this->assertStringContainsString('telegram:poller-health', $healthcheck);
+            $this->assertStringContainsString($channel, $healthcheck);
+            $this->assertSame('60s', $compose['services'][$service]['healthcheck']['start_period'] ?? null);
+        }
+    }
+
     public function test_nginx_re_resolves_recreated_app_and_checks_real_php_health(): void
     {
         $root = dirname(__DIR__, 3);

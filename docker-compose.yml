@@ -202,6 +202,12 @@ services:
         build: .
         container_name: telegram_poller
         restart: always
+        healthcheck:
+            test: ["CMD-SHELL", "php artisan telegram:poller-health main --max-age=90 >/dev/null"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
         depends_on:
             app:
                 condition: service_healthy
@@ -227,6 +233,12 @@ services:
         build: .
         container_name: ai_telegram_poller
         restart: always
+        healthcheck:
+            test: ["CMD-SHELL", "php artisan telegram:poller-health ai --max-age=90 >/dev/null"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
         depends_on:
             app:
                 condition: service_healthy

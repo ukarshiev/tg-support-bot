@@ -1175,7 +1175,7 @@ class ConversationPage extends Component
             ->latest('id')
             ->first();
 
-        if ($failedTranslation !== null && is_string($failedTranslation->source_locale)) {
+        if ($failedTranslation instanceof MessageTranslation && is_string($failedTranslation->source_locale)) {
             $this->chatTranslationLocale = $failedTranslation->source_locale;
             $this->chatHistoryTranslationActive = $failedTranslation->source_locale !== 'ru';
         }

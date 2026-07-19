@@ -37,11 +37,11 @@ switch ($Command) {
         Invoke-Step 'Проверяю composer.json' 'composer validate --strict --no-check-publish'
         Invoke-Step 'Проверяю PHP-стиль' 'vendor\bin\pint --test'
         Invoke-Step 'Проверяю PHP-статический анализ' 'vendor\bin\phpstan analyse'
-        Invoke-Step 'Запускаю PHP-тесты' 'php artisan test'
+        Invoke-Step 'Запускаю изолированные PHP-тесты' '.\scripts\run-isolated-tests.ps1'
         Invoke-Step 'Собираю frontend' 'npm run build'
     }
     'test' {
-        Invoke-Step 'Запускаю PHP-тесты' 'php artisan test'
+        Invoke-Step 'Запускаю изолированные PHP-тесты' '.\scripts\run-isolated-tests.ps1'
     }
     'lint' {
         Invoke-Step 'Проверяю PHP-стиль' 'vendor\bin\pint --test'
@@ -51,4 +51,3 @@ switch ($Command) {
         Invoke-Step 'Собираю frontend' 'npm run build'
     }
 }
-
