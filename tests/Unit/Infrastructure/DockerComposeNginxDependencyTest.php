@@ -20,7 +20,11 @@ class DockerComposeNginxDependencyTest extends TestCase
         $appCommand = $compose['services']['app']['command'] ?? '';
 
         $this->assertStringContainsString('cp -a /var/www_public_image/. /var/www/public/', $appCommand);
-        $this->assertStringContainsString('exec php-fpm', $appCommand);
+        $this->assertStringContainsString(
+            'exec /usr/local/sbin/php-fpm',
+            $appCommand,
+            'Login-shell пользователя www-data не обязан включать /usr/local/sbin в PATH.',
+        );
     }
 
     /**

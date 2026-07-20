@@ -1,5 +1,6 @@
 0.36.3 – 20.07.2026
 - [Эксплуатация] (Plane TGSUPBOT-78) Docker Compose — Удалён одноразовый `assets_init`, который после штатного завершения оставался серой строкой в Docker Desktop; теперь основной `app` сам обновляет общий том CSS/JS перед запуском PHP-FPM.
+- [Критический фикс] (Plane TGSUPBOT-78) Docker Compose — PHP-FPM запускается по абсолютному пути `/usr/local/sbin/php-fpm`, потому что login-shell пользователя `www-data` не включает `/usr/local/sbin` в `PATH`; новый образ больше не уходит в restart loop с кодом `127`.
 - [Проверка] (Plane TGSUPBOT-78) Docker Compose — Добавлена регрессия, фиксирующая отсутствие остановленного init-контейнера и обязательную подготовку публичных файлов внутри `app`.
 - [Надёжность] (Plane TGSUPBOT-78) Изолированные тесты — Test runner выбирает актуальный тег образа `app`, а не ID старого работающего контейнера, который мог быть уже удалён после Docker cleanup.
 
@@ -578,7 +579,6 @@
 - [Новый функционал] (Docker) start-relaxaclub-windows-docker.ps1 — Добавлен безопасный Windows Docker-запуск для relaxaclub без certbot, проверки IP через WSL и удаления Docker volume.
 - [Фикс] (Nginx) docker/nginx/default.windows-docker.conf.template — Конфиг nginx теперь генерируется без BOM, чтобы контейнер nginx не падал на директиве server.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан запуск relaxaclub через Docker Desktop/WSL и команды проверки.
-
 
 
 
