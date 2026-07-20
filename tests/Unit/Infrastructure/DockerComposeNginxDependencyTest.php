@@ -7,6 +7,22 @@ use Symfony\Component\Yaml\Yaml;
 
 class DockerComposeNginxDependencyTest extends TestCase
 {
+    public function test_app_refreshes_public_assets_without_a_stopped_init_container(): void
+    {
+        $compose = Yaml::parseFile(dirname(__DIR__, 3) . '/docker-compose.yml');
+
+        $this->assertArrayNotHasKey(
+            'assets_init',
+            $compose['services'],
+            'Одноразовый assets_init остаётся серым в Docker Desktop после успешного завершения.',
+        );
+
+        $appCommand = $compose['services']['app']['command'] ?? '';
+
+        $this->assertStringContainsString('cp -a /var/www_public_image/. /var/www/public/', $appCommand);
+        $this->assertStringContainsString('exec php-fpm', $appCommand);
+    }
+
     /**
      * Проверяет регрессию, из-за которой после пересоздания app nginx стартовал
      * раньше PHP-FPM и отдавал 502 Bad Gateway.

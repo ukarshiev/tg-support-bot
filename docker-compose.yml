@@ -35,8 +35,6 @@ services:
             retries: 3
             start_period: 40s
         depends_on:
-            assets_init:
-                condition: service_completed_successfully
             pgdb:
                 condition: service_healthy
             redis:
@@ -44,7 +42,10 @@ services:
         env_file:
             - .env
         working_dir: /var/www/
-        command: php-fpm
+        command: >-
+            sh -lc 'rm -rf /var/www/public/* &&
+            cp -a /var/www_public_image/. /var/www/public/ &&
+            exec php-fpm'
         volumes:
             - app_public:/var/www/public
             - app_storage:/var/www/storage
@@ -54,16 +55,6 @@ services:
         dns:
             - 8.8.8.8
             - 1.1.1.1
-
-    assets_init:
-        build: .
-        user: root
-        restart: "no"
-        command: sh -lc 'rm -rf /target/* && cp -a /var/www_public_image/. /target/ && chown -R 33:33 /target'
-        volumes:
-            - app_public:/target
-        networks:
-            - pet
 
     pgdb:
         container_name: pgdb

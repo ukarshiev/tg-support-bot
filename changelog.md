@@ -1,3 +1,8 @@
+0.36.3 – 20.07.2026
+- [Эксплуатация] (Plane TGSUPBOT-78) Docker Compose — Удалён одноразовый `assets_init`, который после штатного завершения оставался серой строкой в Docker Desktop; теперь основной `app` сам обновляет общий том CSS/JS перед запуском PHP-FPM.
+- [Проверка] (Plane TGSUPBOT-78) Docker Compose — Добавлена регрессия, фиксирующая отсутствие остановленного init-контейнера и обязательную подготовку публичных файлов внутри `app`.
+- [Надёжность] (Plane TGSUPBOT-78) Изолированные тесты — Test runner выбирает актуальный тег образа `app`, а не ID старого работающего контейнера, который мог быть уже удалён после Docker cleanup.
+
 0.36.2 – 19.07.2026 02:03
 - [Критический фикс] (Plane TGSUPBOT-69) SettingsService — после восстановления PostgreSQL настройки AI/DeepSeek больше не могут навсегда остаться скрытыми из-за старого Redis-кэша: время жизни значений и пустых sentinel ограничено пятью минутами; данные DeepSeek восстановлены без повторного ввода и успешно проверены через API.
 - [Критическая безопасность] (Plane TGSUPBOT-69) PHPUnit/БД — Тестовый bootstrap теперь fail-closed отклоняет любой Laravel config cache, кроме SQLite `:memory:`; добавлен запуск без сети, production Compose volumes и права записи в репозиторий.
@@ -573,9 +578,6 @@
 - [Новый функционал] (Docker) start-relaxaclub-windows-docker.ps1 — Добавлен безопасный Windows Docker-запуск для relaxaclub без certbot, проверки IP через WSL и удаления Docker volume.
 - [Фикс] (Nginx) docker/nginx/default.windows-docker.conf.template — Конфиг nginx теперь генерируется без BOM, чтобы контейнер nginx не падал на директиве server.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан запуск relaxaclub через Docker Desktop/WSL и команды проверки.
-
-
-
 
 
 

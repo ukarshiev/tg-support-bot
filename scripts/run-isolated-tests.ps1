@@ -6,9 +6,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repositoryPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$appImage = (docker compose --project-directory $repositoryPath images -q app | Select-Object -First 1).Trim()
+$composeConfig = docker compose --project-directory $repositoryPath config --format json | ConvertFrom-Json
+$appImage = "$($composeConfig.name)-app:latest"
 
-if (-not $appImage) {
+docker image inspect $appImage *> $null
+
+if ($LASTEXITCODE -ne 0) {
     throw 'Образ app не найден. Сначала соберите его командой: docker compose build app'
 }
 
