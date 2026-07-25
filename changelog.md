@@ -1,3 +1,10 @@
+0.36.4 – 25.07.2026
+- [Критический фикс] (Plane TGSUPBOT-68 / Linear ID: KAR-336) Translation placeholders — Переменные, ссылки и упоминания больше не передаются Yandex/Google/offline-провайдерам внутри переводимых XML-тегов: непрозрачные ASCII-маркеры со служебной сигнатурой скрывают значения полностью и восстанавливаются только при точном round-trip. Боевой прогон подтвердил, что они стабильнее одиночных Unicode PUA-маркеров для всех настроенных языков.
+- [Защита] (Plane TGSUPBOT-68 / Linear ID: KAR-336) TranslationService/SystemAutoReplyResolver — Потерянные, дублированные или переведённые placeholders и добавленная XML-разметка отклоняются до кэша/status `ready`; старые повреждённые системные переводы не отправляются клиенту и безопасно откатываются на валидный английский fallback.
+- [Восстановление] (Plane TGSUPBOT-68 / Linear ID: KAR-336) auto-replies:translate-system — Команда повторно ставит в очередь ready-переводы с повреждёнными переменными даже при актуальном source hash.
+- [Проверка] (Plane TGSUPBOT-68 / Linear ID: KAR-336) PHPUnit/PHPStan/Pint — 83 изолированных теста и 279 assertions, PHPStan без ошибок, изменённые PHP-файлы соответствуют PSR-12.
+- [Деплой] (Plane TGSUPBOT-68 / Linear ID: KAR-336) Production-like Docker — PHP-сервисы пересобраны и перезапущены без миграций/рестарта PostgreSQL и Redis; 44 повреждённых перевода восстановлены, арабский welcome хранит исходные `{{connector}}`/`{{paybot}}`, один недоступный испанский перевод безопасно использует английский fallback.
+
 0.36.3 – 20.07.2026
 - [Эксплуатация] (Plane TGSUPBOT-78) Docker Compose — Удалён одноразовый `assets_init`, который после штатного завершения оставался серой строкой в Docker Desktop; теперь основной `app` сам обновляет общий том CSS/JS перед запуском PHP-FPM.
 - [Критический фикс] (Plane TGSUPBOT-78) Docker Compose — PHP-FPM запускается по абсолютному пути `/usr/local/sbin/php-fpm`, потому что login-shell пользователя `www-data` не включает `/usr/local/sbin` в `PATH`; новый образ больше не уходит в restart loop с кодом `127`.
@@ -579,10 +586,6 @@
 - [Новый функционал] (Docker) start-relaxaclub-windows-docker.ps1 — Добавлен безопасный Windows Docker-запуск для relaxaclub без certbot, проверки IP через WSL и удаления Docker volume.
 - [Фикс] (Nginx) docker/nginx/default.windows-docker.conf.template — Конфиг nginx теперь генерируется без BOM, чтобы контейнер nginx не падал на директиве server.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан запуск relaxaclub через Docker Desktop/WSL и команды проверки.
-
-
-
-
 
 
 

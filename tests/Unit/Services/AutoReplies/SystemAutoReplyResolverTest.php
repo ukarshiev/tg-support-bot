@@ -6,6 +6,7 @@ namespace Tests\Unit\Services\AutoReplies;
 
 use App\Models\AutoReply;
 use App\Models\AutoReplyTranslation;
+use App\Models\AutoReplyVariable;
 use App\Models\BotUser;
 use App\Services\AutoReplies\SystemAutoReplyResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,6 +48,32 @@ class SystemAutoReplyResolverTest extends TestCase
         $this->assertSame(
             'Thanks from database',
             app(SystemAutoReplyResolver::class)->resolve(AutoReply::TYPE_FEEDBACK_THANK_YOU, $user),
+        );
+    }
+
+    public function test_it_rejects_corrupted_selected_translation_and_uses_safe_english_fallback(): void
+    {
+        $user = $this->user('ar');
+        $reply = $this->reply(AutoReply::TYPE_WELCOME);
+        $reply->update(['response' => 'Коннектор — {{connector}}. Бот — {{paybot}}.']);
+        AutoReplyVariable::create([
+            'key' => 'connector',
+            'name' => 'Connector',
+            'value' => 'https://example.test/connector',
+            'enabled' => true,
+        ]);
+        AutoReplyVariable::create([
+            'key' => 'paybot',
+            'name' => 'Paybot',
+            'value' => 'https://example.test/paybot',
+            'enabled' => true,
+        ]);
+        $this->translation($reply, 'ar', 'موصل — {{موصل}}. بوت — {{بايبوت}}.');
+        $this->translation($reply, 'en', 'Connector — {{connector}}. Bot — {{paybot}}.');
+
+        $this->assertSame(
+            'Connector — https://example.test/connector. Bot — https://example.test/paybot.',
+            app(SystemAutoReplyResolver::class)->resolve(AutoReply::TYPE_WELCOME, $user),
         );
     }
 
@@ -206,13 +233,17 @@ class SystemAutoReplyResolverTest extends TestCase
 
     private function translation(AutoReply $reply, string $locale, string $text): void
     {
-        AutoReplyTranslation::create([
-            'auto_reply_id' => $reply->id,
-            'locale' => $locale,
-            'text' => $text,
-            'status' => AutoReplyTranslation::STATUS_READY,
-            'source' => AutoReplyTranslation::SOURCE_MANUAL,
-            'source_hash' => AutoReply::sourceHash($reply->response),
-        ]);
+        AutoReplyTranslation::updateOrCreate(
+            [
+                'auto_reply_id' => $reply->id,
+                'locale' => $locale,
+            ],
+            [
+                'text' => $text,
+                'status' => AutoReplyTranslation::STATUS_READY,
+                'source' => AutoReplyTranslation::SOURCE_MANUAL,
+                'source_hash' => AutoReply::sourceHash($reply->response),
+            ],
+        );
     }
 }

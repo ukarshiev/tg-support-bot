@@ -62,4 +62,12 @@ class AutoReplyVariableRendererTest extends TestCase
         $this->assertSame('Привет, {first_name}!', $text);
         $this->assertSame(['Переменная {first_name} требует выбранного клиента.'], $warnings);
     }
+
+    public function test_warns_about_variable_key_corrupted_by_translation(): void
+    {
+        [$text, $warnings] = app(AutoReplyVariableRenderer::class)->render('رابط {{موصل}}');
+
+        $this->assertSame('رابط {{موصل}}', $text);
+        $this->assertSame(['Переменная {موصل} повреждена переводчиком.'], $warnings);
+    }
 }

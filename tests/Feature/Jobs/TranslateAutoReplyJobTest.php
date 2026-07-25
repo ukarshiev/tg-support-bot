@@ -10,6 +10,7 @@ use App\Models\AutoReplyTranslation;
 use App\Models\TranslationJob;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class TranslateAutoReplyJobTest extends TestCase
@@ -81,5 +82,38 @@ class TranslateAutoReplyJobTest extends TestCase
         $this->assertSame(1, $monitor->attempts);
         $this->assertNotNull($monitor->started_at);
         $this->assertNotNull($monitor->finished_at);
+    }
+
+    public function test_it_does_not_mark_translation_ready_when_provider_loses_variable_marker(): void
+    {
+        app(SettingsService::class)->set('translation.provider_order', ['yandex']);
+        app(SettingsService::class)->set('translation.allow_external', true);
+        app(SettingsService::class)->set('translation.yandex_api_key', 'test-key');
+        app(SettingsService::class)->set('translation.yandex_folder_id', 'test-folder');
+        Http::fake([
+            'translate.api.cloud.yandex.net/*' => Http::response([
+                'translations' => [
+                    ['text' => 'موصل بدون متغير'],
+                ],
+            ]),
+        ]);
+
+        $reply = AutoReply::create([
+            'type' => AutoReply::TYPE_WELCOME,
+            'trigger' => 'corrupted-provider',
+            'response' => 'Коннектор — {{connector}}',
+            'enabled' => true,
+        ]);
+
+        (new TranslateAutoReplyJob($reply->id, 'ar'))
+            ->handle(app(\App\Modules\Translation\Services\TranslationService::class));
+
+        $translation = AutoReplyTranslation::query()
+            ->where('auto_reply_id', $reply->id)
+            ->where('locale', 'ar')
+            ->firstOrFail();
+
+        $this->assertSame(AutoReplyTranslation::STATUS_ERROR, $translation->status);
+        $this->assertNull($translation->text);
     }
 }

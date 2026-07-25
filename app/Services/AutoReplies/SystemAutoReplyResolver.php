@@ -7,6 +7,7 @@ namespace App\Services\AutoReplies;
 use App\Models\AutoReply;
 use App\Models\AutoReplyTranslation;
 use App\Models\BotUser;
+use App\Modules\Translation\Support\PlaceholderProtector;
 use Illuminate\Support\Facades\Log;
 
 class SystemAutoReplyResolver
@@ -20,8 +21,10 @@ class SystemAutoReplyResolver
         AutoReply::TYPE_BAN => 'You have been blocked by the bot administration.',
     ];
 
-    public function __construct(private readonly AutoReplyVariableRenderer $renderer)
-    {
+    public function __construct(
+        private readonly AutoReplyVariableRenderer $renderer,
+        private readonly PlaceholderProtector $placeholders,
+    ) {
     }
 
     public function resolve(string $type, ?BotUser $botUser = null, ?string $locale = null): ?string
@@ -78,7 +81,11 @@ class SystemAutoReplyResolver
             ->where('source_hash', AutoReply::sourceHash($reply->response))
             ->value('text');
 
-        return is_string($text) && trim($text) !== '' ? $text : null;
+        if (!is_string($text) || trim($text) === '') {
+            return null;
+        }
+
+        return $this->placeholders->isValidTranslation($reply->response, $text) ? $text : null;
     }
 
     private function render(string $text, ?BotUser $botUser): string
