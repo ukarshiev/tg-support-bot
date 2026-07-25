@@ -9,6 +9,7 @@ use App\Models\AutoReply;
 use App\Models\AutoReplyTranslation;
 use App\Models\TranslationJob;
 use App\Modules\Translation\Services\SupportLanguageSettings;
+use App\Modules\Translation\Support\PlaceholderProtector;
 use Illuminate\Console\Command;
 
 class TranslateSystemAutoReplies extends Command
@@ -17,8 +18,10 @@ class TranslateSystemAutoReplies extends Command
 
     protected $description = 'Ставит отсутствующие и устаревшие переводы системных автоответов в очередь';
 
-    public function handle(SupportLanguageSettings $languages): int
-    {
+    public function handle(
+        SupportLanguageSettings $languages,
+        PlaceholderProtector $placeholders,
+    ): int {
         $queued = 0;
         $overwriteManual = (bool) $this->option('overwrite-manual');
 
@@ -41,6 +44,8 @@ class TranslateSystemAutoReplies extends Command
 
                 if ($translation?->status === AutoReplyTranslation::STATUS_READY
                     && hash_equals((string) $translation->source_hash, $sourceHash)
+                    && is_string($translation->text)
+                    && $placeholders->isValidTranslation($reply->response, $translation->text)
                 ) {
                     continue;
                 }

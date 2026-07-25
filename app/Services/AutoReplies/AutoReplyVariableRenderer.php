@@ -18,8 +18,15 @@ class AutoReplyVariableRenderer
     {
         $warnings = [];
 
-        $rendered = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/u', function (array $matches) use (&$warnings): string {
-            $key = AutoReplyVariable::normalizeKey((string) $matches[1]);
+        $rendered = preg_replace_callback('/\{\{\s*([^{}]+?)\s*\}\}/u', function (array $matches) use (&$warnings): string {
+            $rawKey = trim((string) $matches[1]);
+            if (preg_match('/^[a-zA-Z0-9_]+$/', $rawKey) !== 1) {
+                $warnings[] = "Переменная {{$rawKey}} повреждена переводчиком.";
+
+                return (string) $matches[0];
+            }
+
+            $key = AutoReplyVariable::normalizeKey($rawKey);
             $variable = AutoReplyVariable::query()
                 ->where('key', $key)
                 ->where('enabled', true)

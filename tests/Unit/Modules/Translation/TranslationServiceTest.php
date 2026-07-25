@@ -10,6 +10,8 @@ use App\Modules\Translation\DTOs\TranslationRequest;
 use App\Modules\Translation\Services\TranslationService;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class TranslationServiceTest extends TestCase
@@ -84,6 +86,78 @@ class TranslationServiceTest extends TestCase
         ]);
     }
 
+    public function test_corrupted_yandex_placeholders_are_rejected_and_next_provider_is_used(): void
+    {
+        app(SettingsService::class)->set('translation.provider_order', ['yandex', 'fake']);
+        app(SettingsService::class)->set('translation.allow_external', true);
+        app(SettingsService::class)->set('translation.yandex_api_key', 'test-key');
+        app(SettingsService::class)->set('translation.yandex_folder_id', 'test-folder');
+
+        Http::fake([
+            'translate.api.cloud.yandex.net/*' => Http::response([
+                'translations' => [
+                    ['text' => 'نص بدون العلامة المحمية'],
+                ],
+            ]),
+        ]);
+
+        $result = app(TranslationService::class)->translate(new TranslationRequest(
+            sourceLocale: 'ru',
+            targetLocale: 'ar',
+            text: 'Коннектор — {{connector}}',
+            purpose: 'auto_reply',
+        ));
+
+        $this->assertTrue($result->success);
+        $this->assertSame('fake', $result->provider);
+        $this->assertStringContainsString('{{connector}}', (string) $result->text);
+        $this->assertDatabaseHas('translation_usage_logs', [
+            'provider' => 'yandex',
+            'success' => false,
+            'error_code' => 'placeholder_corrupted',
+        ]);
+
+        Http::assertSent(function (Request $request): bool {
+            $providerText = (string) ($request->data()['texts'][0] ?? '');
+
+            return !str_contains($providerText, 'connector')
+                && preg_match('/__TGSPH_[A-F0-9]{12}_\d{4}__/', $providerText) === 1;
+        });
+    }
+
+    public function test_corrupted_cached_translation_is_ignored_and_replaced(): void
+    {
+        app(SettingsService::class)->set('translation.provider_order', ['fake']);
+        $source = 'Коннектор — {{connector}}';
+
+        TranslationCacheEntry::create([
+            'source_locale' => 'ru',
+            'target_locale' => 'ar',
+            'source_hash' => TranslationService::sourceHash($source),
+            'source_text' => $source,
+            'translated_text' => 'موصل — {{موصل}}',
+            'provider' => 'yandex',
+            'status' => 'ready',
+        ]);
+
+        $result = app(TranslationService::class)->translate(new TranslationRequest(
+            sourceLocale: 'ru',
+            targetLocale: 'ar',
+            text: $source,
+            purpose: 'auto_reply',
+        ));
+
+        $this->assertTrue($result->success);
+        $this->assertFalse($result->fromCache);
+        $this->assertSame('fake', $result->provider);
+        $this->assertStringContainsString('{{connector}}', (string) $result->text);
+        $this->assertDatabaseHas('translation_cache_entries', [
+            'source_hash' => TranslationService::sourceHash($source),
+            'provider' => 'fake',
+            'status' => 'ready',
+        ]);
+    }
+
     public function test_translate_many_uses_cache_and_translates_only_missing_texts(): void
     {
         app(SettingsService::class)->set('translation.provider_order', ['fake']);
@@ -126,5 +200,24 @@ class TranslationServiceTest extends TestCase
         $this->assertSame('[ru] Metin 26', $results[25]->text);
         $this->assertSame(26, TranslationUsageLog::query()->where('provider', 'fake')->count());
         $this->assertSame(26, TranslationCacheEntry::query()->count());
+    }
+
+    public function test_translate_many_preserves_markers_with_non_batch_provider(): void
+    {
+        app(SettingsService::class)->set('translation.provider_order', ['offline']);
+        app(SettingsService::class)->set('translation.offline_endpoint', 'http://offline.test');
+        Http::fake(function (Request $request) {
+            return Http::response([
+                'text' => '[ar] ' . (string) ($request->data()['text'] ?? ''),
+            ]);
+        });
+
+        $results = app(TranslationService::class)->translateMany([
+            new TranslationRequest('ru', 'ar', 'Коннектор — {{connector}}', 'auto_reply'),
+        ]);
+
+        $this->assertTrue($results[0]->success);
+        $this->assertSame('offline', $results[0]->provider);
+        $this->assertSame('[ar] Коннектор — {{connector}}', $results[0]->text);
     }
 }

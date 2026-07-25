@@ -178,12 +178,15 @@ docker compose logs -f app queue scheduler telegram_poller
 Для проверки KAR-336:
 
 ```bash
-.\scripts\run-isolated-tests.ps1 tests/Unit/Modules/Translation/PlaceholderProtectorTest.php tests/Unit/Modules/Translation/TranslationServiceTest.php tests/Unit/Livewire/Settings/AutoRepliesPageTest.php tests/Unit/Livewire/Settings/AutoReplyFormPageTest.php tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Jobs/TranslateAutoReplyJobTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
+.\scripts\run-isolated-tests.ps1 tests/Unit/Modules/Translation/PlaceholderProtectorTest.php tests/Unit/Modules/Translation/TranslationServiceTest.php tests/Unit/Services/AutoReplies/AutoReplyVariableRendererTest.php tests/Unit/Services/AutoReplies/SystemAutoReplyResolverTest.php tests/Unit/Livewire/Settings/AutoRepliesPageTest.php tests/Unit/Livewire/Settings/AutoReplyFormPageTest.php tests/Unit/Modules/Ai/Jobs/SendAiReplyJobTest.php tests/Feature/Jobs/TranslateAutoReplyJobTest.php tests/Feature/Commands/TranslateSystemAutoRepliesTest.php tests/Feature/Modules/Telegram/IncomingMessagePersistenceTest.php
 ```
 
 Что покрывает:
 
-- переменные `{{connector}}` и `{{paybot}}` не превращаются в `__TG_SUPPORT_PH_0__`;
+- переменные `{{connector}}` и `{{paybot}}` не передаются переводчику открытым текстом;
+- потерянный/дублированный marker, переведённый ключ и остатки XML отклоняются до статуса `ready`;
+- повреждённый Yandex-ответ передаётся следующему провайдеру, а старый битый кэш игнорируется;
+- команда `auto-replies:translate-system` повторно ставит повреждённые ready-переводы в очередь;
 - перевод одного языка ставится в очередь отдельно;
 - предпросмотр показывает финальный текст с реальными ссылками;
 - `/start` и сообщения до выбора языка сохраняются для Web и support-группы;
@@ -303,4 +306,3 @@ docker compose exec -T queue php artisan horizon:status
 Служебный canary разрешено направлять только в отдельный тестовый Telegram-аккаунт. Команда не меняет имя, username и постоянный язык аккаунта, не удаляет историю и восстанавливает исходный язык после проверки. Личный рабочий аккаунт оператора использовать запрещено.
 
 Текущий выделенный canary-аккаунт: `@relaxa_support`. Проверка включена один раз в сутки, в 00:00 по часовому поясу приложения (`Europe/Moscow`), для `/start`, `/lang` и welcome на PL/EN/AR.
-
