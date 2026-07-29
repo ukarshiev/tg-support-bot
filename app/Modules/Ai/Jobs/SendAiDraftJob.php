@@ -219,7 +219,7 @@ class SendAiDraftJob implements ShouldQueue
     {
         $targetLocale = $botUser->preferred_language_code;
         if ($targetLocale === null || $targetLocale === '' || $targetLocale === 'ru') {
-            return [$targetLocale, $targetLocale === 'ru' ? $sourceText : null, 'same_locale', $targetLocale === 'ru' ? 'ready' : 'empty'];
+            return [$targetLocale ?: null, $sourceText, 'same_locale', 'ready'];
         }
 
         $result = app(TranslationService::class)->translate(new TranslationRequest(
@@ -239,7 +239,12 @@ class SendAiDraftJob implements ShouldQueue
 
     private function formatBilingualDraft(string $sourceText, ?string $translatedText, ?string $targetLocale): string
     {
-        $targetLabel = $targetLocale !== null && $targetLocale !== '' ? strtoupper($targetLocale) : 'язык клиента не выбран';
+        if ($targetLocale === null || $targetLocale === '' || $targetLocale === 'ru') {
+            return "<b>🤖 ИИ-черновик</b>\n\n"
+                . "<b>Оригинал без перевода:</b>\n" . e($sourceText);
+        }
+
+        $targetLabel = strtoupper($targetLocale);
         $translatedBlock = $translatedText !== null && $translatedText !== ''
             ? e($translatedText)
             : 'Перевод пока недоступен.';

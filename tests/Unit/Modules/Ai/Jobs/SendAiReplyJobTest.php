@@ -47,7 +47,7 @@ class SendAiReplyJobTest extends TestCase
         Queue::assertPushed(DeliverAiMessageJob::class, fn ($job): bool => $job->aiMessageId === $aiMessage->id);
     }
 
-    public function test_missing_locale_uses_builtin_english_instead_of_russian_source(): void
+    public function test_missing_locale_uses_original_without_translation(): void
     {
         $botUser = BotUser::create(['chat_id' => 702, 'platform' => 'vk']);
 
@@ -55,13 +55,10 @@ class SendAiReplyJobTest extends TestCase
             ->handle(new AiBotApi(), $this->aiService('Русский ответ'));
 
         $aiMessage = AiMessage::firstOrFail();
-        $this->assertSame('builtin_safe_english', $aiMessage->translation_provider);
+        $this->assertSame('same_locale', $aiMessage->translation_provider);
         $this->assertSame('ready', $aiMessage->translation_status);
-        $this->assertSame(
-            'A support agent will reply shortly. We could not prepare a safe localized answer.',
-            $aiMessage->text_translated,
-        );
-        $this->assertNotSame($aiMessage->text_source, $aiMessage->text_translated);
+        $this->assertSame('Русский ответ', $aiMessage->text_translated);
+        $this->assertSame($aiMessage->text_source, $aiMessage->text_translated);
     }
 
     public function test_transient_generation_exception_is_rethrown_for_queue_retry(): void

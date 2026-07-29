@@ -122,7 +122,7 @@ class CloseTopicTest extends TestCase
 
         Queue::assertPushed(SendMaxSimpleMessageJob::class, function (SendMaxSimpleMessageJob $job) use ($botUser): bool {
             return (string) $job->queryParams->user_id === (string) $botUser->chat_id
-                && $job->queryParams->text === 'Your request has been closed!';
+                && $job->queryParams->text === 'Ваше обращение закрыто!';
         });
 
         Queue::assertPushed(DeliverFeedbackFormJob::class);

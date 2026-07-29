@@ -56,6 +56,9 @@ class AcceptAiDraftReplyMessageTest extends TestCase
             'id' => $draft->id,
             'status' => 'delivery_pending',
             'text_ai' => 'Отредактированный ответ',
+            'text_translated' => 'Отредактированный ответ',
+            'translation_provider' => 'same_locale',
+            'translation_status' => 'ready',
         ]);
         $this->assertSame(0, Message::count());
         Queue::assertPushed(DeliverAiMessageJob::class, function ($job) use ($draft): bool {

@@ -441,7 +441,7 @@ class ConversationPageTest extends TestCase
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
-            ->assertSet('chatTranslationLocale', 'tr')
+            ->assertSet('clientLanguageCode', 'tr')
             ->assertSet('chatHistoryTranslationActive', true)
             ->assertSee('🇹🇷 TR');
 
@@ -486,7 +486,7 @@ class ConversationPageTest extends TestCase
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
-            ->assertSet('chatTranslationLocale', 'ru')
+            ->assertSet('clientLanguageCode', 'ru')
             ->assertSet('chatHistoryTranslationActive', false)
             ->assertSee('RU');
 
@@ -507,11 +507,9 @@ class ConversationPageTest extends TestCase
         $botUser = BotUser::create([
             'chat_id' => 11006,
             'platform' => 'telegram',
-            'preferred_language_code' => 'ru',
-            'preferred_language_name' => 'Русский',
+            'preferred_language_code' => null,
+            'preferred_language_name' => null,
             'preferred_language_selected_at' => null,
-            'chat_translation_locale' => null,
-            'chat_translation_locale_selected_at' => null,
         ]);
 
         Message::create([
@@ -525,7 +523,7 @@ class ConversationPageTest extends TestCase
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
-            ->assertSet('chatTranslationLocale', null)
+            ->assertSet('clientLanguageCode', null)
             ->assertSet('chatHistoryTranslationActive', false)
             ->assertSee('Не выбран')
             ->assertDontSee('🇺🇸 EN ON');
@@ -535,7 +533,7 @@ class ConversationPageTest extends TestCase
         Queue::assertNotPushed(TranslateMessageHistoryBatchJob::class);
     }
 
-    public function test_manual_chat_language_change_is_saved_only_to_chat_context(): void
+    public function test_admin_language_change_updates_the_single_client_language(): void
     {
         Queue::fake();
 
@@ -564,14 +562,15 @@ class ConversationPageTest extends TestCase
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
-            ->call('setChatTranslationLocale', 'tr')
-            ->assertSet('chatTranslationLocale', 'tr')
+            ->call('setClientLanguage', 'tr')
+            ->assertSet('clientLanguageCode', 'tr')
             ->assertSee('🇹🇷 TR')
             ->assertDontSee('🇺🇸 EN');
 
         $botUser->refresh();
-        $this->assertSame('ru', $botUser->preferred_language_code);
-        $this->assertSame('tr', $botUser->chat_translation_locale);
+        $this->assertSame('tr', $botUser->preferred_language_code);
+        $this->assertSame('Türkçe', $botUser->preferred_language_name);
+        $this->assertNotNull($botUser->preferred_language_selected_at);
     }
 
     public function test_selecting_another_chat_resets_composer_and_uses_new_chat_language(): void
@@ -623,13 +622,13 @@ class ConversationPageTest extends TestCase
             ->assertSet('replyText', '')
             ->assertSet('replyTranslatedText', null)
             ->assertSet('replyTranslationStatus', 'empty')
-            ->assertSet('chatTranslationLocale', 'es')
+            ->assertSet('clientLanguageCode', 'es')
             ->assertSee('🇪🇸 ES')
             ->assertDontSee('Черновик для турецкого клиента')
             ->assertDontSee('🇹🇷 TR ON');
     }
 
-    public function test_preferred_language_wins_over_stale_chat_translation_locale(): void
+    public function test_admin_can_clear_the_single_client_language(): void
     {
         Queue::fake();
 
@@ -645,8 +644,6 @@ class ConversationPageTest extends TestCase
             'preferred_language_code' => 'es',
             'preferred_language_name' => 'Español',
             'preferred_language_selected_at' => now(),
-            'chat_translation_locale' => 'tr',
-            'chat_translation_locale_selected_at' => now()->subHour(),
         ]);
 
         Message::create([
@@ -660,9 +657,14 @@ class ConversationPageTest extends TestCase
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
-            ->assertSet('chatTranslationLocale', 'es')
-            ->assertSee('🇪🇸 ES')
-            ->assertDontSee('🇹🇷 TR ON');
+            ->call('setClientLanguage', '')
+            ->assertSet('clientLanguageCode', null)
+            ->assertSee('Не выбран');
+
+        $botUser->refresh();
+        $this->assertNull($botUser->preferred_language_code);
+        $this->assertNull($botUser->preferred_language_name);
+        $this->assertNull($botUser->preferred_language_selected_at);
     }
 
     public function test_outgoing_history_prefers_restored_operator_translation_over_client_text(): void
@@ -918,6 +920,31 @@ class ConversationPageTest extends TestCase
             'text' => 'Hello!',
         ]);
 
+        Queue::assertPushed(SendTelegramSimpleQueryJob::class);
+    }
+
+    public function test_send_reply_without_selected_language_sends_original_without_translation(): void
+    {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 102,
+            'platform' => 'telegram',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->set('replyText', 'Оригинальный текст')
+            ->call('sendReply')
+            ->assertHasNoErrors()
+            ->assertDispatched('admin-toast', message: 'Сообщение отправлено');
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'outgoing',
+            'text' => 'Оригинальный текст',
+        ]);
+        $this->assertDatabaseCount('message_translations', 0);
         Queue::assertPushed(SendTelegramSimpleQueryJob::class);
     }
 
