@@ -53,6 +53,8 @@ RUN rm -rf node_modules tests .git .github && \
     find storage bootstrap/cache -type d -exec chmod 775 {} + && \
     find storage bootstrap/cache -type f -exec chmod 664 {} +
 
+# Официальный php-fpm image гарантированно создаёт www-data.
+# hadolint ignore=DL3066
 USER www-data
 
 EXPOSE 9000
