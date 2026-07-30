@@ -604,10 +604,7 @@
                      viewport, while keeping the container a plain top-anchored
                      scroll area so overflow stays reachable (justify-end clips it). --}}
                 <div class="flex flex-col mt-auto w-full" style="gap:16px;">
-                    <?php $contactCardRendered = false; ?>
-                    <?php $shouldRenderContactCard = !empty($activeBotUser?->preferred_language_code); ?>
-                    @if($chatMessages->isEmpty() && $shouldRenderContactCard)
-                        <?php $contactCardRendered = true; ?>
+                    @if($this->shouldRenderContactSummary())
                         @include('livewire.chat.partials.contact-summary-card', ['hdrColor' => $hdrColor, 'hdrInitials' => $hdrInitials])
                     @endif
                 @foreach($chatMessages as $message)
@@ -825,19 +822,7 @@
                             </div>
                         </div>
                     @endif
-                    @if(
-                        !$contactCardRendered
-                        && $shouldRenderContactCard
-                        && $message->message_type === 'outgoing'
-                        && app(\App\Modules\Telegram\Services\SupportLanguageService::class)->isSelectorText((string) $message->text)
-                    )
-                        <?php $contactCardRendered = true; ?>
-                        @include('livewire.chat.partials.contact-summary-card', ['hdrColor' => $hdrColor, 'hdrInitials' => $hdrInitials])
-                    @endif
                 @endforeach
-                    @if(!$contactCardRendered && $shouldRenderContactCard)
-                        @include('livewire.chat.partials.contact-summary-card', ['hdrColor' => $hdrColor, 'hdrInitials' => $hdrInitials])
-                    @endif
                 </div>
 
                 {{-- ── Pending AI drafts — shown in the admin workspace (always-both) ───── --}}

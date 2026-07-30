@@ -201,6 +201,21 @@ class ConversationPage extends Component
                 . 'AND (bot_users.manager_last_read_at IS NULL '
                 . 'OR m.created_at > bot_users.manager_last_read_at)) AS unread_count'
             )
+            ->where(function ($query): void {
+                $query->where('bot_users.platform', '!=', 'telegram')
+                    ->orWhereExists(function ($messages): void {
+                        $messages->selectRaw('1')
+                            ->from('messages as visible_messages')
+                            ->whereColumn('visible_messages.bot_user_id', 'bot_users.id')
+                            ->where('visible_messages.message_type', 'incoming')
+                            ->where(function ($visible): void {
+                                $visible->whereNull('visible_messages.text')
+                                    ->orWhereRaw(
+                                        "LOWER(TRIM(visible_messages.text)) NOT IN ('/start', '/lang', '/language')"
+                                    );
+                            });
+                    });
+            })
             ->when(
                 $this->search !== '',
                 fn ($q) => $q->where('chat_id', 'like', '%' . $this->search . '%')
@@ -1230,9 +1245,31 @@ class ConversationPage extends Component
 
     public function shouldHideMessageFromHistory(Message $message): bool
     {
-        return $message->message_kind === Message::KIND_LANGUAGE_SELECTOR
+        return in_array($message->message_kind, [Message::KIND_LANGUAGE_SELECTOR, Message::KIND_SYSTEM], true)
+            || ($message->message_type === 'incoming'
+                && in_array(strtolower(trim((string) $message->text)), ['/start', '/lang', '/language'], true))
             || app(\App\Modules\Telegram\Services\SupportLanguageService::class)
                 ->isSelectorText($message->text ?? $message->externalMessage?->text);
+    }
+
+    public function shouldRenderContactSummary(): bool
+    {
+        if (
+            $this->activeBotUserId === null
+            || $this->activeBotUser === null
+            || empty($this->activeBotUser->preferred_language_code)
+        ) {
+            return false;
+        }
+
+        return Message::query()
+            ->where('bot_user_id', $this->activeBotUserId)
+            ->where('message_type', 'incoming')
+            ->where(function ($query): void {
+                $query->whereNull('text')
+                    ->orWhereRaw("LOWER(TRIM(text)) NOT IN ('/start', '/lang', '/language')");
+            })
+            ->exists();
     }
 
     private function isLanguageSelectorMessage(Message $message): bool

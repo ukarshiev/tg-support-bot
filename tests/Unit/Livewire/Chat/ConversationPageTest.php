@@ -60,7 +60,7 @@ class ConversationPageTest extends TestCase
 
     public function test_mount_populates_dialog_list(): void
     {
-        BotUser::create(['chat_id' => 1, 'platform' => 'telegram']);
+        BotUser::create(['chat_id' => 1, 'platform' => 'vk']);
 
         $component = Livewire::test(ConversationPage::class);
 
@@ -72,7 +72,7 @@ class ConversationPageTest extends TestCase
     private function seedChats(int $n): void
     {
         for ($i = 1; $i <= $n; $i++) {
-            BotUser::create(['chat_id' => $i, 'platform' => 'telegram']);
+            BotUser::create(['chat_id' => $i, 'platform' => 'vk']);
         }
     }
 
@@ -167,6 +167,16 @@ class ConversationPageTest extends TestCase
             'from_id' => 0,
             'to_id' => 3,
             'text' => 'Welcome text',
+            'message_kind' => Message::KIND_SYSTEM,
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 4,
+            'to_id' => 0,
+            'text' => 'I need help',
         ]);
 
         $component = Livewire::test(ConversationPage::class)
@@ -183,13 +193,14 @@ class ConversationPageTest extends TestCase
         $contactPos = strpos($threadHtml, 'КОНТАКТНАЯ ИНФОРМАЦИЯ');
         $selectorPos = strpos($threadHtml, 'Выберите язык / Choose your language:');
         $welcomePos = strpos($threadHtml, 'Welcome text');
+        $messagePos = strpos($threadHtml, 'I need help');
 
-        $this->assertIsInt($startPos);
+        $this->assertFalse($startPos);
         $this->assertIsInt($contactPos);
         $this->assertFalse($selectorPos);
-        $this->assertIsInt($welcomePos);
-        $this->assertLessThan($contactPos, $startPos);
-        $this->assertLessThan($contactPos, $welcomePos);
+        $this->assertFalse($welcomePos);
+        $this->assertIsInt($messagePos);
+        $this->assertLessThan($messagePos, $contactPos);
         $this->assertStringContainsString('Источник: telegram', $threadHtml);
         $this->assertStringContainsString('Выбранный язык: English', $threadHtml);
     }

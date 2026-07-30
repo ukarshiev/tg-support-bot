@@ -7,6 +7,7 @@ use App\Models\Message;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Modules\Telegram\Jobs\SendContactMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMirrorJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
@@ -208,7 +209,7 @@ class SendTelegramMessageJobTest extends TestCase
         ]);
     }
 
-    public function test_incoming_start_is_saved_once_and_support_delivery_is_decoupled(): void
+    public function test_incoming_start_is_not_saved_or_mirrored(): void
     {
         Queue::fake();
         app(SettingsService::class)->set('telegram.group_id', '-100123456789');
@@ -239,15 +240,52 @@ class SendTelegramMessageJobTest extends TestCase
         );
 
         $job->handle();
-        $job->handle();
 
-        $this->assertSame(1, Message::query()
+        $this->assertSame(0, Message::query()
             ->where('bot_user_id', $this->botUser->id)
             ->where('message_type', 'incoming')
             ->where('from_id', 9001)
             ->where('text', '/start')
             ->count());
 
-        Queue::assertPushed(SendTelegramMirrorJob::class, 2);
+        Queue::assertNotPushed(SendTelegramMirrorJob::class);
+        Queue::assertNotPushed(TopicCreateJob::class);
+    }
+
+    public function test_first_real_message_queues_contact_before_support_mirror(): void
+    {
+        Queue::fake();
+        app(SettingsService::class)->set('telegram.group_id', '-100123456789');
+        $this->botUser->update([
+            'topic_id' => null,
+            'preferred_language_code' => 'en',
+            'preferred_language_name' => 'English',
+            'preferred_language_selected_at' => now(),
+        ]);
+
+        $dtoParams = TelegramUpdateDtoMock::getDtoParams();
+        $dtoParams['message']['message_id'] = 9002;
+        $dtoParams['message']['text'] = 'I need help';
+        $dto = TelegramUpdateDtoMock::getDto($dtoParams);
+
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => '-100123456789',
+            'text' => 'I need help',
+        ]);
+
+        (new SendTelegramMessageJob(
+            $this->botUser->id,
+            $dto,
+            $params,
+            'incoming',
+            \Mockery::mock(TelegramMethods::class),
+        ))->handle();
+
+        Queue::assertPushedWithChain(TopicCreateJob::class, [
+            SendContactMessageJob::class,
+            SendTelegramMirrorJob::class,
+        ]);
+        Queue::assertNotPushed(SendTelegramMirrorJob::class);
     }
 }

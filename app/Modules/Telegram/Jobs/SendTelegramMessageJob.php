@@ -256,6 +256,10 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             return;
         }
 
+        if ($this->isPrivateServiceCommand()) {
+            return;
+        }
+
         $message = Message::firstOrCreateForSourceEvent('telegram', $this->updateDto->messageId, [
             'bot_user_id' => $botUser->id,
             'message_type' => 'incoming',
@@ -334,6 +338,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
         // дедупликации, но не должно появляться у операторов как ответ бота.
         if (
             $message->message_kind === Message::KIND_LANGUAGE_SELECTOR
+            || $message->message_kind === Message::KIND_SYSTEM
             || app(SupportLanguageService::class)->isSelectorText($message->text)
         ) {
             return;
@@ -371,6 +376,10 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             return;
         }
 
+        if ($this->isPrivateServiceCommand()) {
+            return;
+        }
+
         $text = is_string($message->text) && trim($message->text) !== ''
             ? app(TelegramMarkupSanitizer::class)->toPlainText($message->text)
             : null;
@@ -378,18 +387,52 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             return;
         }
 
-        SendTelegramMirrorJob::dispatch(
+        $mirrorJob = new SendTelegramMirrorJob(
             $botUser->id,
             $message->id,
             $text,
             $this->traceId,
-        )->afterCommit();
+        );
+
+        if ($this->isFirstVisibleIncomingMessage($botUser, $message)) {
+            $contactOperationKey = hash('sha256', "telegram-first-contact|{$botUser->id}");
+
+            TopicCreateJob::withChain([
+                new SendContactMessageJob($botUser->id, $this->updateDto->languageCode, $contactOperationKey),
+                $mirrorJob,
+            ])->onQueue('telegram-mirror')->dispatch($botUser->id);
+        } else {
+            dispatch($mirrorJob)->afterCommit();
+        }
 
         TelegramPipelineTrace::log('support_mirror_queued', $this->traceId, [
             'bot_user_id' => $botUser->id,
             'message_id' => $message->id,
             'direction' => 'incoming',
         ]);
+    }
+
+    private function isFirstVisibleIncomingMessage(BotUser $botUser, Message $message): bool
+    {
+        if (empty($botUser->preferred_language_code)) {
+            return false;
+        }
+
+        return !Message::query()
+            ->where('bot_user_id', $botUser->id)
+            ->where('message_type', 'incoming')
+            ->whereKeyNot($message->id)
+            ->where(function ($query): void {
+                $query->whereNull('text')
+                    ->orWhereRaw("LOWER(TRIM(text)) NOT IN ('/start', '/lang', '/language')");
+            })
+            ->exists();
+    }
+
+    private function isPrivateServiceCommand(): bool
+    {
+        return $this->updateDto->typeSource === 'private'
+            && in_array(strtolower(trim((string) $this->updateDto->text)), ['/start', '/lang', '/language'], true);
     }
 
     private function persistedMessage(BotUser $botUser): ?Message
