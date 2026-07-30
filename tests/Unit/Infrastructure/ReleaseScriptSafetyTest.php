@@ -36,7 +36,13 @@ class ReleaseScriptSafetyTest extends TestCase
         $this->assertIsString($script);
         $this->assertStringNotContainsString('docker compose up --no-deps assets_init', $script);
         $this->assertStringContainsString('docker/nginx/default.conf.template', $script);
+        $this->assertStringContainsString('docker/nginx/default.windows-docker.conf.template', $script);
+        $this->assertStringContainsString('/etc/letsencrypt/live/${main_domain}/fullchain.pem', $script);
         $this->assertStringContainsString('s/__MAIN_DOMAIN__/${main_domain}/g', $script);
+        $this->assertStringContainsString('cp "$PREVIOUS_NGINX_CONFIG" docker/nginx/default.conf', $script);
+        $this->assertStringContainsString('docker compose up -d --force-recreate nginx', $script);
+        $this->assertStringContainsString('services_ready', $script);
+        $this->assertStringContainsString('HEALTH_SERVICES', $script);
         $this->assertLessThan(
             strpos($script, 'docker compose up -d pgdb redis app'),
             strpos($script, 'mv "${nginx_config}.tmp" "$nginx_config"'),
