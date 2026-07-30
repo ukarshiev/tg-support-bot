@@ -27,6 +27,7 @@ use App\Modules\Translation\DTOs\TranslationRequest;
 use App\Modules\Translation\Services\SupportLanguageSettings;
 use App\Modules\Translation\Services\TranslationService;
 use App\Services\AutoReplies\AutoReplyVariableRenderer;
+use App\Services\ClientLanguageService;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -109,7 +110,7 @@ class ConversationPage extends Component
 
     public ?string $autoAiNotice = null;
 
-    public ?string $chatTranslationLocale = null;
+    public ?string $clientLanguageCode = null;
 
     public bool $chatHistoryTranslationActive = false;
 
@@ -355,7 +356,7 @@ class ConversationPage extends Component
 
         $this->loadMessages();
         $this->loadPendingAiDrafts();
-        $this->syncChatTranslationState();
+        $this->syncClientLanguageState();
         $this->queueVisibleHistoryTranslations();
         $this->reloadLoadedMessages();
         $this->loadDialogList();
@@ -377,7 +378,7 @@ class ConversationPage extends Component
 
     private function resetChatTranslationState(): void
     {
-        $this->chatTranslationLocale = null;
+        $this->clientLanguageCode = null;
         $this->chatHistoryTranslationActive = false;
         $this->chatHistoryTranslationHasPending = false;
     }
@@ -684,14 +685,8 @@ class ConversationPage extends Component
             'attachment' => ['nullable', 'file', 'max:20480'],
         ]);
 
-        $targetLocale = strtolower(trim((string) $this->activeBotUser->preferred_language_code));
-        if (trim($this->replyText) !== '' && $targetLocale !== 'ru') {
-            if ($targetLocale === '') {
-                $this->toast('Клиент ещё не выбрал язык. Текст не отправлен.', 'error');
-
-                return;
-            }
-
+        $targetLocale = app(ClientLanguageService::class)->code($this->activeBotUser);
+        if (trim($this->replyText) !== '' && app(ClientLanguageService::class)->requiresTranslation($this->activeBotUser)) {
             if ($this->replyTranslationStatus !== 'ready' || trim((string) $this->replyTranslatedText) === '') {
                 $this->toast('Перевод ещё не готов. Текст не отправлен.', 'error');
 
@@ -713,7 +708,7 @@ class ConversationPage extends Component
             MessageTranslation::create([
                 'message_id' => $message->id,
                 'source_locale' => 'ru',
-                'target_locale' => $this->activeBotUser->preferred_language_code,
+                'target_locale' => $targetLocale,
                 'source_text' => $sourceText,
                 'translated_text' => $textToSend,
                 'direction' => 'operator_to_client',
@@ -1058,15 +1053,8 @@ class ConversationPage extends Component
             return;
         }
 
-        $targetLocale = $this->activeBotUser->preferred_language_code;
-        if ($targetLocale === null || $targetLocale === '') {
-            $this->replyTranslationStatus = 'language_not_selected';
-            $this->replyTranslatedText = null;
-            $this->replyTranslationError = 'Клиент ещё не выбрал язык.';
-            return;
-        }
-
-        if ($targetLocale === 'ru') {
+        $targetLocale = app(ClientLanguageService::class)->code($this->activeBotUser);
+        if ($targetLocale === null || $targetLocale === 'ru') {
             $this->replyTranslationStatus = 'ready';
             $this->replyTranslatedText = $this->replyText;
             $this->replyTranslationError = null;
@@ -1112,48 +1100,57 @@ class ConversationPage extends Component
             ->all();
     }
 
-    public function chatTranslationButtonLabel(): string
+    public function clientLanguageButtonLabel(): string
     {
-        if ($this->chatTranslationLocale === null || $this->chatTranslationLocale === '') {
+        if ($this->clientLanguageCode === null || $this->clientLanguageCode === '') {
             return 'Не выбран';
         }
 
-        return $this->languageFlag($this->chatTranslationLocale) . ' ' . mb_strtoupper($this->chatTranslationLocale);
+        return $this->languageFlag($this->clientLanguageCode) . ' ' . mb_strtoupper($this->clientLanguageCode);
     }
 
-    public function chatTranslationTooltip(): string
+    public function clientLanguageTooltip(): string
     {
-        if ($this->chatTranslationLocale === null || $this->chatTranslationLocale === '') {
-            return 'Язык клиента не выбран';
+        if ($this->clientLanguageCode === null || $this->clientLanguageCode === '') {
+            return 'Язык не выбран — оригинал отправляется без перевода';
         }
 
-        if ($this->chatTranslationLocale === 'ru') {
-            return 'Русский язык — перевод не требуется';
+        if ($this->clientLanguageCode === 'ru') {
+            return 'Русский язык — оригинал отправляется без перевода';
         }
 
-        return 'Перевод диалога включён';
+        return 'Язык клиента — сообщения переводятся перед отправкой';
     }
 
-    public function setChatTranslationLocale(string $locale): void
+    public function clientLanguageRequiresTranslation(): bool
+    {
+        return app(ClientLanguageService::class)->requiresTranslation($this->activeBotUser);
+    }
+
+    public function setClientLanguage(string $locale): void
     {
         if (!$this->activeBotUser) {
             return;
         }
 
         $enabled = collect($this->availableTranslationLanguages())->pluck('code')->all();
-        if (!in_array($locale, $enabled, true)) {
+        if ($locale !== '' && !in_array($locale, $enabled, true)) {
             return;
         }
 
-        $this->activeBotUser->update([
-            'chat_translation_locale' => $locale,
-            'chat_translation_locale_selected_at' => now(),
-        ]);
-        $this->activeBotUser->refresh();
-        $this->syncChatTranslationState();
+        $this->activeBotUser = app(ClientLanguageService::class)->select(
+            $this->activeBotUser,
+            $locale !== '' ? $locale : null,
+        );
+        $this->syncClientLanguageState();
+        $this->refreshReplyTranslation();
         $this->queueVisibleHistoryTranslations();
         $this->loadMessages();
-        $this->toast($locale === 'ru' ? 'Перевод истории выключен' : 'Перевод истории запущен');
+        $this->toast(
+            $locale === '' || $locale === 'ru'
+                ? 'Язык клиента сохранён. Оригинал будет отправлен без перевода'
+                : 'Язык клиента сохранён. Перевод включён',
+        );
     }
 
     public function retryMessageTranslation(int $messageId): void
@@ -1170,16 +1167,6 @@ class ConversationPage extends Component
             return;
         }
 
-        $failedTranslation = $message->translations()
-            ->where('status', 'failed')
-            ->latest('id')
-            ->first();
-
-        if ($failedTranslation instanceof MessageTranslation && is_string($failedTranslation->source_locale)) {
-            $this->chatTranslationLocale = $failedTranslation->source_locale;
-            $this->chatHistoryTranslationActive = $failedTranslation->source_locale !== 'ru';
-        }
-
         $queued = $this->queueTranslationForMessage($message, force: true, dispatchImmediately: true);
 
         if (!$queued) {
@@ -1192,57 +1179,20 @@ class ConversationPage extends Component
         $this->toast('Повторный перевод поставлен в очередь');
     }
 
-    private function syncChatTranslationState(): void
+    private function syncClientLanguageState(): void
     {
         if (!$this->activeBotUser) {
-            $this->chatTranslationLocale = null;
+            $this->clientLanguageCode = null;
             $this->chatHistoryTranslationActive = false;
             $this->chatHistoryTranslationHasPending = false;
 
             return;
         }
 
-        $enabled = collect($this->availableTranslationLanguages())->pluck('code')->all();
-        $locale = $this->resolveChatTranslationLocale($this->activeBotUser);
-
-        if ($locale !== null && !in_array($locale, $enabled, true)) {
-            $locale = null;
-        }
-
-        if ($locale !== null && $this->activeBotUser->chat_translation_locale !== $locale) {
-            $this->activeBotUser->forceFill([
-                'chat_translation_locale' => $locale,
-                'chat_translation_locale_selected_at' => $this->activeBotUser->chat_translation_locale_selected_at ?: now(),
-            ])->save();
-            $this->activeBotUser->refresh();
-        }
-
-        $this->chatTranslationLocale = $locale;
+        $locale = app(ClientLanguageService::class)->code($this->activeBotUser);
+        $this->clientLanguageCode = $locale;
         $this->chatHistoryTranslationActive = $locale !== null && $locale !== 'ru';
         $this->refreshHistoryTranslationPendingState();
-    }
-
-    private function resolveChatTranslationLocale(BotUser $botUser): ?string
-    {
-        $chatLocale = $botUser->chat_translation_locale;
-
-        if (
-            $chatLocale !== null
-            && $chatLocale !== ''
-            && $botUser->chat_translation_locale_selected_at !== null
-            && (
-                $botUser->preferred_language_selected_at === null
-                || $botUser->chat_translation_locale_selected_at->greaterThanOrEqualTo($botUser->preferred_language_selected_at)
-            )
-        ) {
-            return $chatLocale;
-        }
-
-        if ($botUser->preferred_language_selected_at !== null && filled($botUser->preferred_language_code)) {
-            return $botUser->preferred_language_code;
-        }
-
-        return null;
     }
 
     private function queueVisibleHistoryTranslations(?Collection $messages = null): void
@@ -1295,7 +1245,7 @@ class ConversationPage extends Component
      */
     private function queueTranslationForMessage(Message $message, bool $force = false, bool $dispatchImmediately = false): ?array
     {
-        $locale = $this->chatTranslationLocale ?: 'ru';
+        $locale = $this->clientLanguageCode ?: 'ru';
         if ($locale === 'ru') {
             return null;
         }
@@ -1465,7 +1415,7 @@ class ConversationPage extends Component
 
     private function ensureAiDraftOperatorTextIsRussian(AiMessage $draft): void
     {
-        $targetLocale = (string) ($draft->target_locale ?: $this->chatTranslationLocale ?: $this->activeBotUser?->preferred_language_code ?: 'ru');
+        $targetLocale = (string) ($draft->target_locale ?: $this->clientLanguageCode ?: 'ru');
         if ($targetLocale === 'ru') {
             return;
         }

@@ -97,7 +97,9 @@ class SendAiDraftJobTest extends TestCase
 
         Http::assertSent(function ($request) {
             return str_contains($request->url(), $this->aiToken . '/sendMessage')
-                && str_contains((string) ($request->data()['text'] ?? ''), 'ИИ-черновик');
+                && str_contains((string) ($request->data()['text'] ?? ''), 'ИИ-черновик')
+                && str_contains((string) ($request->data()['text'] ?? ''), 'Оригинал без перевода')
+                && !str_contains((string) ($request->data()['text'] ?? ''), 'Клиенту на');
         });
     }
 

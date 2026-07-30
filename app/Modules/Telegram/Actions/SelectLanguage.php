@@ -10,6 +10,7 @@ use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Services\SupportLanguageService;
 use App\Modules\Translation\Support\TelegramMarkupSanitizer;
+use App\Services\ClientLanguageService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -20,6 +21,7 @@ class SelectLanguage
         private readonly SendContactMessage $sendContactMessage,
         private readonly AnswerCallbackQuery $answerCallbackQuery,
         private readonly TelegramMarkupSanitizer $telegramMarkupSanitizer,
+        private readonly ClientLanguageService $clientLanguage,
     ) {
     }
 
@@ -88,13 +90,7 @@ class SelectLanguage
             'had_selected_language' => $hadSelectedLanguage,
         ]);
 
-        $botUser->update([
-            'preferred_language_code' => $code,
-            'preferred_language_name' => $language['name'],
-            'preferred_language_selected_at' => now(),
-        ]);
-
-        $botUser->refresh();
+        $botUser = $this->clientLanguage->select($botUser, $code);
 
         if (!$hadSelectedLanguage) {
             $this->sendContactMessage->execute($botUser, $update->languageCode);

@@ -84,21 +84,19 @@ class AcceptAiDraftReplyMessage
     private function translateForClient(BotUser $botUser, string $sourceText): array
     {
         $locale = strtolower(trim((string) $botUser->preferred_language_code));
-        if ($locale === 'ru') {
+        if ($locale === '' || $locale === 'ru') {
             return [$sourceText, 'same_locale', 'ready'];
         }
 
-        if ($locale !== '') {
-            $translation = app(TranslationService::class)->translate(new TranslationRequest(
-                sourceLocale: 'ru',
-                targetLocale: $locale,
-                text: $sourceText,
-                purpose: 'ai_operator_edited_reply',
-            ));
+        $translation = app(TranslationService::class)->translate(new TranslationRequest(
+            sourceLocale: 'ru',
+            targetLocale: $locale,
+            text: $sourceText,
+            purpose: 'ai_operator_edited_reply',
+        ));
 
-            if ($translation->success && trim((string) $translation->text) !== '') {
-                return [$translation->text, $translation->provider, 'ready'];
-            }
+        if ($translation->success && trim((string) $translation->text) !== '') {
+            return [$translation->text, $translation->provider, 'ready'];
         }
 
         return [

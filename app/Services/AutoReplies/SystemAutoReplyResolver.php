@@ -37,8 +37,8 @@ class SystemAutoReplyResolver
             return null;
         }
 
-        if ($locale === 'ru') {
-            $this->logResolution($type, $botUser, $locale, 'source_ru');
+        if ($locale === '' || $locale === 'ru') {
+            $this->logResolution($type, $botUser, $locale, 'source_without_translation');
             return $this->render($reply->response, $botUser);
         }
 
@@ -97,7 +97,7 @@ class SystemAutoReplyResolver
     {
         $locale = strtolower(trim((string) $locale));
 
-        return $locale !== '' ? str_replace('_', '-', $locale) : 'en';
+        return $locale !== '' ? str_replace('_', '-', $locale) : '';
     }
 
     private function logResolution(string $type, ?BotUser $botUser, string $locale, string $level): void
