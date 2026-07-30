@@ -35,6 +35,22 @@ if [[ -z "$app_key" || "$app_key" == *YOUR_APP_KEY_HERE* ]]; then
     exit 1
 fi
 
+main_domain="$(sed -n 's/^MAIN_DOMAIN=//p' .env | tail -n 1 | tr -d '\r')"
+if [[ ! "$main_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+    echo "MAIN_DOMAIN must contain only a valid DNS hostname." >&2
+    exit 1
+fi
+
+nginx_template="docker/nginx/default.conf.template"
+nginx_config="docker/nginx/default.conf"
+if [[ ! -f "$nginx_template" ]]; then
+    echo "Missing nginx config template: $nginx_template" >&2
+    exit 1
+fi
+
+sed "s/__MAIN_DOMAIN__/${main_domain}/g" "$nginx_template" > "${nginx_config}.tmp"
+mv "${nginx_config}.tmp" "$nginx_config"
+
 for service in "${SERVICES[@]}"; do
     container_id="$(docker compose ps -q "$service" 2>/dev/null || true)"
     if [[ -n "$container_id" ]]; then
@@ -68,7 +84,6 @@ chmod 600 "$backup_file"
 backup_checksum="$(sha256sum "$backup_file" | awk '{print $1}')"
 
 docker compose build --pull
-docker compose up --no-deps assets_init
 docker compose up -d pgdb redis app
 docker compose exec -T --user root app sh -lc 'rm -f bootstrap/cache/*.php'
 docker compose exec -T app php artisan migrate --force
