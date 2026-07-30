@@ -1,3 +1,10 @@
+0.36.5 – 30.07.2026
+- [Критический фикс] (Plane TGSUPBOT-68 / Linear ID: KAR-336) Translation placeholders — Переменные, ссылки и упоминания больше не передаются Yandex/Google/offline-провайдерам внутри переводимых XML-тегов: непрозрачные ASCII-маркеры со служебной сигнатурой скрывают значения полностью и восстанавливаются только при точном round-trip. Боевой прогон подтвердил, что они стабильнее одиночных Unicode PUA-маркеров для всех настроенных языков.
+- [Защита] (Plane TGSUPBOT-68 / Linear ID: KAR-336) TranslationService/SystemAutoReplyResolver — Потерянные, дублированные или переведённые placeholders и добавленная XML-разметка отклоняются до кэша/status `ready`; старые повреждённые системные переводы не отправляются клиенту и безопасно откатываются на валидный английский fallback.
+- [Восстановление] (Plane TGSUPBOT-68 / Linear ID: KAR-336) auto-replies:translate-system — Команда повторно ставит в очередь ready-переводы с повреждёнными переменными даже при актуальном source hash.
+- [Проверка] (Plane TGSUPBOT-68 / Linear ID: KAR-336) PHPUnit/PHPStan/Pint — 83 изолированных теста и 279 assertions, PHPStan без ошибок, изменённые PHP-файлы соответствуют PSR-12.
+- [Деплой] (Plane TGSUPBOT-68 / Linear ID: KAR-336) Production-like Docker — PHP-сервисы пересобраны и перезапущены без миграций/рестарта PostgreSQL и Redis; 44 повреждённых перевода восстановлены, арабский welcome хранит исходные `{{connector}}`/`{{paybot}}`, один недоступный испанский перевод безопасно использует английский fallback.
+
 0.36.4 – 30.07.2026
 - [Безопасность] (Plane TGSUPBOT-81) Composer — Guzzle, PSR-7 и связанные зависимости обновлены до версий без шести известных security advisories.
 - [Безопасность] (Plane TGSUPBOT-81) Docker — build-only `linux-libc-dev` удаляется из runtime-слоя и больше не приносит уязвимые заголовки ядра в production image.
@@ -588,6 +595,9 @@
 
 
 
+<<<<<<< HEAD
 
 
 
+=======
+>>>>>>> 1e386f2 (fix(translation): preserve auto-reply variables)

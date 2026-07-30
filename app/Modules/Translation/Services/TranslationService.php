@@ -48,7 +48,11 @@ class TranslationService
             'status' => 'ready',
         ])->first();
 
-        if ($cached !== null && is_string($cached->translated_text) && $cached->translated_text !== '') {
+        if ($cached !== null
+            && is_string($cached->translated_text)
+            && $cached->translated_text !== ''
+            && $this->placeholders->isValidTranslation($text, $cached->translated_text)
+        ) {
             return TranslationResult::success($cached->translated_text, (string) $cached->provider, true);
         }
 
@@ -73,17 +77,21 @@ class TranslationService
                 allowExternal: $request->allowExternal,
             ));
 
-            $this->logUsage(
-                $providerKey,
-                $request,
-                $result->success,
-                $result->errorCode,
-                $result->errorMessage,
-            );
-
             if ($result->success && is_string($result->text)) {
+                $translated = $this->validatedTranslation($result->text, $placeholderMap, $text);
+                if ($translated === null) {
+                    $this->logUsage(
+                        $providerKey,
+                        $request,
+                        false,
+                        'placeholder_corrupted',
+                        'Провайдер повредил защищённые фрагменты перевода.',
+                    );
+                    continue;
+                }
+
+                $this->logUsage($providerKey, $request, true);
                 $this->resetFailures($providerKey);
-                $translated = $this->placeholders->restore($result->text, $placeholderMap);
 
                 TranslationCacheEntry::updateOrCreate(
                     [
@@ -102,6 +110,14 @@ class TranslationService
 
                 return TranslationResult::success($translated, $providerKey);
             }
+
+            $this->logUsage(
+                $providerKey,
+                $request,
+                false,
+                $result->errorCode,
+                $result->errorMessage,
+            );
 
             if (in_array($result->errorCode, ['rate_limited', 'provider_error', 'timeout_or_network'], true)) {
                 $this->registerFailure($providerKey);
@@ -197,19 +213,37 @@ class TranslationService
             allowExternal: $request->allowExternal,
         ));
 
+        if ($result->success && is_string($result->text)) {
+            $translated = $this->validatedTranslation($result->text, $placeholderMap, $text);
+            if ($translated === null) {
+                $this->logUsage(
+                    $providerKey,
+                    $request,
+                    false,
+                    'placeholder_corrupted',
+                    'Провайдер повредил защищённые фрагменты перевода.',
+                );
+
+                return TranslationResult::failure(
+                    'placeholder_corrupted',
+                    'Провайдер повредил защищённые фрагменты перевода.',
+                    $providerKey,
+                );
+            }
+
+            $this->logUsage($providerKey, $request, true);
+            $this->resetFailures($providerKey);
+
+            return TranslationResult::success($translated, $providerKey);
+        }
+
         $this->logUsage(
             $providerKey,
             $request,
-            $result->success,
+            false,
             $result->errorCode,
             $result->errorMessage,
         );
-
-        if ($result->success && is_string($result->text)) {
-            $this->resetFailures($providerKey);
-
-            return TranslationResult::success($this->placeholders->restore($result->text, $placeholderMap), $providerKey);
-        }
 
         if (in_array($result->errorCode, ['rate_limited', 'provider_error', 'timeout_or_network'], true)) {
             $this->registerFailure($providerKey);
@@ -236,7 +270,11 @@ class TranslationService
             'status' => 'ready',
         ])->first();
 
-        if ($cached !== null && is_string($cached->translated_text) && $cached->translated_text !== '') {
+        if ($cached !== null
+            && is_string($cached->translated_text)
+            && $cached->translated_text !== ''
+            && $this->placeholders->isValidTranslation($text, $cached->translated_text)
+        ) {
             return TranslationResult::success($cached->translated_text, (string) $cached->provider, true);
         }
 
@@ -333,7 +371,7 @@ class TranslationService
 
             $providerResults = $provider instanceof BatchTranslationProvider
                 ? $provider->translateBatch($prototype, array_values($protected))
-                : $this->translateChunkOneByOne($providerKey, array_values($requests));
+                : $this->translateChunkOneByOne($providerKey, $prototype, array_values($protected));
 
             $results = [];
             $successCount = 0;
@@ -343,20 +381,36 @@ class TranslationService
                 $result = $providerResults[$position] ?? TranslationResult::failure('empty_response', 'Провайдер не вернул перевод.', $providerKey);
                 $request = $requests[$index];
 
-                $this->logUsage(
-                    $providerKey,
-                    $request,
-                    $result->success,
-                    $result->errorCode,
-                    $result->errorMessage,
-                );
-
                 if ($result->success && is_string($result->text)) {
+                    $translated = $this->validatedTranslation($result->text, $maps[$index], $texts[$index]);
+                    if ($translated === null) {
+                        $this->logUsage(
+                            $providerKey,
+                            $request,
+                            false,
+                            'placeholder_corrupted',
+                            'Провайдер повредил защищённые фрагменты перевода.',
+                        );
+                        $results[$index] = TranslationResult::failure(
+                            'placeholder_corrupted',
+                            'Провайдер повредил защищённые фрагменты перевода.',
+                            $providerKey,
+                        );
+                        continue;
+                    }
+
+                    $this->logUsage($providerKey, $request, true);
                     $successCount++;
-                    $translated = $this->placeholders->restore($result->text, $maps[$index]);
                     $this->storeCache($request, $texts[$index], $translated, $providerKey);
                     $results[$index] = TranslationResult::success($translated, $providerKey);
                 } else {
+                    $this->logUsage(
+                        $providerKey,
+                        $request,
+                        false,
+                        $result->errorCode,
+                        $result->errorMessage,
+                    );
                     $results[$index] = $result;
                 }
             }
@@ -380,15 +434,29 @@ class TranslationService
     }
 
     /**
-     * @param array<int, TranslationRequest> $requests
+     * @param list<string> $protectedTexts
      *
      * @return array<int, TranslationResult>
      */
-    private function translateChunkOneByOne(string $providerKey, array $requests): array
-    {
+    private function translateChunkOneByOne(
+        string $providerKey,
+        TranslationRequest $prototype,
+        array $protectedTexts,
+    ): array {
+        $provider = $this->providers->get($providerKey);
+        if ($provider === null) {
+            return [];
+        }
+
         return array_map(
-            fn (TranslationRequest $request): TranslationResult => $this->translateWithProvider($providerKey, $request),
-            $requests,
+            fn (string $text): TranslationResult => $provider->translate(new TranslationRequest(
+                sourceLocale: $prototype->sourceLocale,
+                targetLocale: $prototype->targetLocale,
+                text: $text,
+                purpose: $prototype->purpose,
+                allowExternal: $prototype->allowExternal,
+            )),
+            $protectedTexts,
         );
     }
 
@@ -422,6 +490,19 @@ class TranslationService
                 'meta' => ['purpose' => $request->purpose],
             ]
         );
+    }
+
+    /**
+     * @param array<string, string> $placeholderMap
+     */
+    private function validatedTranslation(string $providerText, array $placeholderMap, string $sourceText): ?string
+    {
+        $translated = $this->placeholders->restoreSafely($providerText, $placeholderMap);
+        if ($translated === null || !$this->placeholders->isValidTranslation($sourceText, $translated)) {
+            return null;
+        }
+
+        return $translated;
     }
 
     /**
