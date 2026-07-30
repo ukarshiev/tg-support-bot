@@ -35,7 +35,7 @@ class TgVkMessageServiceTest extends TestCase
         $this->botUser->topic_id = 123;
         $this->botUser->save();
 
-        $this->basicPayload = TelegramUpdateDto_VKMock::getDtoParams();
+        $this->basicPayload = TelegramUpdateDto_VKMock::getDtoParams($this->botUser);
     }
 
     protected function tearDown(): void
