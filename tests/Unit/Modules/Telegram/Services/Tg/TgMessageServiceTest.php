@@ -33,6 +33,7 @@ class TgMessageServiceTest extends TestCase
         $this->botUser->save();
 
         $payload = TelegramUpdateDtoMock::getDtoParams();
+        $payload['message']['chat']['id'] = $tgChatId;
         $payload['message']['message_thread_id'] = $this->botUser->topic_id;
         $this->basicPayload = $payload;
 
