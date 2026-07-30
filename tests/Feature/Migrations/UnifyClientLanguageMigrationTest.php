@@ -16,7 +16,12 @@ class UnifyClientLanguageMigrationTest extends TestCase
 
     public function test_newest_language_is_preserved_in_the_single_runtime_source(): void
     {
+        $dropLegacyMigration = require database_path(
+            'migrations/2026_07_30_000000_drop_legacy_client_language_columns.php'
+        );
         $migration = require database_path('migrations/2026_07_29_000000_backfill_single_client_language.php');
+
+        $dropLegacyMigration->down();
 
         $chatIsNewer = BotUser::create([
             'chat_id' => 9101,
