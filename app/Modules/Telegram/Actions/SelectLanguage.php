@@ -18,7 +18,6 @@ class SelectLanguage
 {
     public function __construct(
         private readonly SupportLanguageService $languages,
-        private readonly SendContactMessage $sendContactMessage,
         private readonly AnswerCallbackQuery $answerCallbackQuery,
         private readonly TelegramMarkupSanitizer $telegramMarkupSanitizer,
         private readonly ClientLanguageService $clientLanguage,
@@ -91,10 +90,6 @@ class SelectLanguage
         ]);
 
         $botUser = $this->clientLanguage->select($botUser, $code);
-
-        if (!$hadSelectedLanguage) {
-            $this->sendContactMessage->execute($botUser, $update->languageCode);
-        }
 
         if ($greeting !== null && $greeting !== '') {
             SendTelegramMessageJob::dispatch(

@@ -91,7 +91,7 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_dialog_list_contains_bot_users(): void
     {
-        BotUser::create(['chat_id' => '111', 'platform' => 'telegram']);
+        BotUser::create(['chat_id' => '111', 'platform' => 'vk']);
 
         $component = Livewire::test(ConversationPage::class);
 
@@ -138,7 +138,7 @@ class ConversationWorkspaceTest extends TestCase
     {
         BotUser::create([
             'chat_id' => '300',
-            'platform' => 'telegram',
+            'platform' => 'vk',
             'is_closed' => true,
             'closed_at' => now(),
         ]);
@@ -149,7 +149,7 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_dialog_list_does_not_mark_open_conversations(): void
     {
-        BotUser::create(['chat_id' => '301', 'platform' => 'telegram', 'is_closed' => false]);
+        BotUser::create(['chat_id' => '301', 'platform' => 'vk', 'is_closed' => false]);
 
         Livewire::test(ConversationPage::class)
             ->assertDontSee('Обращение закрыто');
@@ -159,8 +159,8 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_search_filters_dialog_list_by_chat_id(): void
     {
-        BotUser::create(['chat_id' => '12345', 'platform' => 'telegram']);
-        BotUser::create(['chat_id' => '99999', 'platform' => 'telegram']);
+        BotUser::create(['chat_id' => '12345', 'platform' => 'vk']);
+        BotUser::create(['chat_id' => '99999', 'platform' => 'vk']);
 
         Livewire::test(ConversationPage::class)
             ->set('search', '123')
@@ -170,7 +170,7 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_empty_search_shows_all_users(): void
     {
-        BotUser::create(['chat_id' => '11111', 'platform' => 'telegram']);
+        BotUser::create(['chat_id' => '11111', 'platform' => 'vk']);
         BotUser::create(['chat_id' => '22222', 'platform' => 'vk']);
 
         Livewire::test(ConversationPage::class)
@@ -182,8 +182,8 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_status_filter_open_excludes_closed_dialogs(): void
     {
-        BotUser::create(['chat_id' => '300', 'platform' => 'telegram', 'is_closed' => false]);
-        BotUser::create(['chat_id' => '301', 'platform' => 'telegram', 'is_closed' => true]);
+        BotUser::create(['chat_id' => '300', 'platform' => 'vk', 'is_closed' => false]);
+        BotUser::create(['chat_id' => '301', 'platform' => 'vk', 'is_closed' => true]);
 
         Livewire::test(ConversationPage::class)
             ->set('statusFilter', 'open')
@@ -193,8 +193,8 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_status_filter_closed_excludes_open_dialogs(): void
     {
-        BotUser::create(['chat_id' => '400', 'platform' => 'telegram', 'is_closed' => false]);
-        BotUser::create(['chat_id' => '401', 'platform' => 'telegram', 'is_closed' => true]);
+        BotUser::create(['chat_id' => '400', 'platform' => 'vk', 'is_closed' => false]);
+        BotUser::create(['chat_id' => '401', 'platform' => 'vk', 'is_closed' => true]);
 
         Livewire::test(ConversationPage::class)
             ->set('statusFilter', 'closed')
@@ -204,12 +204,47 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_status_filter_all_shows_both(): void
     {
-        BotUser::create(['chat_id' => '500', 'platform' => 'telegram', 'is_closed' => false]);
-        BotUser::create(['chat_id' => '501', 'platform' => 'telegram', 'is_closed' => true]);
+        BotUser::create(['chat_id' => '500', 'platform' => 'vk', 'is_closed' => false]);
+        BotUser::create(['chat_id' => '501', 'platform' => 'vk', 'is_closed' => true]);
 
         Livewire::test(ConversationPage::class)
             ->set('statusFilter', 'all')
             ->assertSet('dialogList', fn ($list) => $list->count() === 2);
+    }
+
+    public function test_telegram_dialog_appears_only_after_first_real_incoming_message(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => '502',
+            'platform' => 'telegram',
+            'preferred_language_code' => 'ru',
+        ]);
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'message_kind' => Message::KIND_SYSTEM,
+            'from_id' => 1,
+            'to_id' => 2,
+            'text' => 'Добро пожаловать',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->assertSet('dialogList', fn ($list) => $list->isEmpty());
+
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 3,
+            'to_id' => 0,
+            'text' => 'Нужна помощь',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->assertSet('dialogList', fn ($list) => $list->count() === 1
+                && $list->first()->id === $botUser->id);
     }
 
     // ── Select dialog ──────────────────────────────────────────────────────────
@@ -318,7 +353,7 @@ class ConversationWorkspaceTest extends TestCase
             ->assertSee('не определён');
     }
 
-    public function test_contact_summary_is_rendered_as_virtual_message_without_db_duplicate(): void
+    public function test_contact_summary_is_rendered_before_first_real_message_without_db_duplicate(): void
     {
         $botUser = BotUser::create([
             'chat_id' => '2099781047',
@@ -329,7 +364,16 @@ class ConversationWorkspaceTest extends TestCase
             'preferred_language_name' => 'Русский',
         ]);
 
-        $this->assertSame(0, Message::count());
+        Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 1,
+            'to_id' => 0,
+            'text' => 'Нужна помощь',
+        ]);
+
+        $this->assertSame(1, Message::count());
 
         Livewire::test(ConversationPage::class)
             ->call('selectChat', $botUser->id)
@@ -345,7 +389,7 @@ class ConversationWorkspaceTest extends TestCase
             ->assertSee('Регион: не определён')
             ->assertSeeHtml('title="Краткая контактная информация"');
 
-        $this->assertSame(0, Message::count());
+        $this->assertSame(1, Message::count());
     }
 
     public function test_contact_drawer_renders_subscription_and_history_placeholders(): void
@@ -439,11 +483,11 @@ class ConversationWorkspaceTest extends TestCase
 
     public function test_poll_updates_refreshes_dialog_list(): void
     {
-        BotUser::create(['chat_id' => '1032', 'platform' => 'telegram']);
+        BotUser::create(['chat_id' => '1032', 'platform' => 'vk']);
 
         $component = Livewire::test(ConversationPage::class);
 
-        BotUser::create(['chat_id' => '1033', 'platform' => 'telegram']);
+        BotUser::create(['chat_id' => '1033', 'platform' => 'vk']);
 
         $component->call('pollUpdates')
             ->assertSet('dialogList', fn ($list) => $list->count() === 2);
@@ -728,7 +772,7 @@ class ConversationWorkspaceTest extends TestCase
     {
         BotUser::create([
             'chat_id' => '1024',
-            'platform' => 'telegram',
+            'platform' => 'vk',
             'is_banned' => true,
             'banned_at' => now(),
             'is_closed' => true,

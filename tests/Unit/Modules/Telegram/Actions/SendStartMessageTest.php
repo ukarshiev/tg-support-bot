@@ -225,9 +225,7 @@ class SendStartMessageTest extends TestCase
         $this->assertEquals('Hello! How can I help you?', $pushed[0]['job']->queryParams->text);
         $this->assertNull($pushed[0]['job']->queryParams->parse_mode);
 
-        Queue::assertPushed(SendContactMessageJob::class, fn (SendContactMessageJob $job): bool =>
-            $job->botUserId === $botUser->id
-            && $job->telegramLanguageCode === 'en');
+        Queue::assertNotPushed(SendContactMessageJob::class);
     }
 
     public function test_new_language_callback_sends_welcome_even_if_same_greeting_exists_in_history(): void

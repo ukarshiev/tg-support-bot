@@ -129,7 +129,7 @@ class IncomingMessagePersistenceTest extends TestCase
 
         $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
 
-        $this->assertSame(1, Message::where('bot_user_id', $botUser->id)->count());
+        $this->assertSame(0, Message::where('bot_user_id', $botUser->id)->count());
         Queue::assertPushed(\App\Modules\Telegram\Jobs\SendTelegramMessageJob::class, function ($job): bool {
             return $job->typeMessage === 'outgoing'
                 && $job->queryParams->text === 'Choose language';
@@ -665,7 +665,7 @@ class IncomingMessagePersistenceTest extends TestCase
         $this->assertSame('Admin can see me', $messages->first()->text);
     }
 
-    public function test_telegram_start_message_is_persisted_for_debug_visibility(): void
+    public function test_telegram_start_message_is_not_persisted_as_support_history(): void
     {
         Queue::fake();
 
@@ -682,7 +682,7 @@ class IncomingMessagePersistenceTest extends TestCase
             'text' => '/start',
         ]))->assertOk();
 
-        $this->assertDatabaseHas('messages', [
+        $this->assertDatabaseMissing('messages', [
             'bot_user_id' => $botUser->id,
             'platform' => 'telegram',
             'message_type' => 'incoming',
@@ -691,7 +691,7 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
     }
 
-    public function test_telegram_start_with_group_on_queues_start_before_language_selector(): void
+    public function test_telegram_start_with_group_on_queues_only_language_selector(): void
     {
         Queue::fake();
 
@@ -719,10 +719,10 @@ class IncomingMessagePersistenceTest extends TestCase
             ])
             ->values();
 
-        $this->assertGreaterThanOrEqual(2, $ordered->count());
-        $this->assertSame(['type' => 'incoming', 'text' => '/start'], $ordered->get(0));
-        $this->assertSame('outgoing', $ordered->get(1)['type']);
-        $this->assertSame('Choose language', $ordered->get(1)['text']);
+        $this->assertCount(1, $ordered);
+        $this->assertSame('outgoing', $ordered->get(0)['type']);
+        $this->assertSame('Choose language', $ordered->get(0)['text']);
+        Queue::assertNotPushed(TopicCreateJob::class);
     }
 
     public function test_telegram_repeated_start_with_existing_selector_queues_fresh_selector(): void
@@ -898,7 +898,7 @@ class IncomingMessagePersistenceTest extends TestCase
         $this->assertSame('en', $botUser->preferred_language_code);
         $this->assertFalse($botUser->is_closed, 'Start/language/text flow must not close the dialog by itself.');
 
-        $this->assertDatabaseHas('messages', [
+        $this->assertDatabaseMissing('messages', [
             'bot_user_id' => $botUser->id,
             'message_type' => 'incoming',
             'from_id' => 1001,
