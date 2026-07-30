@@ -11,7 +11,7 @@ RUN read -r -a phpize_deps <<< "$(printenv PHPIZE_DEPS)" && \
     docker-php-ext-install pdo pdo_pgsql pgsql intl zip gd pcntl && \
     pecl install redis && docker-php-ext-enable redis && \
     apt-get purge -y --auto-remove \
-        libfreetype6-dev libicu-dev libjpeg62-turbo-dev libpng-dev libpq-dev libzip-dev "${phpize_deps[@]}" && \
+        libfreetype6-dev libicu-dev libjpeg62-turbo-dev libpng-dev libpq-dev libzip-dev linux-libc-dev "${phpize_deps[@]}" && \
     rm -rf /var/lib/apt/lists/* /tmp/pear
 
 COPY ./docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
@@ -53,6 +53,8 @@ RUN rm -rf node_modules tests .git .github && \
     find storage bootstrap/cache -type d -exec chmod 775 {} + && \
     find storage bootstrap/cache -type f -exec chmod 664 {} +
 
+# Официальный php-fpm image гарантированно создаёт www-data.
+# hadolint ignore=DL3066
 USER www-data
 
 EXPOSE 9000

@@ -420,24 +420,23 @@
                 {{-- Header Actions: more-actions dropdown --}}
                 {{-- Design: node r6DYj — gap 4, align center --}}
                 <div class="flex items-center" style="gap:4px;">
-                    {{-- Chat history translator — placed in the header so mobile composer stays compact. --}}
-                    <div class="relative shrink-0" title="{{ $this->chatTranslationTooltip() }}">
+                    {{-- Единственный язык клиента: его может менять и клиент, и оператор. --}}
+                    <div class="relative shrink-0" title="{{ $this->clientLanguageTooltip() }}">
                         <select
-                            wire:change="setChatTranslationLocale($event.target.value)"
+                            wire:change="setClientLanguage($event.target.value)"
                             class="h-9 max-w-[112px] rounded-lg border border-border-light bg-bg-secondary px-2 text-xs font-semibold text-text-primary outline-none transition hover:border-accent sm:max-w-none"
-                            aria-label="Выбрать язык перевода диалога"
-                            title="Выбрать язык перевода диалога"
+                            aria-label="Выбрать язык клиента"
+                            title="Выбрать язык клиента"
                         >
                             <option
                                 value=""
-                                @selected($chatTranslationLocale === null || $chatTranslationLocale === '')
-                                disabled
-                                title="Язык клиента не выбран"
+                                @selected($clientLanguageCode === null || $clientLanguageCode === '')
+                                title="Отправлять оригинал без перевода"
                             >Не выбран</option>
                             @foreach($this->availableTranslationLanguages() as $language)
                                 <option
                                     value="{{ $language['code'] }}"
-                                    @selected($chatTranslationLocale === $language['code'])
+                                    @selected($clientLanguageCode === $language['code'])
                                     title="{{ $language['tooltip'] }}"
                                 >{{ $language['label'] }}</option>
                             @endforeach
@@ -643,7 +642,7 @@
                     @php
                         $isOutgoing = $message->message_type === 'outgoing';
                         $messageText = $message->text ?? $message->externalMessage?->text;
-                        $currentLocale = $chatTranslationLocale ?: ($activeBotUser?->preferred_language_code ?: 'ru');
+                        $currentLocale = $clientLanguageCode ?: 'ru';
                         $operatorToClientTranslation = $message->translations->first(function ($translation) use ($currentLocale) {
                             return $translation->direction === 'operator_to_client'
                                 && $translation->source_locale === 'ru'
@@ -987,15 +986,14 @@
                         @enderror
                     @endif
 
-                    @if(trim($replyText) !== '')
+                    @if(trim($replyText) !== '' && $this->clientLanguageRequiresTranslation())
                         <div class="mb-2 rounded-xl border border-accent/30 bg-accent/10 p-3">
                             <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
-                                <span>Русский → {{ $activeBotUser?->preferred_language_name ?: 'язык не выбран' }}</span>
+                                <span>Русский → {{ app(\App\Modules\Telegram\Services\SupportLanguageService::class)->displayName($clientLanguageCode, $activeBotUser?->preferred_language_name) }}</span>
                                 <span>{{ match($replyTranslationStatus) {
                                     'ready' => 'Перевод готов',
                                     'translating' => 'Перевожу…',
                                     'error' => 'Ошибка перевода',
-                                    'language_not_selected' => 'Язык не выбран',
                                     default => 'Ожидает перевода',
                                 } }}</span>
                             </div>
@@ -1007,6 +1005,10 @@
                                 class="mt-2 rounded-lg border border-border-light px-3 py-1.5 text-xs font-semibold text-text-primary">
                                 Обновить перевод
                             </button>
+                        </div>
+                    @elseif(trim($replyText) !== '')
+                        <div class="mb-2 rounded-xl border border-border-light bg-bg-secondary/60 px-3 py-2 text-xs text-text-secondary">
+                            {{ $clientLanguageCode === 'ru' ? 'Русский язык' : 'Язык не выбран' }} — клиенту будет отправлен оригинал без перевода.
                         </div>
                     @endif
 

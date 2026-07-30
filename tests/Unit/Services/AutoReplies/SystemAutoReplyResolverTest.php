@@ -27,6 +27,21 @@ class SystemAutoReplyResolverTest extends TestCase
         $this->assertSame('Обращение Иван закрыто', $text);
     }
 
+    public function test_it_uses_source_without_translation_when_language_is_not_selected(): void
+    {
+        $user = BotUser::create([
+            'chat_id' => random_int(100000, 999999),
+            'platform' => 'vk',
+            'display_name' => 'Иван',
+        ]);
+        $reply = $this->reply(AutoReply::TYPE_DIALOG_CLOSED);
+        $reply->update(['response' => 'Обращение {first_name} закрыто']);
+
+        $text = app(SystemAutoReplyResolver::class)->resolve(AutoReply::TYPE_DIALOG_CLOSED, $user);
+
+        $this->assertSame('Обращение Иван закрыто', $text);
+    }
+
     public function test_it_uses_ready_current_translation_for_selected_locale(): void
     {
         $user = $this->user('fr');

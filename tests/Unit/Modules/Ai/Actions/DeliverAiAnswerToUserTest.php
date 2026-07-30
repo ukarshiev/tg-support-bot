@@ -165,6 +165,33 @@ class DeliverAiAnswerToUserTest extends TestCase
         $this->assertSame(AiMessage::STATUS_ACCEPTED, $aiMessage->fresh()->status);
     }
 
+    public function test_client_without_selected_language_gets_original_without_translation(): void
+    {
+        Queue::fake();
+        $botUser = BotUser::create([
+            'chat_id' => 105,
+            'platform' => 'telegram',
+        ]);
+        $aiMessage = AiMessage::create([
+            'bot_user_id' => $botUser->id,
+            'text_ai' => 'Оригинальный ответ',
+            'text_source' => 'Оригинальный ответ',
+            'text_translated' => 'Не должен использоваться',
+            'translation_status' => 'ready',
+            'status' => 'delivery_pending',
+        ]);
+        Http::fake(['*' => Http::response([
+            'ok' => true,
+            'result' => ['message_id' => 79, 'chat' => ['id' => 105]],
+        ])]);
+
+        (new DeliverAiMessageJob($aiMessage->id, mirrorAfterDelivery: false))
+            ->handle(app(DeliverAiAnswerToUser::class));
+
+        $this->assertSame('Оригинальный ответ', Message::firstOrFail()->text);
+        $this->assertSame(AiMessage::STATUS_ACCEPTED, $aiMessage->fresh()->status);
+    }
+
     public function test_terminal_job_failure_marks_ai_message_and_operation_failed(): void
     {
         $botUser = BotUser::create(['chat_id' => 104, 'platform' => 'telegram']);

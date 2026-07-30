@@ -126,7 +126,7 @@ class DeliverAiMessageJob implements ShouldQueue
     {
         $locale = strtolower(trim((string) $botUser->preferred_language_code));
 
-        if ($locale === 'ru') {
+        if ($locale === '' || $locale === 'ru') {
             $russian = trim((string) ($aiMessage->text_source ?: $aiMessage->text_ai));
             if ($russian !== '') {
                 return $russian;

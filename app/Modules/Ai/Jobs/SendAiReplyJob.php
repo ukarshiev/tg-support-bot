@@ -134,17 +134,13 @@ class SendAiReplyJob implements ShouldQueue
     private function translateReply(BotUser $botUser, string $sourceText): array
     {
         $targetLocale = $botUser->preferred_language_code;
-        if ($targetLocale === 'ru') {
+        if ($targetLocale === null || $targetLocale === '' || $targetLocale === 'ru') {
             return [
-                $targetLocale,
+                $targetLocale ?: null,
                 $sourceText,
                 'same_locale',
                 'ready',
             ];
-        }
-
-        if ($targetLocale === null || $targetLocale === '') {
-            return [null, $this->safeEnglishFallback(), 'builtin_safe_english', 'ready'];
         }
 
         $result = app(TranslationService::class)->translate(new TranslationRequest(

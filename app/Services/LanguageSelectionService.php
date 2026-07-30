@@ -44,11 +44,7 @@ class LanguageSelectionService
             return false;
         }
 
-        $botUser->update([
-            'preferred_language_code' => $code,
-            'preferred_language_name' => $language['name'],
-            'preferred_language_selected_at' => now(),
-        ]);
+        $botUser = app(ClientLanguageService::class)->select($botUser, $code);
         $greeting = $this->languages->greeting($code, $botUser->fresh());
         if (is_string($greeting) && $greeting !== '') {
             $this->sendText($botUser, $greeting);
