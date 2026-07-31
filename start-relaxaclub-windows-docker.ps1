@@ -39,11 +39,12 @@ if (-not [string]::IsNullOrWhiteSpace($appKeyLine)) {
 }
 
 Write-Host "1/7 Create nginx HTTP config for Windows Docker"
-if (-not (Test-Path "docker/nginx")) {
-    New-Item -ItemType Directory -Path "docker/nginx" | Out-Null
+$nginxDirectory = Join-Path $PSScriptRoot "docker/nginx"
+if (-not (Test-Path $nginxDirectory)) {
+    New-Item -ItemType Directory -Path $nginxDirectory | Out-Null
 }
 
-$templatePath = "docker/nginx/default.windows-docker.conf.template"
+$templatePath = Join-Path $nginxDirectory "default.windows-docker.conf.template"
 if (-not (Test-Path $templatePath)) {
     throw "nginx template not found: $templatePath"
 }
@@ -51,14 +52,15 @@ if (-not (Test-Path $templatePath)) {
 $nginxConfig = Get-Content $templatePath -Raw
 $nginxConfig = $nginxConfig.Replace("__MAIN_DOMAIN__", $mainDomain)
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText((Resolve-Path "docker/nginx/default.conf"), $nginxConfig, $utf8NoBom)
+$nginxOutputPath = Join-Path $nginxDirectory "default.conf"
+[System.IO.File]::WriteAllText($nginxOutputPath, $nginxConfig, $utf8NoBom)
 
 Write-Host "2/7 Build and start Docker Compose without data removal"
 docker compose up -d --build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "3/7 Install PHP dependencies from composer.lock"
-docker compose exec -T app bash -lc "composer install --no-interaction --prefer-dist --optimize-autoloader"
+Write-Host "3/7 Verify PHP dependencies baked into the runtime image"
+docker compose exec -T app bash -lc "test -f vendor/autoload.php"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if ([string]::IsNullOrWhiteSpace($appKey) -and -not $ConfirmProductionChange) {
@@ -97,7 +99,7 @@ docker compose exec -T app bash -lc "php artisan cache:clear && php artisan conf
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "7/7 Restart services without volume removal"
-docker compose restart app nginx queue scheduler telegram_poller ai_telegram_poller
+docker compose restart app nginx queue reverb scheduler telegram_poller ai_telegram_poller
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""

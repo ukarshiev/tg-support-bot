@@ -60,4 +60,26 @@ class ReleaseScriptSafetyTest extends TestCase
         $this->assertStringContainsString('Skip database migrations', $script);
         $this->assertLessThan(strpos($script, 'php artisan migrate --force'), strpos($script, 'pg_dump'));
     }
+
+    public function test_windows_release_creates_nginx_config_and_uses_baked_dependencies(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start-relaxaclub-windows-docker.ps1');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString(
+            '$nginxOutputPath = Join-Path $nginxDirectory "default.conf"',
+            $script,
+        );
+        $this->assertStringContainsString(
+            '[System.IO.File]::WriteAllText($nginxOutputPath',
+            $script,
+        );
+        $this->assertStringNotContainsString('Resolve-Path "docker/nginx/default.conf"', $script);
+        $this->assertStringNotContainsString('composer install', $script);
+        $this->assertStringContainsString('test -f vendor/autoload.php', $script);
+        $this->assertStringContainsString(
+            'docker compose restart app nginx queue reverb scheduler telegram_poller ai_telegram_poller',
+            $script,
+        );
+    }
 }
