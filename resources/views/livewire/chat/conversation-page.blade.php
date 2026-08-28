@@ -1092,6 +1092,7 @@
             };
             $contactRows = $this->contactDetails();
             $mediaAttachments = $this->getMediaAttachments();
+            $recipientUnavailableStatus = $this->recipientUnavailableStatus();
         @endphp
 
         {{-- Drawer backdrop --}}
@@ -1224,6 +1225,18 @@
                                 @if($drawerHandle){{ '@' . $drawerHandle }} · @endif{{ $drawerPlatformLabel }}
                             </p>
                         </div>
+
+                        @if($recipientUnavailableStatus !== null)
+                            <div
+                                class="w-full rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-left"
+                                role="status"
+                                aria-label="Получатель недоступен"
+                            >
+                                <p class="text-xs font-semibold text-red-500">Получатель недоступен</p>
+                                <p class="mt-1 break-words text-xs text-text-primary">{{ $recipientUnavailableStatus['reason'] }}</p>
+                                <p class="mt-1 text-[11px] text-text-secondary">С {{ $recipientUnavailableStatus['date'] }}</p>
+                            </div>
+                        @endif
 
                         <div class="flex flex-wrap justify-center gap-2">
                             @php $isBanned = (bool) $activeBotUser->is_banned; @endphp

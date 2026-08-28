@@ -453,6 +453,8 @@ class ConversationPage extends Component
             return;
         }
 
+        $this->activeBotUser->refresh();
+
         // Append only messages newer than the last loaded one — this preserves
         // any older history the manager scrolled up to load.
         $added = $this->loadNewerMessages();
@@ -846,6 +848,23 @@ class ConversationPage extends Component
         }
 
         return app(ContactSummaryFormatter::class)->toPlainText($this->activeBotUser);
+    }
+
+    /**
+     * Recipient availability details for the active conversation card.
+     *
+     * @return array{reason: string, date: string}|null
+     */
+    public function recipientUnavailableStatus(): ?array
+    {
+        if ($this->activeBotUser === null || ! $this->activeBotUser->is_unavailable) {
+            return null;
+        }
+
+        return [
+            'reason' => (string) ($this->activeBotUser->unavailable_reason ?: 'Telegram не указал причину'),
+            'date' => $this->activeBotUser->unavailable_at?->format('d.m.Y H:i') ?? 'дата неизвестна',
+        ];
     }
 
     /**

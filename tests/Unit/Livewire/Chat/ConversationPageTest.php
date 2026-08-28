@@ -45,6 +45,40 @@ class ConversationPageTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_conversation_card_shows_recipient_unavailable_reason_and_date(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => 991001,
+            'platform' => 'telegram',
+            'is_unavailable' => true,
+            'unavailable_reason' => 'Forbidden: user is deactivated',
+            'unavailable_at' => '2026-08-29 12:34:00',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Получатель недоступен')
+            ->assertSee('Forbidden: user is deactivated')
+            ->assertSee('29.08.2026 12:34');
+    }
+
+    public function test_poll_refreshes_recipient_unavailable_badge_for_open_conversation(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => 991002,
+            'platform' => 'telegram',
+        ]);
+        $component = Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertDontSee('Получатель недоступен');
+
+        BotUser::findOrFail($botUser->id)->markUnavailable('Forbidden: bot was blocked by the user');
+
+        $component->call('pollUpdates')
+            ->assertSee('Получатель недоступен')
+            ->assertSee('Forbidden: bot was blocked by the user');
+    }
+
     // ── mount ──────────────────────────────────────────────────────────────────
 
     public function test_mount_loads_empty_collections(): void

@@ -114,4 +114,27 @@ class SendTelegramSimpleQueryJobTest extends TestCase
 
         $job->handle();
     }
+
+    public function test_successful_client_delivery_atomically_clears_unavailable_state(): void
+    {
+        $this->botUser->markUnavailable('Forbidden: bot was blocked by the user');
+
+        Http::fake([
+            'https://api.telegram.org/bot*/sendMessage' => Http::response([
+                'ok' => true,
+                'result' => ['message_id' => 99],
+            ]),
+        ]);
+
+        (new SendTelegramSimpleQueryJob(TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => $this->botUser->chat_id,
+            'text' => 'Доставка восстановлена',
+        ])))->handle();
+
+        $this->botUser->refresh();
+        $this->assertFalse($this->botUser->is_unavailable);
+        $this->assertNull($this->botUser->unavailable_reason);
+        $this->assertNull($this->botUser->unavailable_at);
+    }
 }

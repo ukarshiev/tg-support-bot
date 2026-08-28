@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines the complete database schema. It ensures that AI agents and developers fully understand data structure, relationships, and constraints before making changes.
 > **Context:** Read this file before creating or modifying tables, columns, indexes, migrations, or Eloquent models.
-> **Version:** 1.0
+> **Version:** 1.1
 
 ---
 
@@ -46,6 +46,9 @@ erDiagram
         string external_source_id
         boolean is_banned
         timestamp banned_at
+        boolean is_unavailable
+        text unavailable_reason
+        timestamp unavailable_at
         timestamps
     }
 
@@ -190,6 +193,9 @@ Core table. Stores every user that has interacted with the bot across all platfo
 | `is_closed` | `boolean` | No | `false` | Whether the conversation is closed |
 | `closed_at` | `timestamp` | Yes | NULL | When the conversation was closed |
 | `manager_last_read_at` | `timestamp` | Yes | NULL | When a manager last opened the dialog in the chat workspace; drives the unread indicator (BR-003e) |
+| `is_unavailable` | `boolean` | No | `false` | Whether Telegram has confirmed that the client cannot currently receive bot messages |
+| `unavailable_reason` | `text` | Yes | NULL | Full Telegram 403 description for the confirmed recipient-unavailable condition |
+| `unavailable_at` | `timestamp` | Yes | NULL | When the recipient-unavailable condition was last confirmed |
 | `created_at` | `timestamp` | Yes | NULL | First interaction time |
 | `updated_at` | `timestamp` | Yes | NULL | Last update time |
 
@@ -204,6 +210,8 @@ Core table. Stores every user that has interacted with the bot across all platfo
 - `telegram` — user interacts via Telegram
 - `vk` — user interacts via VK
 - `external_source` — user interacts via External API
+
+**Migration:** `database/migrations/2026_08_29_120000_add_unavailable_state_to_bot_users_table.php`
 
 ---
 
@@ -477,6 +485,12 @@ Never merge migrations without documentation updates.
 ## 5. Migration Location
 
 All migrations are in `database/migrations/`. Name format: `YYYY_MM_DD_HHMMSS_description.php`.
+
+---
+
+## Changelog
+
+- Version 1.1: Added the `bot_users` recipient-unavailable state and its reversible migration.
 
 ---
 

@@ -128,6 +128,40 @@ class TelegramPollUpdatesCommandTest extends TestCase
         $this->assertSame(3, $webhookAttempts);
     }
 
+    public function test_one_poison_update_does_not_block_the_following_update(): void
+    {
+        app(SettingsService::class)->set('telegram.token', 'diagnostic-token');
+        app(SettingsService::class)->set('telegram.secret_key', 'diagnostic-secret');
+
+        Http::fake([
+            'https://api.telegram.org/botdiagnostic-token/getMe' => Http::response(['ok' => true]),
+            'https://api.telegram.org/botdiagnostic-token/deleteWebhook' => Http::response(['ok' => true]),
+            'https://api.telegram.org/botdiagnostic-token/getUpdates' => Http::response([
+                'ok' => true,
+                'result' => [
+                    ['update_id' => 600, 'edited_message' => ['message_id' => 10]],
+                    ['update_id' => 601, 'message' => ['message_id' => 11, 'text' => 'next']],
+                ],
+            ]),
+            'http://nginx/api/telegram/bot' => function ($request) {
+                return $request['update_id'] === 600
+                    ? Http::response(['error' => 'poison update'], 500)
+                    : Http::response(null, 204);
+            },
+        ]);
+
+        $this->artisan('telegram:poll-updates', [
+            '--once' => true,
+            '--timeout' => 1,
+            '--sleep' => 1,
+        ])->assertSuccessful();
+
+        Http::assertSent(fn ($request): bool =>
+            $request->url() === 'http://nginx/api/telegram/bot'
+            && $request['update_id'] === 601);
+        $this->assertSame(602, Cache::get('telegram:poller:offset'));
+    }
+
     public function test_main_poller_does_not_advance_offset_when_internal_webhook_transport_fails(): void
     {
         app(SettingsService::class)->set('telegram.token', 'main-token');

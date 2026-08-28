@@ -44,6 +44,12 @@ abstract class AbstractSendMessageJob implements ShouldQueue
 
     public string $typeMessage = '';
 
+    /** @var list<string> */
+    private const RECIPIENT_UNAVAILABLE_FORBIDDEN_MARKERS = [
+        'blocked by the user',
+        'user is deactivated',
+    ];
+
     abstract public function handle(): void;
 
     /**
@@ -130,8 +136,53 @@ abstract class AbstractSendMessageJob implements ShouldQueue
         }
 
         if ($response->response_code === 403) {
-            Log::channel('app')->warning('403 - user blocked the bot');
-            app(BanMessage::class)->execute($this->botUserId, $this->updateDto);
+            $description = trim((string) ($response->rawData['description'] ?? ''));
+            $normalizedDescription = preg_replace('/\s+/u', ' ', mb_strtolower($description)) ?? '';
+            $recipientUnavailable = collect(self::RECIPIENT_UNAVAILABLE_FORBIDDEN_MARKERS)
+                ->contains(static fn (string $marker): bool => str_contains($normalizedDescription, $marker));
+
+            if ($recipientUnavailable) {
+                $botUser = BotUser::find($this->botUserId);
+                if ($botUser === null) {
+                    Log::channel('app')->error('Telegram 403 recipient state cannot be saved: bot user not found', [
+                        'job' => static::class,
+                        'bot_user_id' => $this->botUserId,
+                        'description' => $description,
+                    ]);
+
+                    return;
+                }
+
+                if ($botUser->platform !== 'telegram') {
+                    Log::channel('app')->error('Telegram API returned recipient-style 403 for a non-Telegram user', [
+                        'job' => static::class,
+                        'bot_user_id' => $this->botUserId,
+                        'platform' => $botUser->platform,
+                        'description' => $description,
+                    ]);
+
+                    return;
+                }
+
+                $botUser->markUnavailable($description);
+
+                Log::channel('app')->warning('Telegram recipient is unavailable', [
+                    'job' => static::class,
+                    'bot_user_id' => $this->botUserId,
+                    'description' => $description,
+                ]);
+
+                app(BanMessage::class)->execute($this->botUserId, $this->updateDto);
+
+                return;
+            }
+
+            Log::channel('app')->error('Telegram API returned non-recipient 403', [
+                'job' => static::class,
+                'bot_user_id' => $this->botUserId,
+                'description' => $description,
+            ]);
+
             return;
         }
 
@@ -176,6 +227,14 @@ abstract class AbstractSendMessageJob implements ShouldQueue
                 'chat_id' => $response->chat_id,
             ],
         );
+    }
+
+    /**
+     * Clear a previously recorded recipient-unavailable state after delivery.
+     */
+    protected function clearRecipientUnavailable(BotUser $botUser): void
+    {
+        $botUser->clearUnavailable();
     }
 
     /**

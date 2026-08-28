@@ -48,9 +48,12 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
     public function handle(): void
     {
         try {
+            $botUser = null;
+
             if (!empty($this->queryParams->chat_id)) {
                 $botUser = BotUser::where([
                     'chat_id' => $this->queryParams->chat_id,
+                    'platform' => 'telegram',
                 ])->first();
                 $this->botUserId = $botUser->id ?? 0;
             }
@@ -86,6 +89,10 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
                     $response->response_code ?? 0,
                     $response->type_error ?? 'UNKNOWN',
                 ));
+            }
+
+            if ($botUser !== null) {
+                $this->clearRecipientUnavailable($botUser);
             }
         } catch (\Throwable $e) {
             Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);

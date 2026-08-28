@@ -116,6 +116,30 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
     }
 
+    public function test_any_private_incoming_message_atomically_clears_unavailable_state(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+
+        $botUser = $this->selectTelegramLanguage(BotUser::create([
+            'chat_id' => 112232,
+            'platform' => 'telegram',
+        ]));
+        $botUser->markUnavailable('Forbidden: user is deactivated');
+
+        $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
+
+        $botUser->refresh();
+        $this->assertFalse($botUser->is_unavailable);
+        $this->assertNull($botUser->unavailable_reason);
+        $this->assertNull($botUser->unavailable_at);
+    }
+
     public function test_telegram_incoming_without_selected_language_is_persisted_and_shows_selector(): void
     {
         Queue::fake();

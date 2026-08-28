@@ -6,10 +6,16 @@ use App\Jobs\SendMessage\AbstractSendMessageJob;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Modules\Telegram\Jobs\SendTelegramTopicMessageJob;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AbstractSendMessageJobTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_transient_telegram_error_releases_job_for_retry(): void
     {
         $job = (new RetryProbeSendMessageJob())->withFakeQueueInteractions();
@@ -58,6 +64,80 @@ class AbstractSendMessageJobTest extends TestCase
         $job->assertNotFailed();
         $this->assertNull($job->queryParams->parse_mode);
         $this->assertSame('Link:  https://t.me/test', $job->queryParams->text);
+    }
+
+    #[DataProvider('forbiddenDescriptions')]
+    public function test_telegram_403_is_classified_by_normalized_description_substring(
+        string $description,
+        bool $recipientUnavailable,
+    ): void {
+        Queue::fake();
+
+        $botUser = BotUser::create([
+            'chat_id' => 100001,
+            'platform' => 'telegram',
+            'topic_id' => 123,
+        ]);
+        $job = new RetryProbeSendMessageJob();
+        $job->botUserId = $botUser->id;
+        $job->updateDto = null;
+
+        $job->handleTelegramResponse(new TelegramAnswerDto(
+            ok: false,
+            response_code: 403,
+            rawData: [
+                'ok' => false,
+                'error_code' => 403,
+                'description' => $description,
+            ],
+        ));
+
+        $botUser->refresh();
+        $this->assertSame($recipientUnavailable, $botUser->is_unavailable, $description);
+        $this->assertSame($recipientUnavailable ? $description : null, $botUser->unavailable_reason);
+
+        if ($recipientUnavailable) {
+            $this->assertNotNull($botUser->unavailable_at);
+            Queue::assertPushed(SendTelegramTopicMessageJob::class, fn (SendTelegramTopicMessageJob $queued): bool =>
+                $queued->botUserId === $botUser->id
+                && $queued->text === __('messages.ban_bot'));
+        } else {
+            $this->assertNull($botUser->unavailable_at);
+            Queue::assertNotPushed(SendTelegramTopicMessageJob::class);
+        }
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function forbiddenDescriptions(): array
+    {
+        return [
+            'blocked with variable prefix and casing' => [
+                'FORBIDDEN: The Bot Was BLOCKED BY THE USER after delivery',
+                true,
+            ],
+            'deactivated with variable whitespace' => [
+                "Forbidden:  USER\nIS   DEACTIVATED",
+                true,
+            ],
+            'kicked from supergroup' => [
+                'Forbidden: bot was kicked from the supergroup chat',
+                false,
+            ],
+            'not a supergroup member' => [
+                'Forbidden: bot is not a member of the supergroup chat',
+                false,
+            ],
+            'chat not found' => [
+                'Forbidden: chat not found',
+                false,
+            ],
+            'unknown forbidden description' => [
+                'Forbidden: a new Telegram condition appeared',
+                false,
+            ],
+        ];
     }
 }
 

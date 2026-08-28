@@ -124,6 +124,13 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             ]);
 
             if ($response->ok === true) {
+                if (
+                    $botUser->platform === 'telegram'
+                    && (string) $this->queryParams->chat_id === (string) $botUser->chat_id
+                ) {
+                    $this->clearRecipientUnavailable($botUser);
+                }
+
                 if ($methodQuery !== 'editMessageText' && $methodQuery !== 'editMessageCaption') {
                     $this->saveMessage($botUser, $response);
                     $message = $this->persistedMessage($botUser);

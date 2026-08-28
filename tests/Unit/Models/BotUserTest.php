@@ -53,6 +53,25 @@ class BotUserTest extends TestCase
         $this->assertSame(BotUser::identityKey('vk', 777), $vk->identity_key);
     }
 
+    public function test_unavailable_state_is_set_and_cleared_as_one_field_set(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 778, 'platform' => 'telegram']);
+
+        $botUser->markUnavailable('Forbidden: bot was blocked by the user');
+        $botUser->refresh();
+
+        $this->assertTrue($botUser->is_unavailable);
+        $this->assertSame('Forbidden: bot was blocked by the user', $botUser->unavailable_reason);
+        $this->assertNotNull($botUser->unavailable_at);
+
+        $botUser->clearUnavailable();
+        $botUser->refresh();
+
+        $this->assertFalse($botUser->is_unavailable);
+        $this->assertNull($botUser->unavailable_reason);
+        $this->assertNull($botUser->unavailable_at);
+    }
+
     // ── Helper: build a minimal TelegramUpdateDto ──────────────────────────────
 
     /**

@@ -23,6 +23,10 @@ class BanMessage
             throw new \RuntimeException("Telegram bot user {$botUserId} was not found");
         }
 
+        if (empty($botUser->topic_id)) {
+            return;
+        }
+
         SendTelegramTopicMessageJob::dispatch($botUser->id, __('messages.ban_bot'));
     }
 }

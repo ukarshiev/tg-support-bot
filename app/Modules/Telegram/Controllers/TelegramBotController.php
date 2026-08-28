@@ -205,6 +205,10 @@ class TelegramBotController
         } else {
             switch ($this->dataHook->typeQuery) {
                 case 'message':
+                    if ($this->dataHook->typeSource === 'private') {
+                        $this->botUser->clearUnavailable();
+                    }
+
                     if (app(AcceptAiDraftReplyMessage::class)->handle($this->dataHook, $this->botUser)) {
                         return;
                     }

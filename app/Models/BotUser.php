@@ -28,6 +28,9 @@ use phpDocumentor\Reflection\Exception;
  * @property ExternalUser|null               $externalUser
  * @property bool                            $is_banned
  * @property bool                            $is_closed
+ * @property bool                            $is_unavailable
+ * @property string|null                     $unavailable_reason
+ * @property \Illuminate\Support\Carbon|null $unavailable_at
  * @property string|null                     $closed_at
  * @property \Illuminate\Support\Carbon|null $manager_last_read_at
  */
@@ -38,6 +41,10 @@ class BotUser extends Model
     private static bool $identityKeyColumnConfirmed = false;
 
     protected $table = 'bot_users';
+
+    protected $attributes = [
+        'is_unavailable' => false,
+    ];
 
     protected $fillable = [
         'chat_id',
@@ -55,6 +62,9 @@ class BotUser extends Model
         'is_closed',
         'closed_at',
         'manager_last_read_at',
+        'is_unavailable',
+        'unavailable_reason',
+        'unavailable_at',
     ];
 
     protected $casts = [
@@ -63,6 +73,8 @@ class BotUser extends Model
         'preferred_language_selected_at' => 'datetime',
         'is_banned' => 'boolean',
         'is_closed' => 'boolean',
+        'is_unavailable' => 'boolean',
+        'unavailable_at' => 'datetime',
         'banned_at' => 'datetime',
         'closed_at' => 'datetime',
     ];
@@ -407,5 +419,33 @@ class BotUser extends Model
     public function isClosed(): bool
     {
         return $this->is_closed ?? false;
+    }
+
+    /**
+     * Record that Telegram cannot currently deliver messages to this user.
+     */
+    public function markUnavailable(string $reason): void
+    {
+        $this->update([
+            'is_unavailable' => true,
+            'unavailable_reason' => $reason,
+            'unavailable_at' => now(),
+        ]);
+    }
+
+    /**
+     * Atomically clear all recipient-unavailable fields.
+     */
+    public function clearUnavailable(): void
+    {
+        if (! $this->is_unavailable && $this->unavailable_reason === null && $this->unavailable_at === null) {
+            return;
+        }
+
+        $this->update([
+            'is_unavailable' => false,
+            'unavailable_reason' => null,
+            'unavailable_at' => null,
+        ]);
     }
 }

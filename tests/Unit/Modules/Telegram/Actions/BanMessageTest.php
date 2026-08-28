@@ -28,6 +28,7 @@ class BanMessageTest extends TestCase
     public function test_send_ban_message_with_correct_text(): void
     {
         $dto = TelegramUpdateDto_GroupMock::getDto();
+        $this->botUser->update(['topic_id' => 321]);
 
         app(BanMessage::class)->execute($this->botUser->id, $dto);
 
@@ -35,5 +36,14 @@ class BanMessageTest extends TestCase
             $job->botUserId === $this->botUser->id
             && $job->text === __('messages.ban_bot')
             && $job->queue === 'telegram-mirror');
+    }
+
+    public function test_does_not_create_topic_or_send_notice_when_topic_is_missing(): void
+    {
+        $this->botUser->update(['topic_id' => null]);
+
+        app(BanMessage::class)->execute($this->botUser->id, TelegramUpdateDto_GroupMock::getDto());
+
+        Queue::assertNotPushed(SendTelegramTopicMessageJob::class);
     }
 }

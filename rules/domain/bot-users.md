@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the Bot User management domain — creation, identification, banning, and platform association of users.
 > **Context:** Read this file before modifying anything related to `BotUser` model, user creation, banning, topic management, or platform identification.
-> **Version:** 1.0
+> **Version:** 1.1
 
 ---
 
@@ -25,6 +25,7 @@ This domain does not own: message content (see `domain/messaging.md`), AI assist
 | topic_id | Telegram forum topic ID — the thread where this user's conversation lives |
 | platform | Source platform: `telegram`, `vk`, or `external_source` |
 | Ban | Restriction that prevents the user from receiving replies (soft ban via `is_banned` flag) |
+| Recipient unavailable | Temporary Telegram delivery state stored separately from a manual ban |
 | ExternalUser | Sub-record storing the mapping of `external_id` + `source` to a `BotUser` |
 
 ---
@@ -70,6 +71,15 @@ _Enforced in:_ `app/Modules/Admin/Actions/DeleteBotUser.php`
 **BR-013** — In the admin chat workspace, `display_name` is shown wherever the user's name appears (dialog list, chat header, right panel). If `display_name` is NULL, `chat_id` is used as the fallback. If `avatar_path` is set, the avatar image is shown instead of the initials circle.
 _Enforced in:_ `resources/views/components/chat-item.blade.php`, `resources/views/livewire/chat/conversation-page.blade.php`
 
+**BR-014** — Telegram HTTP 403 marks a bot user as unavailable only when the normalized response description contains `blocked by the user` or `user is deactivated`. Matching is case-insensitive, whitespace-normalized, and substring-based. Every other or unknown 403 must be error-logged with the full description and must not emit the user-blocked notice.
+_Enforced in:_ `app/Jobs/SendMessage/AbstractSendMessageJob.php @ telegramResponseHandler()`
+
+**BR-015** — A confirmed recipient-unavailable condition sets `is_unavailable`, `unavailable_reason`, and `unavailable_at` together. All three fields are cleared together on the first successful Telegram delivery to the client and on any incoming private message from that client.
+_Enforced in:_ `app/Models/BotUser.php`, `SendTelegramMessageJob`, `SendTelegramSimpleQueryJob`, `TelegramBotController`
+
+**BR-016** — The user-blocked notice may be posted only when the bot user already has a `topic_id`. The notice must never create a forum topic. The web conversation card must show the unavailable reason and timestamp even when no topic exists.
+_Enforced in:_ `app/Modules/Telegram/Actions/BanMessage.php`, `App\Livewire\Chat\ConversationPage`, `resources/views/livewire/chat/conversation-page.blade.php`
+
 **BR-020** — When `CloseTopic::execute()` successfully closes a conversation (`is_closed = true`), a `Feedback` record with `status = 'awaiting_rating'` must be created and a rating form must be sent to the user on their platform. Every close event creates a new feedback record — history accumulates.
 _Enforced in:_ `app/Modules/Telegram/Actions/CloseTopic.php`, `app/Modules/Feedback/Actions/SendFeedbackForm.php`
 
@@ -89,6 +99,8 @@ stateDiagram-v2
     active --> topic_created: TopicCreateJob succeeds
     topic_created --> active: Normal operation
     active --> banned: BanMessage action executed
+    active --> unavailable: Telegram confirms recipient cannot receive
+    unavailable --> active: Successful delivery or incoming private message
     banned --> active: Manual unban (not yet implemented)
     banned --> [*]
 ```
@@ -117,6 +129,7 @@ The agent must use these methods to look up or create `BotUser`:
 - If `topic_id` is NULL, the topic must be created before sending the first reply
 - When a user is banned, the topic must be closed via `CloseTopic` action
 - When a banned topic is needed again, it must be reopened (not recreated)
+- A recipient-unavailable notice can use an existing topic but must never create one
 
 ---
 
@@ -151,6 +164,12 @@ The agent must use these methods to look up or create `BotUser`:
 - ❌ Sending a regular reply to a `BotUser` where `isBanned()` returns true
 - ❌ Changing `platform` of an existing `BotUser`
 - ❌ Identifying a user by `chat_id` alone without specifying `platform`
+
+---
+
+## Changelog
+
+- Version 1.1: Added BR-014 through BR-016 for honest Telegram 403 classification, atomic availability state, no-topic notice suppression, and the operator-facing web badge.
 
 ---
 
