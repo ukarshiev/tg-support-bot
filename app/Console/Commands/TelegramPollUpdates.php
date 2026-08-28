@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Log;
 
 class TelegramPollUpdates extends Command
 {
+    private const INTERNAL_WEBHOOK_MAX_ATTEMPTS = 3;
+
     protected $signature = 'telegram:poll-updates {--once : Выполнить один цикл и завершиться} {--sleep=1 : Пауза между циклами без updates} {--timeout=10 : Таймаут long polling в Telegram}';
 
     protected $description = 'Poll Telegram updates and pass them to the existing Telegram webhook handler';
@@ -89,6 +91,7 @@ class TelegramPollUpdates extends Command
 
             foreach ($updates as $update) {
                 $updateId = (int) ($update['update_id'] ?? 0);
+                $retryCacheKey = "telegram:poller:webhook-attempts:{$updateId}";
                 $traceId = !empty($update['callback_query']['id'])
                     ? 'telegram:callback:' . $update['callback_query']['id']
                     : 'telegram:update:' . $updateId;
@@ -99,27 +102,45 @@ class TelegramPollUpdates extends Command
                     'update_id' => $updateId,
                     'at_unix_ms' => (int) floor(microtime(true) * 1000),
                 ]);
-                try {
-                    $webhookResponse = Http::withHeaders([
-                        'X-Telegram-Bot-Api-Secret-Token' => $secret,
-                    ])->connectTimeout(2)->timeout(8)->post($internalWebhookUrl, $update);
-                } catch (\Throwable $e) {
-                    $runtime->reportTransportFailure('main', 'Telegram poller', 'internal_webhook', $e, [
-                        'update_id' => $updateId,
-                    ]);
-                    sleep($sleepSeconds);
-                    continue 2;
-                }
+                while (true) {
+                    try {
+                        $webhookResponse = Http::withHeaders([
+                            'X-Telegram-Bot-Api-Secret-Token' => $secret,
+                        ])->connectTimeout(2)->timeout(8)->post($internalWebhookUrl, $update);
+                    } catch (\Throwable $e) {
+                        $runtime->reportTransportFailure('main', 'Telegram poller', 'internal_webhook', $e, [
+                            'update_id' => $updateId,
+                        ]);
+                        sleep($sleepSeconds);
+                        continue 3;
+                    }
 
-                if (! $webhookResponse->successful()) {
-                    Log::channel('app')->error('Telegram poller: internal webhook rejected update; offset is not advanced', [
+                    if ($webhookResponse->successful()) {
+                        Cache::forget($retryCacheKey);
+                        break;
+                    }
+
+                    Cache::add($retryCacheKey, 0, now()->addDay());
+                    $attempts = (int) Cache::increment($retryCacheKey);
+                    $logContext = [
                         'source' => 'telegram_poller_internal_webhook_rejected',
                         'status' => $webhookResponse->status(),
                         'body' => $runtime->sanitize($webhookResponse->body()),
                         'update_id' => $updateId,
-                    ]);
+                        'attempt' => $attempts,
+                        'max_attempts' => self::INTERNAL_WEBHOOK_MAX_ATTEMPTS,
+                    ];
+
+                    if ($attempts >= self::INTERNAL_WEBHOOK_MAX_ATTEMPTS) {
+                        Log::channel('app')->error('Telegram poller: poisoned update skipped after webhook rejections', array_replace($logContext, [
+                            'source' => 'telegram_poller_poisoned_update',
+                        ]));
+                        Cache::forget($retryCacheKey);
+                        break;
+                    }
+
+                    Log::channel('app')->warning('Telegram poller: internal webhook rejected update; retrying', $logContext);
                     sleep($sleepSeconds);
-                    continue 2;
                 }
 
                 if ($updateId > 0) {

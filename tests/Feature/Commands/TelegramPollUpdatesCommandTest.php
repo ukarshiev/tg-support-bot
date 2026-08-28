@@ -6,6 +6,7 @@ use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class TelegramPollUpdatesCommandTest extends TestCase
@@ -91,10 +92,21 @@ class TelegramPollUpdatesCommandTest extends TestCase
         $this->assertSame(201, Cache::get('telegram:poller:offset'));
     }
 
-    public function test_main_poller_does_not_advance_offset_when_internal_webhook_returns_422(): void
+    public function test_main_poller_advances_offset_after_poison_update_exhausts_retries(): void
     {
         app(SettingsService::class)->set('telegram.token', 'main-token');
         app(SettingsService::class)->set('telegram.secret_key', 'main-secret');
+        $webhookAttempts = 0;
+
+        Log::shouldReceive('channel')->with('app')->andReturnSelf();
+        Log::shouldReceive('info')->zeroOrMoreTimes();
+        Log::shouldReceive('warning')->zeroOrMoreTimes();
+        Log::shouldReceive('error')->once()->withArgs(function (string $message, array $context): bool {
+            return $message === 'Telegram poller: poisoned update skipped after webhook rejections'
+                && $context['source'] === 'telegram_poller_poisoned_update'
+                && $context['update_id'] === 410
+                && $context['status'] === 422;
+        });
 
         Http::fake([
             'https://api.telegram.org/botmain-token/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1]]),
@@ -103,14 +115,40 @@ class TelegramPollUpdatesCommandTest extends TestCase
                 'ok' => true,
                 'result' => [['update_id' => 410, 'message' => ['text' => 'broken']]],
             ]),
-            'http://nginx/api/telegram/bot' => Http::response(['error' => 'validation'], 422),
+            'http://nginx/api/telegram/bot' => function () use (&$webhookAttempts) {
+                $webhookAttempts++;
+
+                return Http::response(['error' => 'validation'], 422);
+            },
         ]);
 
-        $startedAt = microtime(true);
         $this->artisan('telegram:poll-updates', ['--once' => true, '--timeout' => 1])->assertSuccessful();
 
-        $this->assertNull(Cache::get('telegram:poller:offset'));
-        $this->assertGreaterThanOrEqual(0.8, microtime(true) - $startedAt, 'Повтор после ошибки webhook не должен создавать горячий цикл.');
+        $this->assertSame(411, Cache::get('telegram:poller:offset'));
+        $this->assertSame(3, $webhookAttempts);
+    }
+
+    public function test_main_poller_does_not_advance_offset_when_internal_webhook_transport_fails(): void
+    {
+        app(SettingsService::class)->set('telegram.token', 'main-token');
+        app(SettingsService::class)->set('telegram.secret_key', 'main-secret');
+        Cache::forever('telegram:poller:offset', 420);
+
+        Http::fake([
+            'https://api.telegram.org/botmain-token/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1]]),
+            'https://api.telegram.org/botmain-token/deleteWebhook' => Http::response(['ok' => true]),
+            'https://api.telegram.org/botmain-token/getUpdates' => Http::response([
+                'ok' => true,
+                'result' => [['update_id' => 420, 'message' => ['text' => 'retry later']]],
+            ]),
+            'http://nginx/api/telegram/bot' => function (): never {
+                throw new \RuntimeException('Internal webhook connection refused');
+            },
+        ]);
+
+        $this->artisan('telegram:poll-updates', ['--once' => true, '--timeout' => 1])->assertSuccessful();
+
+        $this->assertSame(420, Cache::get('telegram:poller:offset'));
     }
 
     public function test_ai_poller_persists_offset_only_after_successful_internal_delivery(): void

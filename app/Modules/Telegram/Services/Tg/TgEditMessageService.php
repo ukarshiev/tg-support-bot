@@ -8,7 +8,6 @@ use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Services\ActionService\Edit\FromTgEditService;
 use Illuminate\Support\Facades\Log;
-use phpDocumentor\Reflection\Exception;
 
 class TgEditMessageService extends FromTgEditService
 {
@@ -17,42 +16,50 @@ class TgEditMessageService extends FromTgEditService
         parent::__construct($update);
     }
 
-    /**
-     * @return void
-     *
-     * @throws \Exception
-     */
     public function handleUpdate(): void
     {
-        try {
-            if ($this->update->typeQuery !== 'edited_message') {
-                throw new \Exception("Unknown event type: {$this->update->typeQuery}", 1);
-            }
-
-            if (!empty($this->update->rawData['edited_message']['photo']) ||
-                !empty($this->update->rawData['edited_message']['document'])) {
-                $this->editMessageCaption();
-            } else {
-                $this->editMessageText();
-            }
-
-            SendTelegramMessageJob::dispatch(
-                $this->botUser->id,
-                $this->update,
-                $this->messageParamsDTO,
-                $this->typeMessage,
-            );
-        } catch (Exception $e) {
-            Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+        if ($this->update->typeQuery !== 'edited_message') {
+            Log::channel('app')->warning('Telegram edit skipped: unknown event type', [
+                'type_query' => $this->update->typeQuery,
+                'update_id' => $this->update->updateId,
+            ]);
+            return;
         }
+
+        $messageData = Message::where([
+            'message_type' => $this->typeMessage,
+            'from_id' => $this->update->messageId,
+        ])->first();
+
+        $toIdMessage = $messageData?->to_id;
+        if (empty($toIdMessage)) {
+            Log::channel('app')->warning('Telegram edit skipped: original message not found', [
+                'update_id' => $this->update->updateId,
+                'message_id' => $this->update->messageId,
+                'message_type' => $this->typeMessage,
+            ]);
+            return;
+        }
+
+        $this->messageParamsDTO->message_id = $toIdMessage;
+
+        if (!empty($this->update->rawData['edited_message']['photo']) ||
+            !empty($this->update->rawData['edited_message']['document'])) {
+            $this->editMessageCaption();
+        } else {
+            $this->editMessageText();
+        }
+
+        SendTelegramMessageJob::dispatch(
+            $this->botUser->id,
+            $this->update,
+            $this->messageParamsDTO,
+            $this->typeMessage,
+        );
     }
 
     /**
      * Edit message
-     *
-     * @return void
-     *
-     * @throws \Exception
      */
     protected function editMessageText(): void
     {
@@ -63,26 +70,10 @@ class TgEditMessageService extends FromTgEditService
             $this->messageParamsDTO->text = ConversionMessageText::conversionMarkdownFormat($this->update->text, $this->update->entities);
             $this->messageParamsDTO->parse_mode = 'MarkdownV2';
         }
-
-        $messageData = Message::where([
-            'message_type' => $this->typeMessage,
-            'from_id' => $this->update->messageId,
-        ])->first();
-
-        $toIdMessage = $messageData->to_id ?? null;
-        if (empty($toIdMessage)) {
-            throw new \Exception('Message not found!', 1);
-        }
-
-        $this->messageParamsDTO->message_id = $toIdMessage;
     }
 
     /**
      * Edit message with photo or document
-     *
-     * @return void
-     *
-     * @throws \Exception
      */
     protected function editMessageCaption(): void
     {
@@ -93,17 +84,5 @@ class TgEditMessageService extends FromTgEditService
             $this->messageParamsDTO->caption = ConversionMessageText::conversionMarkdownFormat($this->update->caption, $this->update->entities);
             $this->messageParamsDTO->parse_mode = 'MarkdownV2';
         }
-
-        $messageData = Message::where([
-            'message_type' => $this->typeMessage,
-            'from_id' => $this->update->messageId,
-        ])->first();
-
-        $toIdMessage = $messageData->to_id ?? null;
-        if (empty($toIdMessage)) {
-            throw new \Exception('Message not found!', 1);
-        }
-
-        $this->messageParamsDTO->message_id = $toIdMessage;
     }
 }

@@ -244,7 +244,8 @@ class TelegramBotController
                     break;
 
                 default:
-                    throw new \Exception("Unknown event type: {$this->dataHook->typeQuery}");
+                    $this->logUnknownEventType();
+                    return;
             }
         }
     }
@@ -529,7 +530,8 @@ class TelegramBotController
                 break;
 
             default:
-                throw new \Exception("Unknown event type: {$this->dataHook->typeQuery}");
+                $this->logUnknownEventType();
+                return;
         }
     }
 
@@ -546,7 +548,8 @@ class TelegramBotController
                 break;
 
             default:
-                throw new \Exception("Unknown event type: {$this->dataHook->typeQuery}");
+                $this->logUnknownEventType();
+                return;
         }
     }
 
@@ -567,7 +570,17 @@ class TelegramBotController
                 break;
 
             default:
-                throw new \Exception("Unknown event type: {$this->dataHook->typeQuery}");
+                $this->logUnknownEventType();
+                return;
         }
+    }
+
+    private function logUnknownEventType(): void
+    {
+        Log::channel('app')->warning('Telegram update skipped: unknown event type', [
+            'type_query' => $this->dataHook->typeQuery,
+            'update_id' => $this->dataHook->updateId,
+            'platform' => $this->platform,
+        ]);
     }
 }

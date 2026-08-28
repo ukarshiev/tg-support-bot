@@ -128,4 +128,19 @@ class TgEditMessageServiceTest extends TestCase
 
         $this->assertEquals('Новый текст сообщения', $editedCaption);
     }
+
+    public function test_missing_original_message_skips_edit_without_exception(): void
+    {
+        $payload = TelegramUpdateDtoMock::getDtoParams();
+        $payload['edited_message'] = $payload['message'];
+        $payload['edited_message']['chat']['id'] = $this->botUser->chat_id;
+        $payload['edited_message']['message_id'] = 999999;
+        unset($payload['message']);
+
+        $editDto = TelegramUpdateDtoMock::getDto($payload);
+
+        (new TgEditMessageService($editDto))->handleUpdate();
+
+        Queue::assertNotPushed(SendTelegramMessageJob::class);
+    }
 }
