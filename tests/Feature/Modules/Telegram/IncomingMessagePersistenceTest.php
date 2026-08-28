@@ -15,6 +15,7 @@ use App\Modules\Telegram\Actions\SelectLanguage;
 use App\Modules\Telegram\Controllers\TelegramBotController;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
+use App\Modules\Telegram\Jobs\SendTelegramMirrorJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Modules\Vk\Services\VkMessageService;
@@ -115,7 +116,7 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
     }
 
-    public function test_telegram_incoming_without_selected_language_shows_selector_and_does_not_persist(): void
+    public function test_telegram_incoming_without_selected_language_is_persisted_and_shows_selector(): void
     {
         Queue::fake();
 
@@ -129,10 +130,94 @@ class IncomingMessagePersistenceTest extends TestCase
 
         $this->postTgWebhook($this->telegramPayload($botUser))->assertOk();
 
-        $this->assertSame(0, Message::where('bot_user_id', $botUser->id)->count());
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 555,
+            'text' => 'Hello from user',
+        ]);
         Queue::assertPushed(\App\Modules\Telegram\Jobs\SendTelegramMessageJob::class, function ($job): bool {
             return $job->typeMessage === 'outgoing'
                 && $job->queryParams->text === 'Choose language';
+        });
+    }
+
+    public function test_telegram_incoming_without_selected_language_is_saved_and_queues_mirror(): void
+    {
+        Queue::fake();
+        Cache::flush();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+            'telegram.group_id' => '-100999888',
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 112234, 'platform' => 'telegram']);
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'message_id' => 556,
+            'text' => 'Please help me',
+        ]))->assertOk();
+
+        /** @phpstan-ignore-next-line */
+        $jobs = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        /** @var SendTelegramMessageJob|null $incomingJob */
+        $incomingJob = collect($jobs)
+            ->map(fn (array $payload): SendTelegramMessageJob => $payload['job'])
+            ->first(fn (SendTelegramMessageJob $job): bool => $job->typeMessage === 'incoming');
+
+        $this->assertNotNull($incomingJob);
+        $incomingJob->handle();
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'incoming',
+            'from_id' => 556,
+            'text' => 'Please help me',
+        ]);
+        Queue::assertPushed(SendTelegramMirrorJob::class, 1);
+        Queue::assertNotPushed(TopicCreateJob::class);
+    }
+
+    public function test_telegram_language_selector_is_throttled_during_message_burst(): void
+    {
+        Queue::fake();
+        Cache::flush();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+
+        $botUser = BotUser::create(['chat_id' => 112235, 'platform' => 'telegram']);
+
+        $firstPayload = $this->telegramPayload($botUser, [
+            'message_id' => 557,
+            'text' => 'First message',
+        ]);
+        $secondPayload = $this->telegramPayload($botUser, [
+            'message_id' => 558,
+            'text' => 'Second message',
+        ]);
+
+        (new TelegramBotController(
+            \Illuminate\Http\Request::create('/api/telegram/bot', 'POST', $firstPayload),
+        ))->bot_query();
+        (new TelegramBotController(
+            \Illuminate\Http\Request::create('/api/telegram/bot', 'POST', $secondPayload),
+        ))->bot_query();
+
+        $this->assertSame(2, Message::query()
+            ->where('bot_user_id', $botUser->id)
+            ->where('message_type', 'incoming')
+            ->count());
+        Queue::assertPushed(SendTelegramMessageJob::class, 1);
+        Queue::assertPushed(SendTelegramMessageJob::class, function (SendTelegramMessageJob $job): bool {
+            return $job->typeMessage === 'outgoing'
+                && $job->queryParams->messageKind === Message::KIND_LANGUAGE_SELECTOR;
         });
     }
 
@@ -722,6 +807,35 @@ class IncomingMessagePersistenceTest extends TestCase
         $this->assertCount(1, $ordered);
         $this->assertSame('outgoing', $ordered->get(0)['type']);
         $this->assertSame('Choose language', $ordered->get(0)['text']);
+        Queue::assertNotPushed(TopicCreateJob::class);
+    }
+
+    public function test_telegram_lang_with_group_on_queues_only_language_selector(): void
+    {
+        Queue::fake();
+
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+            'telegram.group_id' => '-100999888',
+        ]);
+
+        $botUser = BotUser::create(['chat_id' => 789015, 'platform' => 'telegram']);
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'message_id' => 782,
+            'text' => '/lang',
+        ]))->assertOk();
+
+        $this->assertSame(0, Message::query()
+            ->where('bot_user_id', $botUser->id)
+            ->where('message_type', 'incoming')
+            ->count());
+        Queue::assertPushed(SendTelegramMessageJob::class, 1);
+        Queue::assertPushed(SendTelegramMessageJob::class, function (SendTelegramMessageJob $job): bool {
+            return $job->typeMessage === 'outgoing'
+                && $job->queryParams->messageKind === Message::KIND_LANGUAGE_SELECTOR;
+        });
         Queue::assertNotPushed(TopicCreateJob::class);
     }
 

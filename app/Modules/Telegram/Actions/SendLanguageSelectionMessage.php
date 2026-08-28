@@ -8,9 +8,14 @@ use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Services\SupportLanguageService;
+use Illuminate\Support\Facades\Cache;
 
 class SendLanguageSelectionMessage
 {
+    // One minute suppresses selector floods during a short message burst while
+    // still reminding a client who postponed the language choice.
+    private const SELECTOR_COOLDOWN_SECONDS = 60;
+
     public function __construct(
         private readonly SupportLanguageService $languages,
     ) {
@@ -27,8 +32,20 @@ class SendLanguageSelectionMessage
             return;
         }
 
-        if (!$force && (!empty($botUser->preferred_language_code) || $this->selectorAlreadySent($botUser))) {
-            return;
+        $cacheKey = "telegram:language-selector:bot-user:{$botUser->id}";
+
+        if (!$force) {
+            if (!empty($botUser->preferred_language_code)) {
+                return;
+            }
+
+            if (!Cache::add($cacheKey, true, self::SELECTOR_COOLDOWN_SECONDS)) {
+                return;
+            }
+        } else {
+            // Explicit commands always show the selector, but also suppress an
+            // immediate automatic repeat from the client's next message.
+            Cache::add($cacheKey, true, self::SELECTOR_COOLDOWN_SECONDS);
         }
 
         SendTelegramMessageJob::dispatch(
@@ -47,20 +64,5 @@ class SendLanguageSelectionMessage
             ]),
             'outgoing'
         );
-    }
-
-    private function selectorAlreadySent(BotUser $botUser): bool
-    {
-        $columns = Message::supportsStructuralKind() ? ['message_kind', 'text'] : ['text'];
-
-        return Message::query()
-            ->where('bot_user_id', $botUser->id)
-            ->where('platform', $botUser->platform)
-            ->where('message_type', 'outgoing')
-            ->latest('id')
-            ->limit(100)
-            ->get($columns)
-            ->contains(fn (Message $message): bool => $message->message_kind === Message::KIND_LANGUAGE_SELECTOR
-                || $this->languages->isSelectorText($message->text));
     }
 }

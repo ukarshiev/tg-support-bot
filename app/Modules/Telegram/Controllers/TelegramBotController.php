@@ -224,17 +224,17 @@ class TelegramBotController
                         return;
                     }
 
-                    if ($this->dataHook->typeSource === 'private' && empty($this->botUser->preferred_language_code)) {
-                        app(SendLanguageSelectionMessage::class)->execute($this->dataHook);
-                        return;
-                    }
-
                     if ($this->shouldSkipDuplicateIncomingPrivateMessage()) {
                         return;
                     }
 
                     $this->reopenClosedDialogForIncomingPrivateMessage();
                     $this->notifyIncomingMessage();
+
+                    if ($this->dataHook->typeSource === 'private' && empty($this->botUser->preferred_language_code)) {
+                        app(SendLanguageSelectionMessage::class)->execute($this->dataHook);
+                        return;
+                    }
 
                     $this->maybeDispatchAi();
                     break;
