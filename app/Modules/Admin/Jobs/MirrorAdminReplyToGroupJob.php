@@ -4,6 +4,8 @@ namespace App\Modules\Admin\Jobs;
 
 use App\Models\BotUser;
 use App\Models\DeliveryOperation;
+use App\Models\Message;
+use App\Modules\Admin\Services\AdminReplyDeliveryService;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
@@ -133,15 +135,21 @@ class MirrorAdminReplyToGroupJob implements ShouldQueue
             return;
         }
 
-        DeliveryOperation::query()
+        $operation = DeliveryOperation::query()
             ->where('operation_key', hash('sha256', 'admin-reply:' . $this->sourceMessageId))
-            ->update([
-                'status' => DeliveryOperation::STATUS_DELIVERED,
-                'attempts' => 1,
-                'last_error' => null,
-                'started_at' => now(),
-                'delivered_at' => now(),
-            ]);
+            ->first();
+        if ($operation === null) {
+            return;
+        }
+
+        $operation->update([
+            'attempts' => max(1, $operation->attempts),
+            'started_at' => $operation->started_at ?? now(),
+        ]);
+        app(AdminReplyDeliveryService::class)->markDelivered(
+            $operation,
+            Message::find($this->sourceMessageId),
+        );
 
         Log::channel('app')->info('Admin reply client delivery confirmed', [
             'source' => 'admin_reply_delivery_confirmed',

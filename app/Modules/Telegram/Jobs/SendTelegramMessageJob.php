@@ -6,6 +6,7 @@ use App\Jobs\SendMessage\AbstractSendMessageJob;
 use App\Models\BotUser;
 use App\Models\DeliveryOperation;
 use App\Models\Message;
+use App\Modules\Admin\Services\AdminReplyDeliveryService;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
@@ -500,12 +501,11 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             return;
         }
 
-        $operation->update([
-            'message_id' => $message?->id,
-            'external_message_id' => $response->message_id,
-            'status' => DeliveryOperation::STATUS_DELIVERED,
-            'delivered_at' => now(),
-        ]);
+        app(AdminReplyDeliveryService::class)->markDelivered(
+            $operation,
+            $message,
+            $response->message_id,
+        );
     }
 
     private function markDeliveryOperationFailed(?DeliveryOperation $operation, TelegramAnswerDto $response): void
@@ -515,22 +515,32 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
         }
 
         $retryable = $response->response_code === 429 || ($response->response_code ?? 0) >= 500;
-        $operation->update([
-            'status' => $retryable ? DeliveryOperation::STATUS_RETRYING : DeliveryOperation::STATUS_FAILED,
-            'last_error' => sprintf('code=%s type=%s', $response->response_code, $response->type_error),
-        ]);
+        $reason = sprintf('code=%s type=%s', $response->response_code, $response->type_error);
+        if ($retryable) {
+            $operation->update([
+                'status' => DeliveryOperation::STATUS_RETRYING,
+                'last_error' => $reason,
+            ]);
+
+            return;
+        }
+
+        app(AdminReplyDeliveryService::class)->markFailed($operation, $reason);
     }
 
     public function failed(\Throwable $exception): void
     {
-        DeliveryOperation::query()
+        $operations = DeliveryOperation::query()
             ->where('trace_id', $this->traceId)
             ->where('destination', 'telegram-client')
             ->where('status', '!=', DeliveryOperation::STATUS_DELIVERED)
-            ->update([
-                'status' => DeliveryOperation::STATUS_FAILED,
-                'last_error' => 'Job exhausted retries: ' . $exception::class,
-            ]);
+            ->get();
+        foreach ($operations as $operation) {
+            app(AdminReplyDeliveryService::class)->markFailed(
+                $operation,
+                'Job exhausted retries: ' . $exception::class,
+            );
+        }
 
         Log::channel('app')->error('Telegram client delivery permanently failed', [
             'source' => 'telegram_client_delivery_failed',

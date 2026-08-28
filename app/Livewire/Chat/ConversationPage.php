@@ -492,7 +492,7 @@ class ConversationPage extends Component
         }
 
         $messages = Message::whereIn('id', $ids)
-            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
+            ->with(['externalMessage', 'attachments', 'sender', 'translations', 'adminReplyDeliveryOperation'])
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
@@ -576,7 +576,7 @@ class ConversationPage extends Component
         // Most recent page only — older messages are pulled in on scroll-up.
         // Fetch one extra row to detect whether more history exists.
         $batch = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
+            ->with(['externalMessage', 'attachments', 'sender', 'translations', 'adminReplyDeliveryOperation'])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::MESSAGES_PER_PAGE + 1)
@@ -609,7 +609,7 @@ class ConversationPage extends Component
         $oldest = $this->chatMessages->first();
 
         $batch = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
+            ->with(['externalMessage', 'attachments', 'sender', 'translations', 'adminReplyDeliveryOperation'])
             ->where(function ($q) use ($oldest): void {
                 $q->where('created_at', '<', $oldest->created_at)
                     ->orWhere(function ($q2) use ($oldest): void {
@@ -649,7 +649,7 @@ class ConversationPage extends Component
         $newest = $this->chatMessages->last();
 
         $query = Message::where('bot_user_id', $this->activeBotUserId)
-            ->with(['externalMessage', 'attachments', 'sender', 'translations'])
+            ->with(['externalMessage', 'attachments', 'sender', 'translations', 'adminReplyDeliveryOperation'])
             ->orderBy('created_at')
             ->orderBy('id');
 
@@ -746,7 +746,12 @@ class ConversationPage extends Component
         $this->loadDialogList();
         $this->dispatch('messages-updated');
 
-        $this->toast('Сообщение отправлено');
+        $message->refresh();
+        if ($message->delivery_status === Message::DELIVERY_FAILED) {
+            $this->toast('Сообщение не удалось поставить на доставку', 'error');
+        } else {
+            $this->toast('Сообщение поставлено в очередь на доставку');
+        }
     }
 
     /**

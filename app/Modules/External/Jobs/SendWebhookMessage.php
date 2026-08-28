@@ -3,6 +3,7 @@
 namespace App\Modules\External\Jobs;
 
 use App\Models\ExternalSource;
+use App\Modules\Admin\Services\AdminReplyDeliveryService;
 use App\Services\Webhook\WebhookService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,8 +32,12 @@ class SendWebhookMessage implements ShouldQueue
 
     public array $backoff = [60, 180, 300];
 
-    public function __construct(string $url, array $payload, int $sourceId)
-    {
+    public function __construct(
+        string $url,
+        array $payload,
+        int $sourceId,
+        public readonly ?int $deliveryOperationId = null,
+    ) {
         $this->url = $url;
         $this->payload = $payload;
         $this->sourceId = $sourceId;
@@ -44,6 +49,10 @@ class SendWebhookMessage implements ShouldQueue
      */
     public function handle(WebhookService $webhook): void
     {
+        if ($this->deliveryOperationId !== null) {
+            app(AdminReplyDeliveryService::class)->markProcessing($this->deliveryOperationId);
+        }
+
         try {
             if (empty($this->url)) {
                 throw new \Exception('Webhook URL is empty', 1);

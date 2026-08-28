@@ -7,6 +7,7 @@ use App\Models\DeliveryOperation;
 use App\Models\Message;
 use App\Models\User;
 use App\Modules\Admin\Jobs\MirrorAdminReplyToGroupJob;
+use App\Modules\Admin\Services\AdminReplyDeliveryService;
 use App\Modules\Admin\Services\ChannelStatusService;
 use App\Modules\External\Jobs\SendWebhookMessage;
 use App\Modules\Max\Actions\UploadFileMax;
@@ -53,7 +54,7 @@ class SendReplyAction
             $botUser->update(['is_closed' => false, 'closed_at' => null]);
         }
 
-        $message = Message::create([
+        $messageAttributes = [
             'bot_user_id' => $botUser->id,
             'platform' => $botUser->platform,
             'message_type' => 'outgoing',
@@ -62,7 +63,11 @@ class SendReplyAction
             'text' => $text ?: null,
             'sender_user_id' => $author?->id,
             'sender_name' => $author?->name,
-        ]);
+        ];
+        if (Message::supportsDeliveryStatus()) {
+            $messageAttributes['delivery_status'] = Message::DELIVERY_PENDING;
+        }
+        $message = Message::create($messageAttributes);
 
         $operationKey = hash('sha256', 'admin-reply:' . $message->id);
         $deliveryOperation = DeliveryOperation::create([
@@ -77,25 +82,22 @@ class SendReplyAction
 
         try {
             $deliveryJob = match (true) {
-                $botUser->platform === 'telegram' => self::sendTelegramReply($botUser, $text, $file, $message),
-                $botUser->platform === 'vk' => self::sendVkReply($botUser, $text, $file, $message),
-                $botUser->platform === 'max' => self::sendMaxReply($botUser, $text, $file, $message),
-                default => self::sendExternalReply($botUser, $text),
+                $botUser->platform === 'telegram' => self::sendTelegramReply($botUser, $text, $file, $message, $deliveryOperation->id),
+                $botUser->platform === 'vk' => self::sendVkReply($botUser, $text, $file, $message, $deliveryOperation->id),
+                $botUser->platform === 'max' => self::sendMaxReply($botUser, $text, $file, $message, $deliveryOperation->id),
+                default => self::sendExternalReply($botUser, $text, $deliveryOperation->id),
             };
         } catch (Throwable $exception) {
-            $deliveryOperation->update([
-                'status' => DeliveryOperation::STATUS_FAILED,
-                'last_error' => mb_substr($exception->getMessage(), 0, 2000),
-            ]);
+            app(AdminReplyDeliveryService::class)->markFailed($deliveryOperation, $exception->getMessage());
 
             throw $exception;
         }
 
         if ($deliveryJob === null) {
-            $deliveryOperation->update([
-                'status' => DeliveryOperation::STATUS_FAILED,
-                'last_error' => 'Delivery channel is not configured',
-            ]);
+            app(AdminReplyDeliveryService::class)->markFailed(
+                $deliveryOperation,
+                'Delivery channel is not configured',
+            );
 
             Log::channel('app')->error('Admin reply has no configured delivery channel', [
                 'source' => 'admin_reply_delivery_unavailable',
@@ -116,13 +118,12 @@ class SendReplyAction
         // Если delivery job исчерпает повторы, Laravel не продолжит цепочку.
         Bus::chain($jobs)
             ->catch(static function (Throwable $exception) use ($operationKey): void {
-                DeliveryOperation::query()
+                $operation = DeliveryOperation::query()
                     ->where('operation_key', $operationKey)
-                    ->where('status', '!=', DeliveryOperation::STATUS_DELIVERED)
-                    ->update([
-                        'status' => DeliveryOperation::STATUS_FAILED,
-                        'last_error' => mb_substr($exception->getMessage(), 0, 2000),
-                    ]);
+                    ->first();
+                if ($operation !== null) {
+                    app(AdminReplyDeliveryService::class)->markFailed($operation, $exception->getMessage());
+                }
 
                 Log::channel('app')->critical('Admin reply delivery permanently failed', [
                     'source' => 'admin_reply_delivery_failed_terminal',
@@ -192,7 +193,7 @@ class SendReplyAction
      *
      * @return ShouldQueue
      */
-    private static function sendMaxReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): ShouldQueue
+    private static function sendMaxReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message, int $deliveryOperationId): ShouldQueue
     {
         if ($file !== null) {
             $token = self::uploadMaxFile($file);
@@ -216,7 +217,8 @@ class SendReplyAction
                         'user_id' => (int) $botUser->chat_id,
                         'text' => $text,
                         'file_token' => $token,
-                    ])
+                    ]),
+                    deliveryOperationId: $deliveryOperationId,
                 );
             }
 
@@ -235,7 +237,8 @@ class SendReplyAction
                 'methodQuery' => 'sendMessage',
                 'user_id' => (int) $botUser->chat_id,
                 'text' => $text,
-            ])
+            ]),
+            deliveryOperationId: $deliveryOperationId,
         );
     }
 
@@ -329,7 +332,7 @@ class SendReplyAction
      *
      * @return ShouldQueue
      */
-    private static function sendTelegramReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): ShouldQueue
+    private static function sendTelegramReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message, int $deliveryOperationId): ShouldQueue
     {
         if ($file !== null) {
             // Очередь получает постоянный файл из private local storage, а не
@@ -346,7 +349,7 @@ class SendReplyAction
                 'caption' => $text ?: null,
                 'uploaded_file_path' => $destPath,
                 'parse_mode' => null,
-            ]));
+            ]), deliveryOperationId: $deliveryOperationId);
         }
 
         return new SendTelegramSimpleQueryJob(
@@ -354,7 +357,8 @@ class SendReplyAction
                 'methodQuery' => 'sendMessage',
                 'chat_id' => $botUser->chat_id,
                 'text' => $text,
-            ])
+            ]),
+            deliveryOperationId: $deliveryOperationId,
         );
     }
 
@@ -372,7 +376,7 @@ class SendReplyAction
      *
      * @return ShouldQueue
      */
-    private static function sendVkReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message): ShouldQueue
+    private static function sendVkReply(BotUser $botUser, string $text, ?UploadedFile $file, Message $message, int $deliveryOperationId): ShouldQueue
     {
         $attachment = $file !== null ? self::uploadVkDocument($botUser, $file) : null;
 
@@ -388,7 +392,8 @@ class SendReplyAction
                 'peer_id' => $botUser->chat_id,
                 'message' => $text,
                 'attachment' => $attachment,
-            ])
+            ]),
+            deliveryOperationId: $deliveryOperationId,
         );
     }
 
@@ -477,7 +482,7 @@ class SendReplyAction
      *
      * @return ShouldQueue|null
      */
-    private static function sendExternalReply(BotUser $botUser, string $text): ?ShouldQueue
+    private static function sendExternalReply(BotUser $botUser, string $text, int $deliveryOperationId): ?ShouldQueue
     {
         $botUser->load('externalUser.externalSource');
         $webhookUrl = $botUser->externalUser?->externalSource?->webhook_url;
@@ -495,6 +500,6 @@ class SendReplyAction
                 'text' => $text,
                 'date' => date('d.m.Y H:i'),
             ],
-        ], $botUser->externalUser->externalSource->id);
+        ], $botUser->externalUser->externalSource->id, $deliveryOperationId);
     }
 }

@@ -667,6 +667,17 @@
                                 $clientText = $messageTranslation->source_text ?: $messageText;
                             }
                         }
+                        $deliveryStatus = $isOutgoing
+                            ? ($message->delivery_status ?: \App\Models\Message::DELIVERY_DELIVERED)
+                            : null;
+                        $deliveryLabel = match ($deliveryStatus) {
+                            \App\Models\Message::DELIVERY_PENDING => 'В очереди',
+                            \App\Models\Message::DELIVERY_FAILED => 'Не доставлено',
+                            default => 'Доставлено',
+                        };
+                        $deliveryReason = $deliveryStatus === \App\Models\Message::DELIVERY_FAILED
+                            ? $message->adminReplyDeliveryOperation?->last_error
+                            : null;
                     @endphp
 
                     @if($isOutgoing)
@@ -707,9 +718,17 @@
                                 @elseif($message->attachments->isEmpty())
                                     <p class="text-xs text-white opacity-70 italic">Вложение</p>
                                 @endif
-                                <p class="text-right text-white opacity-70" style="font-size:11px;">
-                                    {{ $message->created_at?->format('H:i') }}
-                                </p>
+                                <div class="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right text-white" style="font-size:11px;">
+                                    <span class="opacity-70">{{ $message->created_at?->format('H:i') }}</span>
+                                    <span class="font-medium {{ $deliveryStatus === \App\Models\Message::DELIVERY_FAILED ? '' : 'opacity-80' }}">
+                                        {{ $deliveryLabel }}
+                                    </span>
+                                </div>
+                                @if($deliveryReason)
+                                    <p class="rounded-lg bg-red-950/25 px-2 py-1 text-right text-xs text-white" title="Причина недоставки">
+                                        {{ $deliveryReason }}
+                                    </p>
+                                @endif
                             </div>
                             {{-- Operator avatar: photo > initials > generic headset glyph --}}
                             @php
@@ -969,6 +988,14 @@
                         @error('attachment')
                             <p class="mb-2 text-xs text-red-500">{{ $message }}</p>
                         @enderror
+                    @endif
+
+                    @if($activeBotUser?->is_unavailable)
+                        <div class="mb-2 rounded-xl border border-amber-400/50 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="alert">
+                            <span class="font-semibold">Получатель недоступен.</span>
+                            Предыдущая доставка завершилась ошибкой: {{ $activeBotUser->unavailable_reason ?: 'причина не указана' }}.
+                            Можно попробовать отправить ещё раз.
+                        </div>
                     @endif
 
                     @if(trim($replyText) !== '' && $this->clientLanguageRequiresTranslation())

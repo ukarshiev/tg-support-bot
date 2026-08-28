@@ -7,6 +7,7 @@ use App\Jobs\TranslateMessageHistoryJob;
 use App\Livewire\Chat\ConversationPage;
 use App\Models\AiMessage;
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
 use App\Models\MessageTranslation;
 use App\Models\TranslationJob;
@@ -60,6 +61,71 @@ class ConversationPageTest extends TestCase
             ->assertSee('Получатель недоступен')
             ->assertSee('Forbidden: user is deactivated')
             ->assertSee('29.08.2026 12:34');
+    }
+
+    public function test_reply_form_warns_when_recipient_is_unavailable(): void
+    {
+        $botUser = BotUser::create([
+            'chat_id' => 991003,
+            'platform' => 'telegram',
+            'is_unavailable' => true,
+            'unavailable_reason' => 'Forbidden: bot was blocked by the user',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('Получатель недоступен.')
+            ->assertSee('Можно попробовать отправить ещё раз.')
+            ->assertSee('Forbidden: bot was blocked by the user');
+    }
+
+    public function test_outgoing_bubbles_render_delivery_status_and_failure_reason(): void
+    {
+        $botUser = BotUser::create(['chat_id' => 991004, 'platform' => 'telegram']);
+        $pending = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'delivery_status' => Message::DELIVERY_PENDING,
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'Pending reply',
+        ]);
+        $delivered = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'delivery_status' => Message::DELIVERY_DELIVERED,
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'Delivered reply',
+        ]);
+        $failed = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'outgoing',
+            'delivery_status' => Message::DELIVERY_FAILED,
+            'from_id' => 0,
+            'to_id' => 0,
+            'text' => 'Failed reply',
+        ]);
+        DeliveryOperation::create([
+            'operation_key' => hash('sha256', 'admin-reply:' . $failed->id),
+            'bot_user_id' => $botUser->id,
+            'message_id' => $failed->id,
+            'trace_id' => 'test-failed-reply',
+            'destination' => 'telegram-client',
+            'operation' => 'admin-reply',
+            'status' => DeliveryOperation::STATUS_FAILED,
+            'last_error' => 'code=403 type=USER_BLOCKED',
+        ]);
+
+        Livewire::test(ConversationPage::class)
+            ->call('selectChat', $botUser->id)
+            ->assertSee('В очереди')
+            ->assertSee('Доставлено')
+            ->assertSee('Не доставлено')
+            ->assertSee('code=403 type=USER_BLOCKED');
     }
 
     public function test_poll_refreshes_recipient_unavailable_badge_for_open_conversation(): void
@@ -957,7 +1023,7 @@ class ConversationPageTest extends TestCase
             ->set('replyText', 'Hello!')
             ->call('sendReply')
             ->assertHasNoErrors()
-            ->assertDispatched('admin-toast', message: 'Сообщение отправлено');
+            ->assertDispatched('admin-toast', message: 'Сообщение поставлено в очередь на доставку');
 
         $this->assertDatabaseHas('messages', [
             'bot_user_id' => $botUser->id,
@@ -982,7 +1048,7 @@ class ConversationPageTest extends TestCase
             ->set('replyText', 'Оригинальный текст')
             ->call('sendReply')
             ->assertHasNoErrors()
-            ->assertDispatched('admin-toast', message: 'Сообщение отправлено');
+            ->assertDispatched('admin-toast', message: 'Сообщение поставлено в очередь на доставку');
 
         $this->assertDatabaseHas('messages', [
             'bot_user_id' => $botUser->id,

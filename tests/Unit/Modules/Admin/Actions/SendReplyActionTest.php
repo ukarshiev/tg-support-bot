@@ -44,6 +44,13 @@ class SendReplyActionTest extends TestCase
             'platform' => 'telegram',
             'message_type' => 'outgoing',
             'text' => 'Hello Telegram',
+            'delivery_status' => \App\Models\Message::DELIVERY_PENDING,
+        ]);
+
+        $this->assertDatabaseHas('delivery_operations', [
+            'bot_user_id' => $botUser->id,
+            'operation' => 'admin-reply',
+            'status' => \App\Models\DeliveryOperation::STATUS_PENDING,
         ]);
     }
 

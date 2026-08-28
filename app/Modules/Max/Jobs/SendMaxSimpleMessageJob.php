@@ -4,6 +4,7 @@ namespace App\Modules\Max\Jobs;
 
 use App\Jobs\SendMessage\AbstractSendMessageJob;
 use App\Models\BotUser;
+use App\Modules\Admin\Services\AdminReplyDeliveryService;
 use App\Modules\Max\Api\MaxMethods;
 use App\Modules\Max\DTOs\MaxTextMessageDto;
 use Illuminate\Support\Facades\Log;
@@ -27,6 +28,7 @@ class SendMaxSimpleMessageJob extends AbstractSendMessageJob
     public function __construct(
         MaxTextMessageDto $queryParams,
         mixed $maxMethods = null,
+        public readonly ?int $deliveryOperationId = null,
     ) {
         $this->queryParams = $queryParams;
         $this->maxMethods = $maxMethods ?? new MaxMethods();
@@ -34,6 +36,10 @@ class SendMaxSimpleMessageJob extends AbstractSendMessageJob
 
     public function handle(): void
     {
+        if ($this->deliveryOperationId !== null) {
+            app(AdminReplyDeliveryService::class)->markProcessing($this->deliveryOperationId);
+        }
+
         $response = $this->maxMethods->sendQuery(
             $this->queryParams->methodQuery,
             $this->queryParams->toArray()

@@ -5,6 +5,7 @@ namespace App\Modules\Telegram\Jobs;
 use App\Jobs\SendMessage\AbstractSendMessageJob;
 use App\Models\BotUser;
 use App\Models\Feedback;
+use App\Modules\Admin\Services\AdminReplyDeliveryService;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Services\Settings\SettingsService;
@@ -31,6 +32,7 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
     public function __construct(
         TGTextMessageDto $queryParams,
         public readonly ?int $feedbackId = null,
+        public readonly ?int $deliveryOperationId = null,
     ) {
         $this->queryParams = $queryParams;
         $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
@@ -47,6 +49,10 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
 
     public function handle(): void
     {
+        if ($this->deliveryOperationId !== null) {
+            app(AdminReplyDeliveryService::class)->markProcessing($this->deliveryOperationId);
+        }
+
         try {
             $botUser = null;
 

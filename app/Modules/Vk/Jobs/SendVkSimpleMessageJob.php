@@ -5,6 +5,7 @@ namespace App\Modules\Vk\Jobs;
 use App\Jobs\SendMessage\AbstractSendMessageJob;
 use App\Models\BotUser;
 use App\Models\Feedback;
+use App\Modules\Admin\Services\AdminReplyDeliveryService;
 use App\Modules\Vk\Api\VkMethods;
 use App\Modules\Vk\DTOs\VkTextMessageDto;
 use Illuminate\Support\Facades\Log;
@@ -30,6 +31,7 @@ class SendVkSimpleMessageJob extends AbstractSendMessageJob
         VkTextMessageDto $queryParams,
         mixed $vkMethods = null,
         public readonly ?int $feedbackId = null,
+        public readonly ?int $deliveryOperationId = null,
     ) {
         $this->queryParams = $queryParams;
 
@@ -38,6 +40,10 @@ class SendVkSimpleMessageJob extends AbstractSendMessageJob
 
     public function handle(): void
     {
+        if ($this->deliveryOperationId !== null) {
+            app(AdminReplyDeliveryService::class)->markProcessing($this->deliveryOperationId);
+        }
+
         $methodQuery = $this->queryParams->methodQuery;
         $dataQuery = $this->queryParams->toArray();
 

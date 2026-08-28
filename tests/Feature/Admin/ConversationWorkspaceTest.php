@@ -506,7 +506,7 @@ class ConversationWorkspaceTest extends TestCase
             ->set('replyText', 'Test reply from workspace')
             ->call('sendReply')
             ->assertHasNoErrors()
-            ->assertDispatched('admin-toast', message: 'Сообщение отправлено');
+            ->assertDispatched('admin-toast', message: 'Сообщение поставлено в очередь на доставку');
 
         $this->assertDatabaseHas('messages', [
             'bot_user_id' => $botUser->id,

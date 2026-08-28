@@ -211,6 +211,15 @@ class Message extends Model
     }
 
     /**
+     * Delivery receipt for a reply created from the admin workspace.
+     */
+    public function adminReplyDeliveryOperation(): HasOne
+    {
+        return $this->hasOne(DeliveryOperation::class)
+            ->where('operation', 'admin-reply');
+    }
+
+    /**
      * @param string $typeMessage
      * @param int    $from_id
      * @param string $source
