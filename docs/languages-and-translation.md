@@ -435,7 +435,7 @@ AI генерирует базовый ответ на русском для о�
 | Очередь переводов | `app/Livewire/Settings/TranslationQueuePage.php`, `app/Models/TranslationJob.php`, `database/migrations/2026_07_04_000000_create_translation_jobs_table.php` |
 | Telegram приветствие и выбор языка | `app/Modules/Telegram/Services/SupportLanguageService.php`, `app/Modules/Telegram/Actions/SendLanguageSelectionMessage.php`, `app/Modules/Telegram/Actions/ShowLanguageSelectionPage.php`, `app/Modules/Telegram/Actions/SelectLanguage.php` |
 | Чат-композер и перевод истории | `app/Livewire/Chat/ConversationPage.php`, `app/Jobs/TranslateMessageHistoryJob.php`, `app/Jobs/TranslateMessageHistoryBatchJob.php`, `database/migrations/2026_07_04_010000_extend_chat_history_translations.php`, `database/migrations/2026_07_18_000000_add_unique_context_to_message_translations.php` |
-| AI-черновики | `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/SendAiReplyJob.php` |
+| AI-черновики | `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/SendPendingAiDraftToTelegramJob.php`, `app/Modules/Ai/Jobs/SendAiReplyJob.php` |
 | Support RU canonical | `app/Jobs/TranslateSupportCaseJob.php`, `app/Modules/Ai/Support/SupportCaseCanonicalizerService.php`, `app/Console/Commands/AiSupportCanonicalize.php` |
 
 ## Проверки

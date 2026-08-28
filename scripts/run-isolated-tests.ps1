@@ -6,13 +6,40 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repositoryPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$composeConfig = docker compose --project-directory $repositoryPath config --format json | ConvertFrom-Json
+$composeCommand = $null
+$composeConfig = $null
+
+if (Get-Command 'docker' -ErrorAction SilentlyContinue) {
+    try {
+        $composeCandidateOutput = docker compose --project-directory $repositoryPath config --format json 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $composeCommand = 'docker compose'
+            $composeConfig = $composeCandidateOutput | ConvertFrom-Json
+        }
+    } catch {
+        # no-op, fallback below
+    }
+}
+
+if (-not $composeConfig -and (Get-Command 'docker-compose' -ErrorAction SilentlyContinue)) {
+    $composeCommand = 'docker-compose'
+    $composeConfig = (& docker-compose -f (Join-Path $repositoryPath 'docker-compose.yml') config --format json) | ConvertFrom-Json
+}
+
+if (-not $composeCommand) {
+    throw 'Neither docker compose nor docker-compose was found. Install Docker and Docker Compose.'
+}
+
+if (-not $composeConfig -or -not $composeConfig.name) {
+    throw 'Failed to read Compose project name from config.'
+}
+
 $appImage = "$($composeConfig.name)-app:latest"
 
 docker image inspect $appImage *> $null
 
 if ($LASTEXITCODE -ne 0) {
-    throw 'Образ app не найден. Сначала соберите его командой: docker compose build app'
+    throw ('App image not found. Build first with: {0} build app' -f $composeCommand)
 }
 
 $dockerArguments = @(
@@ -44,7 +71,7 @@ $dockerArguments = @(
 
 $dockerArguments += $PhpUnitArguments
 
-Write-Host 'PHPUnit запускается без сети, без Compose volumes и только с SQLite :memory:.' -ForegroundColor Cyan
+Write-Host 'PHPUnit will run offline, without Compose volumes, and with SQLite :memory:.' -ForegroundColor Cyan
 & docker @dockerArguments
 
 if ($LASTEXITCODE -ne 0) {

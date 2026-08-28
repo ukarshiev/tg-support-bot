@@ -288,7 +288,11 @@ class AiProviderAccessPage extends Component
             ? $this->deepseek_client_secret
             : (string) ($settings->get('ai.deepseek_client_secret') ?? '');
 
-        return $verifier->verifyDeepseek($secret, (string) ($this->deepseek_base_url ?? ''), (string) ($this->deepseek_model ?? ''));
+        return $verifier->verifyDeepseek(
+            $secret,
+            (string) ($this->deepseek_base_url ?? ''),
+            $this->resolveDeepSeekModel((string) ($this->deepseek_model ?? '')),
+        );
     }
 
     /**
@@ -348,7 +352,7 @@ class AiProviderAccessPage extends Component
         // DeepSeek non-secrets
         $this->deepseek_client_id = (string) ($settings->get('ai.deepseek_client_id') ?? '');
         $this->deepseek_base_url = (string) ($settings->get('ai.deepseek_base_url') ?? '');
-        $this->deepseek_model = (string) ($settings->get('ai.deepseek_model') ?? '');
+        $this->deepseek_model = $this->resolveDeepSeekModel((string) ($settings->get('ai.deepseek_model') ?? ''));
         $rawDeepSeekMax = $settings->get('ai.deepseek_max_tokens');
         $this->deepseek_max_tokens = $rawDeepSeekMax !== null ? (int) $rawDeepSeekMax : null;
         $this->deepseek_temperature = (string) ($settings->get('ai.deepseek_temperature') ?? '');
@@ -399,6 +403,15 @@ class AiProviderAccessPage extends Component
     }
 
     /**
+     * Resolve legacy/empty DeepSeek model to supported default.
+     */
+    private function resolveDeepSeekModel(string $model): string
+    {
+        $model = trim($model);
+        return $model === '' || $model === 'deepseek-chat' ? 'deepseek-v4-pro' : $model;
+    }
+
+    /**
      * Validate and save DeepSeek credentials.
      */
     private function saveDeepSeek(SettingsService $settings): void
@@ -417,7 +430,7 @@ class AiProviderAccessPage extends Component
         }
 
         $settings->set('ai.deepseek_base_url', $this->deepseek_base_url ?? '');
-        $settings->set('ai.deepseek_model', $this->deepseek_model ?? '');
+        $settings->set('ai.deepseek_model', $this->resolveDeepSeekModel((string) ($this->deepseek_model ?? '')));
 
         if ($this->deepseek_max_tokens !== null) {
             $settings->set('ai.deepseek_max_tokens', $this->deepseek_max_tokens);

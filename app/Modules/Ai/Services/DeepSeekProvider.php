@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Log;
 
 class DeepSeekProvider extends BaseAiProvider
 {
+    private const DEFAULT_MODEL = 'deepseek-v4-pro';
+
     private ?string $accessToken = null;
 
     public function __construct()
@@ -73,7 +75,7 @@ class DeepSeekProvider extends BaseAiProvider
      */
     public function getModelName(): string
     {
-        return $this->config['model'] ?? 'deepseek-chat';
+        return $this->resolveModelName();
     }
 
     /**
@@ -105,6 +107,10 @@ class DeepSeekProvider extends BaseAiProvider
     private function makeApiCall(AiRequestDto $request): array
     {
         $messages = $this->buildMessages($request);
+        $model = $this->resolveModelName();
+        $this->modelName = $model;
+        $maxTokens = (int) ($this->config['max_tokens'] ?? 1000);
+        $temperature = (float) ($this->config['temperature'] ?? 0.7);
 
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $this->accessToken,
@@ -112,15 +118,16 @@ class DeepSeekProvider extends BaseAiProvider
         ])->connectTimeout(3)
             ->timeout((int) ($this->config['timeout'] ?? 30))
             ->post($this->config['base_url'], [
-            'model' => $this->config['model'] ?? 'deepseek-chat',
+            'model' => $model,
             'messages' => $messages,
-            'max_tokens' => (int) ($this->config['max_tokens'] ?? 1000),
-            'temperature' => (float) ($this->config['temperature'] ?? 0.7),
+            'max_tokens' => $maxTokens,
+            'temperature' => $temperature,
             'stream' => false,
         ]);
 
         if (!$response->successful()) {
-            throw new \Exception('DeepSeek API request failed: HTTP ' . $response->status());
+            $errorHint = $this->extractErrorHint($response);
+            throw new \Exception('DeepSeek API request failed: HTTP ' . $response->status() . $errorHint);
         }
 
         return $response->json();
@@ -146,7 +153,20 @@ class DeepSeekProvider extends BaseAiProvider
      */
     private function parseApiResponse(array $response, AiRequestDto $request, float $startedAt): AiResponseDto
     {
-        $content = trim((string) ($response['choices'][0]['message']['content'] ?? ''));
+        $messagePayload = $response['choices'][0]['message'] ?? [];
+        $content = trim((string) ($messagePayload['content'] ?? ''));
+        $reasoningContent = trim((string) ($messagePayload['reasoning_content'] ?? ''));
+
+        if ($content === '' && $reasoningContent !== '') {
+            Log::channel('app')->warning('DeepSeek API returned empty final content; fallback to reasoning_content.', [
+                'source' => 'ai_fallback',
+                'provider' => 'DeepSeek',
+                'model' => $response['model'] ?? null,
+                'finish_reason' => $response['choices'][0]['finish_reason'] ?? null,
+            ]);
+            $content = $reasoningContent;
+        }
+
         if ($content === '') {
             throw new \RuntimeException('DeepSeek API returned an empty response.');
         }
@@ -203,5 +223,37 @@ class DeepSeekProvider extends BaseAiProvider
             'confidence_score' => $confidenceScore,
             'should_escalate' => $shouldEscalate,
         ];
+    }
+
+    /**
+     * Resolve configured model name with a safe fallback to current supported DeepSeek model.
+     *
+     * @return string
+     */
+    private function resolveModelName(): string
+    {
+        $model = trim((string) ($this->config['model'] ?? self::DEFAULT_MODEL));
+        if ($model === '' || $model === 'deepseek-chat') {
+            return self::DEFAULT_MODEL;
+        }
+
+        return $model;
+    }
+
+    /**
+     * Build short, non-sensitive error hint from DeepSeek response body.
+     *
+     * @param \Illuminate\Http\Client\Response $response
+     *
+     * @return string
+     */
+    private function extractErrorHint(\Illuminate\Http\Client\Response $response): string
+    {
+        $message = (string) ($response->json('error.message') ?? $response->json('message') ?? '');
+        if ($message !== '') {
+            $message = mb_substr($message, 0, 200);
+        }
+
+        return $message !== '' ? " ({$message})" : '';
     }
 }

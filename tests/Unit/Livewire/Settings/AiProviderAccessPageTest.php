@@ -86,6 +86,33 @@ class AiProviderAccessPageTest extends TestCase
         $this->assertSame('deepseek', $component->provider);
     }
 
+    public function test_mount_normalizes_legacy_deepseek_model(): void
+    {
+        /** @var \Mockery\MockInterface&SettingsService $mock */
+        $mock = Mockery::mock(SettingsService::class);
+        $mock->shouldReceive('get')->with('ai.openai_base_url')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.openai_model')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.openai_max_tokens')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.openai_temperature')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.deepseek_client_id')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.deepseek_base_url')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.deepseek_model')->andReturn('deepseek-chat');
+        $mock->shouldReceive('get')->with('ai.deepseek_max_tokens')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.deepseek_temperature')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_client_id')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_base_url')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_model')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_max_tokens')->andReturn(null);
+        $mock->shouldReceive('get')->with('ai.gigachat_temperature')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_path_cert')->andReturn('');
+        $mock->shouldReceive('get')->with('ai.gigachat_scope')->andReturn('');
+
+        $component = new AiProviderAccessPage();
+        $component->mount('deepseek', $mock);
+
+        $this->assertSame('deepseek-v4-pro', $component->deepseek_model);
+    }
+
     public function test_mount_secret_fields_are_always_null(): void
     {
         $component = new AiProviderAccessPage();
@@ -177,7 +204,7 @@ class AiProviderAccessPageTest extends TestCase
         $mock->shouldReceive('get')->andReturn(null);
         $mock->shouldReceive('set')->with('ai.deepseek_client_id', 'my-client')->once();
         $mock->shouldReceive('set')->with('ai.deepseek_base_url', 'https://api.deepseek.com')->once();
-        $mock->shouldReceive('set')->with('ai.deepseek_model', 'deepseek-chat')->once();
+        $mock->shouldReceive('set')->with('ai.deepseek_model', 'deepseek-v4-pro')->once();
         $mock->shouldReceive('set')->with('ai.deepseek_temperature', '0.8')->once();
 
         $component = new AiProviderAccessPage();

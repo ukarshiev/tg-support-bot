@@ -7,6 +7,7 @@ use App\Models\BotUser;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
+use App\Modules\Ai\Jobs\SendPendingAiDraftToTelegramJob;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\AiBotApi;
 use App\Modules\Ai\Services\RussianOperatorTextService;
@@ -264,6 +265,60 @@ class SendAiDraftJobTest extends TestCase
             'status' => AiMessage::STATUS_PENDING,
         ]);
         Queue::assertPushed(TopicCreateJob::class, fn (TopicCreateJob $job): bool => true);
+        Queue::assertPushed(SendPendingAiDraftToTelegramJob::class, function (SendPendingAiDraftToTelegramJob $job): bool {
+            return $job->aiMessageId === AiMessage::query()->sole()->id;
+        });
         Http::assertNothingSent();
+    }
+
+    public function test_pending_foreign_language_draft_is_delivered_after_topic_becomes_available(): void
+    {
+        $this->botUser->update([
+            'topic_id' => 4844,
+            'preferred_language_code' => 'en',
+            'preferred_language_name' => 'English',
+        ]);
+
+        $draft = AiMessage::create([
+            'bot_user_id' => $this->botUser->id,
+            'message_id' => null,
+            'text_ai' => 'Перейдите в группу поддержки.',
+            'text_source' => 'Перейдите в группу поддержки.',
+            'text_translated' => 'Go to the support group.',
+            'source_locale' => 'ru',
+            'target_locale' => 'en',
+            'translation_status' => 'ready',
+            'text_manager' => '',
+            'status' => AiMessage::STATUS_PENDING,
+        ]);
+
+        Http::fake([
+            'https://api.telegram.org/bot' . $this->aiToken . '/sendMessage' => Http::response([
+                'ok' => true,
+                'result' => [
+                    'message_id' => 777,
+                    'chat' => ['id' => $this->groupId, 'type' => 'supergroup'],
+                    'date' => time(),
+                    'text' => 'draft',
+                ],
+            ]),
+            'https://api.telegram.org/bot' . $this->aiToken . '/editMessageReplyMarkup' => Http::response([
+                'ok' => true,
+                'result' => true,
+            ]),
+        ]);
+
+        (new SendPendingAiDraftToTelegramJob($draft->id))->handle(new AiBotApi());
+
+        $this->assertSame('777', (string) $draft->refresh()->message_id);
+        Http::assertSent(function ($request): bool {
+            $text = (string) ($request->data()['text'] ?? '');
+
+            return str_contains($request->url(), '/sendMessage')
+                && ($request->data()['message_thread_id'] ?? null) === 4844
+                && str_contains($text, 'Для оператора')
+                && str_contains($text, 'Клиенту на EN')
+                && str_contains($text, 'Go to the support group.');
+        });
     }
 }

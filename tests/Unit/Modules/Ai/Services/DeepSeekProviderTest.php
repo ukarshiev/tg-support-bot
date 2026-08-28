@@ -131,4 +131,76 @@ class DeepSeekProviderTest extends TestCase
                 && $messages[4] === ['role' => 'user', 'content' => 'Текущее сообщение'];
         });
     }
+
+    public function test_fallback_to_v4_model_when_deprecated_deepseek_chat_is_configured(): void
+    {
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('ai.deepseek_model', 'deepseek-chat');
+
+        Http::fake([
+            $this->baseProviderUrl => Http::response([
+                'choices' => [
+                    [
+                        'index' => 0,
+                        'message' => ['role' => 'assistant', 'content' => 'ok'],
+                        'finish_reason' => 'stop',
+                    ],
+                ],
+                'usage' => ['total_tokens' => 10],
+                'model' => 'deepseek-v4-pro',
+            ], 200),
+        ]);
+
+        $aiRequest = new AiRequestDto(
+            message: 'test',
+            userId: $this->botUser->id,
+            platform: 'telegram',
+            provider: $this->provider,
+        );
+
+        (new DeepSeekProvider())->processMessage($aiRequest);
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            return $body['model'] === 'deepseek-v4-pro';
+        });
+    }
+
+    public function test_uses_reasoning_content_when_content_is_empty(): void
+    {
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $settings->set('ai.deepseek_model', 'deepseek-v4-pro');
+
+        $expected = 'Ответ из reasoning_content';
+
+        Http::fake([
+            $this->baseProviderUrl => Http::response([
+                'choices' => [
+                    [
+                        'index' => 0,
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => '',
+                            'reasoning_content' => $expected,
+                        ],
+                        'finish_reason' => 'stop',
+                    ],
+                ],
+                'usage' => ['total_tokens' => 15],
+                'model' => 'deepseek-v4-pro',
+            ], 200),
+        ]);
+
+        $aiRequest = new AiRequestDto(
+            message: 'Как дела?',
+            userId: $this->botUser->id,
+            platform: 'telegram',
+            provider: $this->provider,
+        );
+
+        $aiResponse = (new DeepSeekProvider())->processMessage($aiRequest);
+
+        $this->assertNotNull($aiResponse);
+        $this->assertSame($expected, $aiResponse->response);
+    }
 }

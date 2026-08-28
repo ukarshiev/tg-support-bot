@@ -26,6 +26,8 @@ use Illuminate\Support\Str;
  */
 class AiProviderVerificationService
 {
+    private const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-pro';
+
     /** Request timeout for verification calls, in seconds. */
     private const TIMEOUT = 10;
 
@@ -73,6 +75,8 @@ class AiProviderVerificationService
         if ($clientSecret === '') {
             return ['success' => false, 'message' => 'Не указан client secret DeepSeek.'];
         }
+
+        $model = $this->resolveDeepSeekModel($model);
 
         if ($baseUrl === '' || $model === '') {
             return ['success' => false, 'message' => 'Укажите base URL и модель DeepSeek.'];
@@ -163,6 +167,23 @@ class AiProviderVerificationService
         }
 
         return $hint;
+    }
+
+    /**
+     * Resolve legacy/empty DeepSeek model value to supported default.
+     *
+     * @param string $model
+     *
+     * @return string
+     */
+    private function resolveDeepSeekModel(string $model): string
+    {
+        $model = trim($model);
+        if ($model === '' || $model === 'deepseek-chat') {
+            return self::DEFAULT_DEEPSEEK_MODEL;
+        }
+
+        return $model;
     }
 
     /**

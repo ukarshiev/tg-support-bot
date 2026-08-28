@@ -247,6 +247,52 @@ class AiSupportRagTest extends TestCase
         $this->assertSame('activate', $chunk->source_metadata['moderation']['recommended_action']);
     }
 
+    public function test_support_case_moderator_fallbacks_model_and_reasoning_content(): void
+    {
+        $this->configureDeepSeekModerator();
+
+        $payload = [
+            'choices' => [[
+                'message' => [
+                    'content' => '',
+                    'reasoning_content' => json_encode([
+                        'status' => 'active',
+                        'quality_score' => 0.88,
+                        'reason' => 'Связанный и полезный кейс.',
+                        'risks' => [],
+                        'duplicate_group_key' => null,
+                        'recommended_action' => 'activate',
+                    ], JSON_UNESCAPED_UNICODE),
+                ],
+            ]],
+        ];
+
+        Http::fake([
+            'https://api.deepseek.test/v1/chat/completions' => Http::response($payload),
+        ]);
+
+        $chunk = AiSupportKnowledgeChunk::create([
+            'source_hash' => 'moderation-active-case-with-reasoning',
+            'question' => 'How much BroSpace?',
+            'answer' => 'BroSpace costs 500 ₽.',
+            'is_active' => false,
+            'status' => AiSupportKnowledgeChunk::STATUS_REVIEW,
+        ]);
+
+        $result = (new SupportCaseModeratorService())->moderatePending(10);
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            return $body['model'] === 'deepseek-v4-pro';
+        });
+
+        $this->assertSame(['checked' => 1, 'updated' => 1, 'failed' => 0], $result);
+        $chunk->refresh();
+        $this->assertSame(AiSupportKnowledgeChunk::STATUS_ACTIVE, $chunk->status);
+        $this->assertTrue($chunk->is_active);
+        $this->assertSame('Связанный и полезный кейс.', $chunk->moderation_reason);
+    }
+
     public function test_support_case_moderator_keeps_invalid_ai_response_on_review(): void
     {
         $this->configureDeepSeekModerator();

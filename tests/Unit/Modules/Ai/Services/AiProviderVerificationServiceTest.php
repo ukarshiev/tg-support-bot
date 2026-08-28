@@ -164,4 +164,26 @@ class AiProviderVerificationServiceTest extends TestCase
         $this->assertStringContainsString('400', $result['message']);
         $this->assertStringContainsString('invalid scope', $result['message']);
     }
+
+    public function test_verify_deepseek_normalizes_deprecated_model_to_v4_pro(): void
+    {
+        $fakeResponse = [
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => 'ok',
+                    ],
+                ],
+            ],
+        ];
+
+        Http::fake([
+            '*' => Http::response($fakeResponse, 200),
+        ]);
+
+        $result = $this->service->verifyDeepseek('secret', 'https://api.deepseek.com/chat/completions', 'deepseek-chat');
+
+        $this->assertTrue($result['success']);
+        Http::assertSent(fn ($request) => ($request->data()['model'] ?? null) === 'deepseek-v4-pro');
+    }
 }

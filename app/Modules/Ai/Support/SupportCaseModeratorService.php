@@ -13,6 +13,8 @@ class SupportCaseModeratorService
 {
     public const RULES_VERSION = 'KAR-295 / v1 / 03.07.2026';
 
+    private const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro';
+
     /**
      * @return array{checked: int, updated: int, failed: int}
      */
@@ -131,7 +133,22 @@ class SupportCaseModeratorService
             throw new \RuntimeException('HTTP ' . $response->status());
         }
 
-        $content = (string) $response->json('choices.0.message.content', '');
+        $messagePayload = $response->json('choices.0.message', []);
+        $content = trim((string) ($messagePayload['content'] ?? ''));
+
+        if ($content === '') {
+            $reasoningContent = trim((string) ($messagePayload['reasoning_content'] ?? ''));
+            if ($reasoningContent !== '') {
+                Log::channel('app')->warning('Support moderation API returned empty final content; fallback to reasoning_content.', [
+                    'source' => 'ai_support_moderation_fallback',
+                    'chunk_id' => $chunk->id,
+                    'provider' => 'deepseek',
+                    'model' => $response->json('model'),
+                ]);
+                $content = $reasoningContent;
+            }
+        }
+
         if (trim($content) === '') {
             throw new \RuntimeException('пустой ответ модели');
         }
@@ -155,12 +172,28 @@ class SupportCaseModeratorService
         }
 
         $baseUrl = rtrim((string) ($settings->get('ai.deepseek_base_url') ?? 'https://api.deepseek.com/v1'), '/');
+        $model = (string) ($settings->get('ai.support_moderator_model') ?? $settings->get('ai.deepseek_model') ?? '');
 
         return [
             'api_key' => (string) ($settings->get('ai.deepseek_client_secret') ?? ''),
             'url' => $this->completionUrl($baseUrl),
-            'model' => (string) ($settings->get('ai.support_moderator_model') ?? $settings->get('ai.deepseek_model') ?? 'deepseek-chat'),
+            'model' => $this->resolveModel($model),
         ];
+    }
+
+    /**
+     * @param string $model
+     *
+     * @return string
+     */
+    private function resolveModel(string $model): string
+    {
+        $model = trim($model);
+        if ($model === '' || $model === 'deepseek-chat') {
+            return self::DEEPSEEK_DEFAULT_MODEL;
+        }
+
+        return $model;
     }
 
     private function completionUrl(string $baseUrl): string

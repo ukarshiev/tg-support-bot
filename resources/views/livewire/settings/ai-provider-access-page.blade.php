@@ -196,14 +196,14 @@
                         <x-admin.form-field
                             label="Модель"
                             for="deepseek_model"
-                            hint="Например: deepseek-chat, deepseek-reasoner"
+                            hint="Рекомендуется: deepseek-v4-pro, deepseek-reasoner"
                             :error="$formErrors['deepseek_model'] ?? null"
                         >
                             <input
                                 id="deepseek_model"
                                 type="text"
                                 wire:model="deepseek_model"
-                                placeholder="deepseek-chat"
+                                placeholder="deepseek-v4-pro"
                                 class="block w-full rounded-lg border border-border-light bg-bg-input px-3.5 py-2.5 text-sm text-text-primary placeholder-text-secondary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
                             />
                         </x-admin.form-field>

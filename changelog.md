@@ -1,3 +1,16 @@
+0.36.13 – 06.08.2026
+- [Критический фикс] (Plane TGSUPBOT-52 / Linear ID: KAR-303) Telegram AI-черновик больше не остаётся только в вебе, если генерация опередила создание forum topic: сохранённый pending-черновик повторно доставляется после появления `topic_id`.
+- [Проверка] (Plane TGSUPBOT-52 / Linear ID: KAR-303) Добавлена регрессия гонки очередей для нового EN-клиента; изолированный `SendAiDraftJobTest` — 6 тестов, 20 assertions.
+- [Примечание] Работа выполнена 06.08.2026, влита в `main` 29.08.2026 — до этого оставалась незакоммиченной и в production не попадала.
+
+0.36.12 – 26.07.2026
+- [Критический фикс] (Plane TGSUPBOT-48 / Linear ID: KAR-299) DeepSeek в проде больше не уходит на `deepseek-chat`: в рантайме и модерации добавлены безопасные фолбэки на `deepseek-v4-pro`, если модель пустая/устаревшая; в парсере ответа добавлен fallback `reasoning_content` и более информативный лог ошибки с HTTP-аномалиями.
+- [Надёжность] (Plane TGSUPBOT-48 / Linear ID: KAR-299) UI DeepSeek теперь сам нормализует модель: `deepseek-chat`/пусто превращаются в `deepseek-v4-pro` в сохранении и верификации, чтобы админка не блокировала рабочие ключи из-за устаревшей записи.
+- [Надёжность] (Plane TGSUPBOT-48 / Linear ID: KAR-299) Для поддержки DeepSeek-режима обновлён UI-подсказчик модели в настройках, чтобы админы не продолжали ставить устаревший `deepseek-chat` по умолчанию.
+- [Проверка] (Plane TGSUPBOT-48) Прогнаны изолированные unit-тесты (`AiProviderVerificationServiceTest`, `DeepSeekProviderTest`, `AiSupportRagTest`, `AiProviderAccessPageTest`, `SendAiDraftJobTest`) через `scripts/run-isolated-tests.ps1` — 84 теста, 220 assertions, зелёные.
+- [Подготовка к тестам] (Plane TGSUPBOT-48 / Linear ID: KAR-299) Скрипт `scripts/run-isolated-tests.ps1` обновлён: теперь определяет доступный механизм Compose (`docker compose` или `docker-compose`) и корректно строит конфиг в смешанных локальных окружениях.
+- [Чистка] Из конца `changelog.md` удалены оставшиеся текстовые маркеры незавершённого merge, закоммиченные в main ранее.
+
 0.36.11 – 31.07.2026
 - [Деплой] (Plane TGSUPBOT-65 / Linear ID: KAR-327) Исправление отложенного создания обращения развёрнуто в production Docker без миграций и изменений PostgreSQL/Redis; загруженный код и здоровье всех девяти сервисов проверены после перезапуска.
 - [Надёжность] (Plane TGSUPBOT-65 / Linear ID: KAR-327) Windows deploy больше не требует заранее существующий `docker/nginx/default.conf`, проверяет уже встроенные в runtime-image PHP-зависимости вместо вызова отсутствующего Composer и перезапускает Reverb вместе с остальными application-сервисами.
@@ -619,16 +632,3 @@
 - [Новый функционал] (Docker) start-relaxaclub-windows-docker.ps1 — Добавлен безопасный Windows Docker-запуск для relaxaclub без certbot, проверки IP через WSL и удаления Docker volume.
 - [Фикс] (Nginx) docker/nginx/default.windows-docker.conf.template — Конфиг nginx теперь генерируется без BOM, чтобы контейнер nginx не падал на директиве server.
 - [Документация] (Windows Docker) docs/windows-docker.md — Описан запуск relaxaclub через Docker Desktop/WSL и команды проверки.
-
-
-
-
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-
-
-=======
->>>>>>> 1e386f2 (fix(translation): preserve auto-reply variables)
-=======
->>>>>>> d29b8b9 (Исправить единый язык клиента)

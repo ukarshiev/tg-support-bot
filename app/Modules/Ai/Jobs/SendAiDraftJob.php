@@ -67,9 +67,9 @@ class SendAiDraftJob implements ShouldQueue
 
             $aiBotToken = (string) app(SettingsService::class)->get('telegram_ai.token');
             $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
-            $telegramConnected = app(ChannelStatusService::class)->telegram()['connected']
-                && $groupId !== '';
-            $aiBotConfigured = $aiBotToken !== '' && $telegramConnected;
+            $telegramConnected = app(ChannelStatusService::class)->telegram()['connected'];
+            $aiBotAvailable = $aiBotToken !== '' && $groupId !== '';
+            $aiBotConfigured = $aiBotAvailable && $telegramConnected;
 
             // Черновик сначала гарантированно сохраняется в админке. Отсутствие
             // Telegram-темы не должно исчерпать попытки и потерять ответ ИИ.
@@ -122,10 +122,16 @@ class SendAiDraftJob implements ShouldQueue
                     'status' => AiMessage::STATUS_PENDING,
                 ]);
 
+                if ($aiBotAvailable) {
+                    SendPendingAiDraftToTelegramJob::dispatch($aiMessage->id)
+                        ->delay(now()->addSeconds(3));
+                }
+
                 Log::channel('app')->info('SendAiDraftJob: draft created (no AI bot configured)', [
                     'source' => 'send_ai_draft_no_ai_bot',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,
+                    'telegram_delivery_queued' => $aiBotAvailable,
                 ]);
             }
 
