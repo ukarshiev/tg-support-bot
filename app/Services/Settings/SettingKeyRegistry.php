@@ -69,6 +69,21 @@ class SettingKeyRegistry
             'config' => null,
             'is_secret' => false,
         ],
+        'telegram.health_check_await_timeout_seconds' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'telegram.health_check_language_pause_milliseconds' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
+        'telegram.health_check_deadline_seconds' => [
+            'type' => 'int',
+            'config' => null,
+            'is_secret' => false,
+        ],
 
         // ── Telegram AI bot ──────────────────────────────────────────────────
         'telegram_ai.token' => [
