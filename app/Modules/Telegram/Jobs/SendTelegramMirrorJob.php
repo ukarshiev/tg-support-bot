@@ -5,6 +5,7 @@ namespace App\Modules\Telegram\Jobs;
 use App\Models\BotUser;
 use App\Models\DeliveryOperation;
 use App\Models\Message;
+use App\Modules\Admin\Services\AdminReplyFailureNotifier;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\Support\TelegramPipelineTrace;
 use App\Services\Settings\SettingsService;
@@ -187,19 +188,25 @@ class SendTelegramMirrorJob implements ShouldQueue
             'bot_user_id' => $this->botUserId,
             'message_id' => $this->messageId,
         ]);
+        app(AdminReplyFailureNotifier::class)->queue($operation->refresh());
     }
 
     public function failed(\Throwable $exception): void
     {
-        DeliveryOperation::query()
+        $operations = DeliveryOperation::query()
             ->where('bot_user_id', $this->botUserId)
             ->where('message_id', $this->messageId)
             ->where('destination', 'telegram-support-topic')
             ->where('status', '!=', DeliveryOperation::STATUS_DELIVERED)
-            ->update([
+            ->get();
+
+        foreach ($operations as $operation) {
+            $operation->update([
                 'status' => DeliveryOperation::STATUS_FAILED,
                 'last_error' => 'Job exhausted retries: ' . $exception::class,
             ]);
+            app(AdminReplyFailureNotifier::class)->queue($operation->refresh());
+        }
 
         Log::channel('app')->error('Telegram support mirror permanently failed', [
             'source' => 'telegram_support_mirror_failed',

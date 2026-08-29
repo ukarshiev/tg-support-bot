@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\TelegramPollerApiResult;
+use App\Models\DiscardedTelegramUpdate;
 use App\Services\Settings\SettingsService;
 use App\Support\TelegramPollingRuntime;
 use Illuminate\Console\Command;
@@ -120,11 +121,23 @@ class TelegramPollUpdates extends Command
                         break;
                     }
 
+                    $webhookStatus = $webhookResponse->status();
+                    if (! $this->isDeterministicWebhookFailure($webhookStatus)) {
+                        Log::channel('app')->warning('Telegram poller: internal webhook infrastructure failure; retrying later', [
+                            'source' => 'telegram_poller_internal_webhook_infrastructure_failure',
+                            'status' => $webhookStatus,
+                            'body' => $runtime->sanitize($webhookResponse->body()),
+                            'update_id' => $updateId,
+                        ]);
+                        sleep($sleepSeconds);
+                        continue 3;
+                    }
+
                     Cache::add($retryCacheKey, 0, now()->addDay());
                     $attempts = (int) Cache::increment($retryCacheKey);
                     $logContext = [
                         'source' => 'telegram_poller_internal_webhook_rejected',
-                        'status' => $webhookResponse->status(),
+                        'status' => $webhookStatus,
                         'body' => $runtime->sanitize($webhookResponse->body()),
                         'update_id' => $updateId,
                         'attempt' => $attempts,
@@ -132,6 +145,15 @@ class TelegramPollUpdates extends Command
                     ];
 
                     if ($attempts >= self::INTERNAL_WEBHOOK_MAX_ATTEMPTS) {
+                        DiscardedTelegramUpdate::updateOrCreate(
+                            ['update_id' => $updateId],
+                            [
+                                'payload' => $update,
+                                'http_status' => $webhookStatus,
+                                'attempts' => $attempts,
+                                'discarded_at' => now(),
+                            ],
+                        );
                         Log::channel('app')->error('Telegram poller: poisoned update skipped after webhook rejections', array_replace($logContext, [
                             'source' => 'telegram_poller_poisoned_update',
                         ]));
@@ -151,6 +173,11 @@ class TelegramPollUpdates extends Command
         } while (! $this->option('once'));
 
         return Command::SUCCESS;
+    }
+
+    private function isDeterministicWebhookFailure(int $status): bool
+    {
+        return ($status >= 400 && $status <= 499) || $status === 500;
     }
 
     private function deleteWebhook(string $apiBase, TelegramPollingRuntime $runtime): TelegramPollerApiResult

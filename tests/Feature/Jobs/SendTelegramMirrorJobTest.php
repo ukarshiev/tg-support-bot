@@ -177,6 +177,7 @@ class SendTelegramMirrorJobTest extends TestCase
 
     public function test_transient_telegram_failure_is_retried_and_exhaustion_is_visible(): void
     {
+        Queue::fake();
         app(SettingsService::class)->set('telegram.group_id', '-100123456789');
         app(SettingsService::class)->set('telegram.token', 'test-token');
         $botUser = BotUser::getOrCreateByTelegramUpdate(TelegramUpdateDtoMock::getDto());
@@ -215,5 +216,6 @@ class SendTelegramMirrorJobTest extends TestCase
             'message_id' => $message->id,
             'status' => DeliveryOperation::STATUS_FAILED,
         ]);
+        Queue::assertPushed(\App\Modules\Admin\Jobs\NotifyAdminReplyDeliveryFailedJob::class, 1);
     }
 }

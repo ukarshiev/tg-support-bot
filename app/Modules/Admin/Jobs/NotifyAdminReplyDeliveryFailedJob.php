@@ -4,6 +4,7 @@ namespace App\Modules\Admin\Jobs;
 
 use App\Models\BotUser;
 use App\Models\DeliveryOperation;
+use App\Models\Message;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Services\Settings\SettingsService;
 use Illuminate\Bus\Queueable;
@@ -66,12 +67,13 @@ class NotifyAdminReplyDeliveryFailedJob implements ShouldQueue
             'started_at' => now(),
         ]);
 
-        $reason = trim((string) $failedOperation->last_error);
-        $reason = $reason !== '' ? mb_substr($reason, 0, 500) : 'причина не указана';
+        $text = $failedOperation->destination === 'telegram-support-topic'
+            ? $this->incomingMirrorFailureText($failedOperation)
+            : $this->adminReplyFailureText($failedOperation);
         $response = TelegramMethods::sendQueryTelegram('sendMessage', [
             'chat_id' => $groupId,
             'message_thread_id' => $botUser->topic_id,
-            'text' => "⚠️ Ответ клиенту не доставлен.\nПричина: {$reason}",
+            'text' => $text,
         ]);
 
         if (! $response->ok) {
@@ -102,5 +104,37 @@ class NotifyAdminReplyDeliveryFailedJob implements ShouldQueue
             'failed_operation_id' => $this->failedOperationId,
             'error_class' => $exception::class,
         ]);
+    }
+
+    private function adminReplyFailureText(DeliveryOperation $failedOperation): string
+    {
+        $reason = trim((string) $failedOperation->last_error);
+        $reason = $reason !== '' ? mb_substr($reason, 0, 500) : 'причина не указана';
+
+        return "⚠️ Ответ клиенту не доставлен.\nПричина: {$reason}";
+    }
+
+    private function incomingMirrorFailureText(DeliveryOperation $failedOperation): string
+    {
+        $message = Message::with('attachments')->find($failedOperation->message_id);
+        $time = $message?->created_at?->format('d.m.Y H:i') ?? 'неизвестно';
+        $text = "⚠️ Входящее сообщение клиента не отображено в теме.\nВремя: {$time}";
+        $attachmentTypes = $message?->attachments
+            ->pluck('file_type')
+            ->unique()
+            ->map(fn (string $type): string => match ($type) {
+                'photo' => 'фото',
+                'voice' => 'голосовое сообщение',
+                'sticker' => 'стикер',
+                'video_note' => 'видеосообщение',
+                default => 'файл',
+            })
+            ->implode(', ');
+
+        if ($attachmentTypes !== null && $attachmentTypes !== '') {
+            $text .= "\nВложение: {$attachmentTypes}";
+        }
+
+        return $text;
     }
 }

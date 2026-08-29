@@ -5,6 +5,7 @@ namespace App\Modules\Vk\Jobs;
 use App\Models\BotUser;
 use App\Models\DeliveryOperation;
 use App\Models\Message;
+use App\Modules\Admin\Services\AdminReplyFailureNotifier;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
@@ -227,14 +228,20 @@ class MirrorVkIncomingMessageJob implements ShouldBeUnique, ShouldQueue
             'response_code' => $response->response_code,
             'type_error' => $response->type_error,
         ]);
+        app(AdminReplyFailureNotifier::class)->queue($operation->refresh());
     }
 
     public function failed(Throwable $exception): void
     {
-        DeliveryOperation::query()
+        $operations = DeliveryOperation::query()
             ->where('message_id', $this->messageId)
             ->where('destination', 'telegram-support-topic')
             ->whereIn('status', [DeliveryOperation::STATUS_PENDING, DeliveryOperation::STATUS_PROCESSING, DeliveryOperation::STATUS_RETRYING])
-            ->update(['status' => DeliveryOperation::STATUS_FAILED, 'last_error' => $exception::class]);
+            ->get();
+
+        foreach ($operations as $operation) {
+            $operation->update(['status' => DeliveryOperation::STATUS_FAILED, 'last_error' => $exception::class]);
+            app(AdminReplyFailureNotifier::class)->queue($operation->refresh());
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines the complete database schema. It ensures that AI agents and developers fully understand data structure, relationships, and constraints before making changes.
 > **Context:** Read this file before creating or modifying tables, columns, indexes, migrations, or Eloquent models.
-> **Version:** 1.1
+> **Version:** 1.2
 
 ---
 
@@ -134,6 +134,16 @@ erDiagram
         timestamps
     }
 
+    DISCARDED_TELEGRAM_UPDATES {
+        bigint id PK
+        bigint update_id UK
+        json payload
+        smallint http_status
+        integer attempts
+        timestamp discarded_at
+        timestamps
+    }
+
     BOT_USERS ||--o{ MESSAGES : "has many"
     USERS ||--o{ MESSAGES : "sender (nullable)"
     MESSAGES ||--o| EXTERNAL_MESSAGES : "has one"
@@ -245,6 +255,32 @@ Tracks all individual messages exchanged between users and the support team.
 `messages.message_type`
 - `incoming` — message sent by the user (to the support team)
 - `outgoing` — message sent by the support team (to the user)
+
+---
+
+### `discarded_telegram_updates`
+
+Durable quarantine for Telegram updates that the internal application webhook deterministically rejected three times. The poller writes this record before advancing its offset, so the original update remains available for investigation or controlled replay.
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `bigint` | No | auto | Primary key |
+| `update_id` | `bigint unsigned` | No | — | Telegram update ID; unique to prevent duplicate quarantine rows |
+| `payload` | `json` | No | — | Complete Telegram update payload as received by the poller |
+| `http_status` | `smallint unsigned` | No | — | Last deterministic internal webhook status (`4xx` or `500`) |
+| `attempts` | `integer unsigned` | No | — | Number of deterministic delivery attempts consumed before discard |
+| `discarded_at` | `timestamp` | No | — | Time at which the poller quarantined the update |
+| `created_at` | `timestamp` | Yes | NULL | Record creation time |
+| `updated_at` | `timestamp` | Yes | NULL | Record update time |
+
+**Indexes:**
+- PRIMARY on `id`
+- UNIQUE on `update_id` — makes repeated quarantine idempotent
+- INDEX on `discarded_at` — supports operational investigation by time window
+
+**Model:** `App\Models\DiscardedTelegramUpdate` (`payload` cast to array, `discarded_at` cast to datetime).
+
+**Migration:** `database/migrations/2026_08_29_130000_create_discarded_telegram_updates_table.php`
 
 ---
 
@@ -490,6 +526,7 @@ All migrations are in `database/migrations/`. Name format: `YYYY_MM_DD_HHMMSS_de
 
 ## Changelog
 
+- Version 1.2: Added durable `discarded_telegram_updates` quarantine for poller updates skipped after deterministic webhook failures.
 - Version 1.1: Added the `bot_users` recipient-unavailable state and its reversible migration.
 
 ---

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Commands;
 
+use App\Models\DiscardedTelegramUpdate;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -126,6 +127,68 @@ class TelegramPollUpdatesCommandTest extends TestCase
 
         $this->assertSame(411, Cache::get('telegram:poller:offset'));
         $this->assertSame(3, $webhookAttempts);
+        $this->assertDatabaseHas('discarded_telegram_updates', [
+            'update_id' => 410,
+            'http_status' => 422,
+            'attempts' => 3,
+        ]);
+    }
+
+    public function test_main_poller_treats_502_as_infrastructure_failure_without_attempt_or_offset_change(): void
+    {
+        app(SettingsService::class)->set('telegram.token', 'main-token');
+        app(SettingsService::class)->set('telegram.secret_key', 'main-secret');
+        Cache::forever('telegram:poller:offset', 430);
+        Cache::put('telegram:poller:webhook-attempts:430', 1, now()->addDay());
+
+        Http::fake([
+            'https://api.telegram.org/botmain-token/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1]]),
+            'https://api.telegram.org/botmain-token/deleteWebhook' => Http::response(['ok' => true]),
+            'https://api.telegram.org/botmain-token/getUpdates' => Http::response([
+                'ok' => true,
+                'result' => [['update_id' => 430, 'message' => ['text' => 'deploy overlap']]],
+            ]),
+            'http://nginx/api/telegram/bot' => Http::response(['error' => 'upstream unavailable'], 502),
+        ]);
+
+        $this->artisan('telegram:poll-updates', ['--once' => true, '--timeout' => 1])->assertSuccessful();
+
+        $this->assertSame(430, Cache::get('telegram:poller:offset'));
+        $this->assertSame(1, Cache::get('telegram:poller:webhook-attempts:430'));
+        $this->assertDatabaseMissing('discarded_telegram_updates', ['update_id' => 430]);
+    }
+
+    public function test_main_poller_500_consumes_attempts_and_persists_update_before_advancing_offset(): void
+    {
+        app(SettingsService::class)->set('telegram.token', 'main-token');
+        app(SettingsService::class)->set('telegram.secret_key', 'main-secret');
+        $webhookAttempts = 0;
+
+        Http::fake([
+            'https://api.telegram.org/botmain-token/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1]]),
+            'https://api.telegram.org/botmain-token/deleteWebhook' => Http::response(['ok' => true]),
+            'https://api.telegram.org/botmain-token/getUpdates' => Http::response([
+                'ok' => true,
+                'result' => [['update_id' => 440, 'message' => ['text' => 'application failure']]],
+            ]),
+            'http://nginx/api/telegram/bot' => function () use (&$webhookAttempts) {
+                $webhookAttempts++;
+
+                return Http::response(['error' => 'application failure'], 500);
+            },
+        ]);
+
+        $this->artisan('telegram:poll-updates', ['--once' => true, '--timeout' => 1])->assertSuccessful();
+
+        $this->assertSame(3, $webhookAttempts);
+        $this->assertSame(441, Cache::get('telegram:poller:offset'));
+        $this->assertDatabaseHas('discarded_telegram_updates', [
+            'update_id' => 440,
+            'http_status' => 500,
+            'attempts' => 3,
+        ]);
+        $discarded = DiscardedTelegramUpdate::where('update_id', 440)->firstOrFail();
+        $this->assertSame('application failure', $discarded->payload['message']['text']);
     }
 
     public function test_one_poison_update_does_not_block_the_following_update(): void
