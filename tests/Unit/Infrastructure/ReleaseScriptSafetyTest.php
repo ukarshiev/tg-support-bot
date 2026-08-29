@@ -110,6 +110,47 @@ class ReleaseScriptSafetyTest extends TestCase
         );
     }
 
+    public function test_release_allows_enough_time_for_poller_healthchecks(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');
+
+        $this->assertIsString($script);
+        $this->assertSame(
+            1,
+            preg_match('/readonly HEALTHCHECK_INTERVAL_SECONDS=(\d+)/', $script, $interval),
+        );
+        $this->assertSame(
+            1,
+            preg_match('/readonly REQUIRED_HEALTHCHECK_INTERVALS=(\d+)/', $script, $checks),
+        );
+        $this->assertSame(
+            1,
+            preg_match('/readonly HEALTHCHECK_WAIT_SAFETY_MARGIN_SECONDS=(\d+)/', $script, $margin),
+        );
+        $this->assertSame(
+            1,
+            preg_match('/readonly POLLER_HEALTHCHECK_START_PERIOD_SECONDS=(\d+)/', $script, $startPeriod),
+        );
+
+        $pollerTimeout = (int) $startPeriod[1]
+            + (int) $checks[1] * (int) $interval[1]
+            + (int) $margin[1];
+
+        $this->assertGreaterThanOrEqual(150, $pollerTimeout);
+        $this->assertStringContainsString(
+            'readonly POLLER_READY_TIMEOUT_SECONDS=$((POLLER_HEALTHCHECK_START_PERIOD_SECONDS + REQUIRED_HEALTHCHECK_INTERVALS * HEALTHCHECK_INTERVAL_SECONDS + HEALTHCHECK_WAIT_SAFETY_MARGIN_SECONDS))',
+            $script,
+        );
+        $this->assertStringContainsString(
+            'Telegram pollers did not become healthy in ${POLLER_READY_TIMEOUT_SECONDS} seconds.',
+            $script,
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/Telegram pollers did not become healthy in \d+ seconds\./',
+            $script,
+        );
+    }
+
     public function test_rollback_restarts_every_service_paused_for_release(): void
     {
         $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');

@@ -4,6 +4,18 @@ set -Eeuo pipefail
 readonly SERVICES=(app queue reverb scheduler telegram_poller ai_telegram_poller)
 readonly HEALTH_SERVICES=(pgdb redis app queue reverb scheduler nginx)
 readonly POLLER_HEALTH_SERVICES=(telegram_poller ai_telegram_poller)
+# Derived from docker-compose.yml healthchecks: core start_period is at most 30s,
+# poller start_period is 60s, and their longest interval is 30s. Each timeout
+# covers the start period, three checks, and one extra interval as safety margin.
+readonly HEALTHCHECK_INTERVAL_SECONDS=30
+readonly REQUIRED_HEALTHCHECK_INTERVALS=3
+readonly HEALTHCHECK_WAIT_SAFETY_MARGIN_SECONDS=30
+readonly CORE_HEALTHCHECK_START_PERIOD_SECONDS=30
+readonly POLLER_HEALTHCHECK_START_PERIOD_SECONDS=60
+readonly CORE_READY_TIMEOUT_SECONDS=$((CORE_HEALTHCHECK_START_PERIOD_SECONDS + REQUIRED_HEALTHCHECK_INTERVALS * HEALTHCHECK_INTERVAL_SECONDS + HEALTHCHECK_WAIT_SAFETY_MARGIN_SECONDS))
+readonly POLLER_READY_TIMEOUT_SECONDS=$((POLLER_HEALTHCHECK_START_PERIOD_SECONDS + REQUIRED_HEALTHCHECK_INTERVALS * HEALTHCHECK_INTERVAL_SECONDS + HEALTHCHECK_WAIT_SAFETY_MARGIN_SECONDS))
+readonly READY_CHECK_INTERVAL_SECONDS=5
+readonly READY_PROGRESS_EVERY_ITERATIONS=6
 declare -A PREVIOUS_IMAGE_IDS=()
 declare -A PREVIOUS_IMAGE_NAMES=()
 declare -A PREVIOUS_IMAGE_TAGS=()
@@ -168,34 +180,42 @@ docker compose up -d queue reverb scheduler
 docker compose up -d --force-recreate nginx
 
 release_ready=false
-for _ in {1..12}; do
+for ((attempt = 1; attempt <= CORE_READY_TIMEOUT_SECONDS / READY_CHECK_INTERVAL_SECONDS; attempt++)); do
     if services_ready && \
        docker compose exec -T app php artisan about --only=environment >/dev/null && \
        docker compose exec -T queue php artisan horizon:status | grep -qi running; then
         release_ready=true
         break
     fi
-    sleep 5
+    sleep "$READY_CHECK_INTERVAL_SECONDS"
+    if ((attempt % READY_PROGRESS_EVERY_ITERATIONS == 0)); then
+        elapsed_seconds=$((attempt * READY_CHECK_INTERVAL_SECONDS))
+        echo "Still waiting for core services: ${elapsed_seconds}/${CORE_READY_TIMEOUT_SECONDS} seconds."
+    fi
 done
 
 if [[ "$release_ready" != true ]]; then
-    echo "Core services did not become ready in 60 seconds; pollers remain stopped." >&2
+    echo "Core services did not become ready in ${CORE_READY_TIMEOUT_SECONDS} seconds; pollers remain stopped." >&2
     false
 fi
 
 docker compose up -d telegram_poller ai_telegram_poller
 
 pollers_healthy=false
-for _ in {1..12}; do
+for ((attempt = 1; attempt <= POLLER_READY_TIMEOUT_SECONDS / READY_CHECK_INTERVAL_SECONDS; attempt++)); do
     if pollers_ready; then
         pollers_healthy=true
         break
     fi
-    sleep 5
+    sleep "$READY_CHECK_INTERVAL_SECONDS"
+    if ((attempt % READY_PROGRESS_EVERY_ITERATIONS == 0)); then
+        elapsed_seconds=$((attempt * READY_CHECK_INTERVAL_SECONDS))
+        echo "Still waiting for Telegram pollers: ${elapsed_seconds}/${POLLER_READY_TIMEOUT_SECONDS} seconds."
+    fi
 done
 
 if [[ "$pollers_healthy" != true ]]; then
-    echo "Telegram pollers did not become healthy in 60 seconds." >&2
+    echo "Telegram pollers did not become healthy in ${POLLER_READY_TIMEOUT_SECONDS} seconds." >&2
     false
 fi
 
