@@ -34,11 +34,13 @@ final class TelegramPollingRuntime
 
     public function preflight(string $channel, string $label, string $token): TelegramPollerApiResult
     {
+        $url = "https://api.telegram.org/bot{$token}/getMe";
+
         try {
-            $response = Http::connectTimeout(2)
+            $client = Http::connectTimeout(2)
                 ->timeout(10)
-                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
-                ->get("https://api.telegram.org/bot{$token}/getMe");
+                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']));
+            $response = TelegramProxy::apply($client, $url)->get($url);
         } catch (\Throwable $e) {
             $this->logThrottled($channel, 'get_me_transport', 'warning', "{$label}: getMe transport failed; retrying", [
                 'source' => $this->source($channel, 'get_me_transport_failed'),
@@ -114,7 +116,9 @@ final class TelegramPollingRuntime
 
     public function sanitize(string $message): string
     {
-        return preg_replace('/bot[0-9]+:[A-Za-z0-9_-]+/', 'bot[hidden]', $message) ?? $message;
+        $message = preg_replace('/bot[0-9]+:[A-Za-z0-9_-]+/', 'bot[hidden]', $message) ?? $message;
+
+        return TelegramProxy::maskCredentials($message);
     }
 
     private function logThrottled(

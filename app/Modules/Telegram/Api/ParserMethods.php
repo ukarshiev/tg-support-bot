@@ -2,6 +2,7 @@
 
 namespace App\Modules\Telegram\Api;
 
+use App\Support\TelegramProxy;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -28,10 +29,12 @@ class ParserMethods
     public static function postQuery(string $urlQuery, array|string $queryParams = [], array $queryHeading = []): array
     {
         try {
-            $resultQuery = Http::withHeaders($queryHeading)
+            $client = Http::withHeaders($queryHeading)
                 ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
                 ->timeout(self::REQUEST_TIMEOUT_SECONDS)
-                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
+                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']));
+
+            $resultQuery = TelegramProxy::apply($client, $urlQuery)
                 ->post($urlQuery, $queryParams)
                 ->json();
 
@@ -66,10 +69,12 @@ class ParserMethods
                 $urlQuery .= '?' . http_build_query($queryParams);
             }
 
-            $resultQuery = Http::withHeaders($queryHeading)
+            $client = Http::withHeaders($queryHeading)
                 ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
                 ->timeout(self::REQUEST_TIMEOUT_SECONDS)
-                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
+                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']));
+
+            $resultQuery = TelegramProxy::apply($client, $urlQuery)
                 ->get($urlQuery)
                 ->json();
 
@@ -111,10 +116,12 @@ class ParserMethods
                     throw new phpDocumentorException('Cannot open temporary file');
                 }
 
-                $resultQuery = Http::attach($attachType, $fileHandle, $safeName)
+                $client = Http::attach($attachType, $fileHandle, $safeName)
                     ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
                     ->timeout(self::UPLOAD_TIMEOUT_SECONDS)
-                    ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
+                    ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']));
+
+                $resultQuery = TelegramProxy::apply($client, $urlQuery)
                     ->post($urlQuery, $queryParams)
                     ->json();
 
@@ -149,14 +156,16 @@ class ParserMethods
                 $extension = $attachData->getClientOriginalExtension();
                 $safeName = Str::uuid() . ($extension ? '.' . $extension : '');
 
-                $resultQuery = Http::attach(
+                $client = Http::attach(
                     $attachType,
                     fopen($tempPath, 'rb'),
                     $safeName
                 )
                     ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
                     ->timeout(self::UPLOAD_TIMEOUT_SECONDS)
-                    ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
+                    ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']));
+
+                $resultQuery = TelegramProxy::apply($client, $urlQuery)
                     ->post($urlQuery, $queryParams)
                     ->json();
             }
@@ -195,6 +204,7 @@ class ParserMethods
             'https://api.telegram.org/bot[hidden]',
             $exception->getMessage(),
         ) ?? 'Telegram transport failed';
+        $message = TelegramProxy::maskCredentials($message);
 
         Log::channel('app')->log(
             $exception->getCode() === 1 ? 'warning' : 'error',

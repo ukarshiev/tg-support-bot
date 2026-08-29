@@ -6,6 +6,7 @@ use App\Enums\TelegramPollerApiResult;
 use App\Models\DiscardedTelegramUpdate;
 use App\Services\Settings\SettingsService;
 use App\Support\TelegramPollingRuntime;
+use App\Support\TelegramProxy;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -61,14 +62,15 @@ class TelegramPollUpdates extends Command
 
         do {
             try {
-                $response = Http::connectTimeout(2)
+                $client = Http::connectTimeout(2)
                     ->timeout($timeoutSeconds + 3)
-                    ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
-                    ->post("{$apiBase}/getUpdates", array_filter([
-                        'offset' => $offset,
-                        'timeout' => $timeoutSeconds,
-                        'allowed_updates' => ['message', 'edited_message', 'callback_query'],
-                    ], static fn ($value) => $value !== null));
+                    ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']));
+                $url = "{$apiBase}/getUpdates";
+                $response = TelegramProxy::apply($client, $url)->post($url, array_filter([
+                    'offset' => $offset,
+                    'timeout' => $timeoutSeconds,
+                    'allowed_updates' => ['message', 'edited_message', 'callback_query'],
+                ], static fn ($value) => $value !== null));
             } catch (\Throwable $e) {
                 $runtime->reportTransportFailure('main', 'Telegram poller', 'get_updates', $e);
                 sleep($sleepSeconds);
@@ -183,10 +185,11 @@ class TelegramPollUpdates extends Command
     private function deleteWebhook(string $apiBase, TelegramPollingRuntime $runtime): TelegramPollerApiResult
     {
         try {
-            $deleteWebhook = Http::connectTimeout(2)
+            $client = Http::connectTimeout(2)
                 ->timeout(10)
-                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']))
-                ->post("{$apiBase}/deleteWebhook", [
+                ->when(config('traffic_source.telegram.force_ipv4'), fn ($client) => $client->withOptions(['force_ip_resolve' => 'v4']));
+            $url = "{$apiBase}/deleteWebhook";
+            $deleteWebhook = TelegramProxy::apply($client, $url)->post($url, [
                     'drop_pending_updates' => false,
                 ]);
         } catch (\Throwable $e) {

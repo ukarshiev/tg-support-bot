@@ -45,36 +45,46 @@ class TelegramPollUpdatesCommandTest extends TestCase
     {
         app(SettingsService::class)->set('telegram.token', 'main-token');
         app(SettingsService::class)->set('telegram.secret_key', 'main-secret');
+        config()->set('traffic_source.telegram.proxy', 'http://host.docker.internal:10809');
+        $telegramOptions = [];
+        $internalWebhookOptions = null;
 
         Http::fake([
-            'https://api.telegram.org/botmain-token/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1]], 200),
-            'https://api.telegram.org/botmain-token/deleteWebhook' => Http::response(['ok' => true], 200),
-            'https://api.telegram.org/botmain-token/getUpdates' => Http::response([
-                'ok' => true,
-                'result' => [
-                    [
+            'https://api.telegram.org/botmain-token/getMe' => function ($request, array $options) use (&$telegramOptions) {
+                $telegramOptions[] = $options;
+
+                return Http::response(['ok' => true, 'result' => ['id' => 1]], 200);
+            },
+            'https://api.telegram.org/botmain-token/deleteWebhook' => function ($request, array $options) use (&$telegramOptions) {
+                $telegramOptions[] = $options;
+
+                return Http::response(['ok' => true], 200);
+            },
+            'https://api.telegram.org/botmain-token/getUpdates' => function ($request, array $options) use (&$telegramOptions) {
+                $telegramOptions[] = $options;
+
+                return Http::response([
+                    'ok' => true,
+                    'result' => [[
                         'update_id' => 200,
                         'callback_query' => [
                             'id' => 'callback-main-1',
                             'data' => 'select_language:pl',
-                            'from' => [
-                                'id' => 555001,
-                                'is_bot' => false,
-                                'first_name' => 'Client',
-                            ],
+                            'from' => ['id' => 555001, 'is_bot' => false, 'first_name' => 'Client'],
                             'message' => [
                                 'message_id' => 10,
-                                'chat' => [
-                                    'id' => 555001,
-                                    'type' => 'private',
-                                ],
+                                'chat' => ['id' => 555001, 'type' => 'private'],
                                 'text' => "Выберите язык / Choose your language:\nСтраница 1/2",
                             ],
                         ],
-                    ],
-                ],
-            ], 200),
-            'http://nginx/api/telegram/bot' => Http::response(null, 204),
+                    ]],
+                ], 200);
+            },
+            'http://nginx/api/telegram/bot' => function ($request, array $options) use (&$internalWebhookOptions) {
+                $internalWebhookOptions = $options;
+
+                return Http::response(null, 204);
+            },
         ]);
 
         $this->artisan('telegram:poll-updates', [
@@ -90,6 +100,12 @@ class TelegramPollUpdatesCommandTest extends TestCase
                 && $request['callback_query']['data'] === 'select_language:pl';
         });
 
+        $this->assertCount(3, $telegramOptions);
+        foreach ($telegramOptions as $options) {
+            $this->assertSame('http://host.docker.internal:10809', $options['proxy'] ?? null);
+        }
+        $this->assertIsArray($internalWebhookOptions);
+        $this->assertArrayNotHasKey('proxy', $internalWebhookOptions);
         $this->assertSame(201, Cache::get('telegram:poller:offset'));
     }
 

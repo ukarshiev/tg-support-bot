@@ -7,6 +7,7 @@ use App\Modules\Api\Services\FileService;
 use App\Modules\Telegram\Actions\GetChat;
 use App\Modules\Vk\Api\VkMethods;
 use App\Services\Settings\SettingsService;
+use App\Support\TelegramProxy;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
@@ -56,7 +57,7 @@ class EnrichBotUserProfileJob implements ShouldQueue
                 [
                     'bot_user_id' => $this->botUser->id,
                     'platform' => $this->botUser->platform,
-                    'error' => $e->getMessage(),
+                    'error' => TelegramProxy::maskCredentials($e->getMessage()),
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
                 ]
@@ -81,7 +82,8 @@ class EnrichBotUserProfileJob implements ShouldQueue
 
             if ($filePath !== null) {
                 $token = (string) app(SettingsService::class)->get('telegram.token');
-                $response = Http::get("https://api.telegram.org/file/bot{$token}/{$filePath}");
+                $url = "https://api.telegram.org/file/bot{$token}/{$filePath}";
+                $response = TelegramProxy::apply(Http::withOptions([]), $url)->get($url);
 
                 if ($response->ok()) {
                     $storagePath = "avatars/bot-user-{$this->botUser->id}.jpg";

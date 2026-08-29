@@ -2,6 +2,15 @@
 
 # Качество и эксплуатация
 
+## Сетевой путь до Telegram API
+
+- `TELEGRAM_PROXY` задаёт внешний прокси только для запросов к `api.telegram.org`. Пустое значение сохраняет прямое соединение.
+- Поддерживаются HTTP (`http://host.docker.internal:10809`) и SOCKS5 с DNS через прокси (`socks5h://host.docker.internal:10808`).
+- Прокси применяется ко всем найденным обращениям к Telegram API: обычным запросам, callback-ответам, загрузке и скачиванию файлов, `getMe`, `deleteWebhook` и `getUpdates` обоих poller.
+- Внутренние webhook `http://nginx/...`, PostgreSQL, Redis и другие сервисы Docker идут напрямую. Это защищает внутренний трафик от выхода через внешний прокси.
+- `extra_hosts: host.docker.internal:host-gateway` добавлен в `app`, `queue`, `scheduler`, `telegram_poller` и `ai_telegram_poller`, поэтому адрес хоста доступен при пользовательских DNS-серверах Compose.
+- Если прокси содержит логин и пароль, transport-логи заменяют credentials на `[hidden]`.
+
 ## Эксплуатация логов
 
 - `LOG_CHANNEL=stack` использует ротируемый `LOG_STACK=daily`; `LOG_DAILY_DAYS=7` хранит суточные файлы каналов `daily` и `app` семь дней.

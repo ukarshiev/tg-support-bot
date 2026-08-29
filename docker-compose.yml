@@ -55,6 +55,8 @@ services:
         dns:
             - 8.8.8.8
             - 1.1.1.1
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
 
     pgdb:
         container_name: pgdb
@@ -136,6 +138,8 @@ services:
         dns:
             - 8.8.8.8
             - 1.1.1.1
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
 
     reverb:
         build: .
@@ -188,6 +192,8 @@ services:
         dns:
             - 8.8.8.8
             - 1.1.1.1
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
 
     telegram_poller:
         build: .
@@ -219,6 +225,8 @@ services:
         dns:
             - 8.8.8.8
             - 1.1.1.1
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
 
     ai_telegram_poller:
         build: .
@@ -250,6 +258,8 @@ services:
         dns:
             - 8.8.8.8
             - 1.1.1.1
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
 volumes:
     pgdata:
     redisdata:

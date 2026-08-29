@@ -4,6 +4,7 @@ namespace App\Modules\Telegram\Actions;
 
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Services\Settings\SettingsService;
+use App\Support\TelegramProxy;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -36,9 +37,10 @@ class AnswerCallbackQuery
                 $payload['text'] = mb_substr($text, 0, 200);
             }
 
-            $response = Http::timeout(self::TIMEOUT_SECONDS)
-                ->connectTimeout(self::TIMEOUT_SECONDS)
-                ->post("https://api.telegram.org/bot{$token}/answerCallbackQuery", $payload);
+            $url = "https://api.telegram.org/bot{$token}/answerCallbackQuery";
+            $client = Http::timeout(self::TIMEOUT_SECONDS)
+                ->connectTimeout(self::TIMEOUT_SECONDS);
+            $response = TelegramProxy::apply($client, $url)->post($url, $payload);
 
             if (! $response->json('ok')) {
                 Log::channel('app')->warning('AnswerCallbackQuery: Telegram API returned non-ok response', [

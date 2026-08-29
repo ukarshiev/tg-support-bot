@@ -4,6 +4,7 @@ namespace App\Modules\Api\Services;
 
 use App\Modules\Api\Exceptions\FileProxyException;
 use App\Services\Settings\SettingsService;
+use App\Support\TelegramProxy;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -100,12 +101,13 @@ class FileService
         }
 
         try {
-            $response = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
+            $url = "https://api.telegram.org/bot{$this->botToken}/getFile";
+            $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
                 ->timeout((int) config('file_proxy.timeout', 15))
-                ->withoutRedirecting()
-                ->get("https://api.telegram.org/bot{$this->botToken}/getFile", [
-                    'file_id' => $fileId,
-                ]);
+                ->withoutRedirecting();
+            $response = TelegramProxy::apply($client, $url)->get($url, [
+                'file_id' => $fileId,
+            ]);
         } catch (ConnectionException $e) {
             throw new FileProxyException('upstream_timeout', 504, $e);
         }
@@ -129,7 +131,8 @@ class FileService
         $sizeExceeded = false;
 
         try {
-            $response = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
+            $url = "https://api.telegram.org/file/bot{$this->botToken}/{$filePath}";
+            $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
                 ->timeout((int) config('file_proxy.timeout', 15))
                 ->withoutRedirecting()
                 ->withOptions([
@@ -140,8 +143,8 @@ class FileService
                             throw new \RuntimeException('file_size_limit_exceeded');
                         }
                     },
-                ])
-                ->get("https://api.telegram.org/file/bot{$this->botToken}/{$filePath}");
+                ]);
+            $response = TelegramProxy::apply($client, $url)->get($url);
         } catch (ConnectionException $e) {
             if ($sizeExceeded) {
                 throw new FileProxyException('file_too_large', 413, $e);

@@ -84,4 +84,18 @@ class TelegramPollingRuntimeTest extends TestCase
         $runtime->resetHeartbeat('main');
         $this->assertFalse($runtime->isHealthy('main', 90));
     }
+
+    public function test_sanitize_masks_proxy_credentials_for_logs(): void
+    {
+        $runtime = app(TelegramPollingRuntime::class);
+        $message = 'HTTP http://proxy-user:proxy-pass@proxy.local:10809 SOCKS socks5h://user:secret@proxy.local:10808';
+        $sanitized = $runtime->sanitize($message);
+
+        $this->assertSame(
+            'HTTP http://[hidden]@proxy.local:10809 SOCKS socks5h://[hidden]@proxy.local:10808',
+            $sanitized,
+        );
+        $this->assertStringNotContainsString('proxy-pass', $sanitized);
+        $this->assertStringNotContainsString('secret', $sanitized);
+    }
 }
