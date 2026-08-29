@@ -21,18 +21,60 @@ WORKDIR /var/www
 
 FROM php-base AS composer-build
 
+ENV COMPOSER_PROCESS_TIMEOUT=600
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates git && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=composer:2.8@sha256:5248900ab8b5f7f880c2d62180e40960cd87f60149ec9a1abfd62ac72a02577c /usr/bin/composer /usr/local/bin/composer
 COPY . .
+# Four attempts with 5/15/30-second pauses tolerate transient TLS failures;
+# the last failure remains fatal. The 600-second timeout also covers slow links.
 RUN rm -f bootstrap/cache/*.php && \
-    composer install --no-dev --no-interaction --prefer-dist \
-        --classmap-authoritative --no-progress
+    for attempt in 1 2 3 4; do \
+        if php -d default_socket_timeout=600 /usr/local/bin/composer install \
+            --no-dev --no-interaction --prefer-dist \
+            --classmap-authoritative --no-progress; then \
+            break; \
+        fi; \
+        if [ "${attempt}" -eq 4 ]; then \
+            echo "Composer install failed after 4 attempts." >&2; \
+            exit 1; \
+        fi; \
+        case "${attempt}" in \
+            1) delay=5 ;; \
+            2) delay=15 ;; \
+            3) delay=30 ;; \
+        esac; \
+        echo "Composer install attempt ${attempt}/4 failed; retrying in ${delay}s." >&2; \
+        sleep "${delay}"; \
+    done
 
 FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend-build
 
 WORKDIR /build
 COPY package.json package-lock.json vite.app.config.js ./
 COPY resources ./resources
-RUN npm ci && npm run build
+# Four attempts with 5/15/30-second pauses tolerate transient registry failures;
+# npm run build is local and runs once only after dependencies are installed.
+RUN for attempt in 1 2 3 4; do \
+        if npm ci; then \
+            break; \
+        fi; \
+        if [ "${attempt}" -eq 4 ]; then \
+            echo "npm ci failed after 4 attempts." >&2; \
+            exit 1; \
+        fi; \
+        case "${attempt}" in \
+            1) delay=5 ;; \
+            2) delay=15 ;; \
+            3) delay=30 ;; \
+        esac; \
+        echo "npm ci attempt ${attempt}/4 failed; retrying in ${delay}s." >&2; \
+        sleep "${delay}"; \
+    done && \
+    npm run build
 
 FROM php-base AS runtime
 
