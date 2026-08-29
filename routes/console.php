@@ -15,6 +15,9 @@ Artisan::command('inspire', function () {
 Schedule::command('telescope:prune --hours=24')->daily();
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
 Schedule::command('queue:prune-failed --hours=168')->daily();
+Schedule::command('logs:prune --days=7')
+    ->dailyAt('03:30')
+    ->withoutOverlapping();
 Schedule::command('telegram:support-flow-check')
     ->daily()
     ->withoutOverlapping()
