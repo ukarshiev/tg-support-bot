@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 readonly SERVICES=(app queue reverb scheduler telegram_poller ai_telegram_poller)
-readonly HEALTH_SERVICES=(pgdb redis app queue reverb scheduler nginx telegram_poller ai_telegram_poller)
+readonly HEALTH_SERVICES=(pgdb redis app queue reverb scheduler nginx)
+readonly POLLER_HEALTH_SERVICES=(telegram_poller ai_telegram_poller)
 declare -A PREVIOUS_IMAGE_IDS=()
 declare -A PREVIOUS_IMAGE_NAMES=()
 declare -A PREVIOUS_IMAGE_TAGS=()
@@ -10,10 +11,10 @@ PREVIOUS_NGINX_CONFIG=""
 HAD_PREVIOUS_NGINX_CONFIG=false
 RELEASE_PAUSE_STARTED=false
 
-services_ready() {
+services_healthy() {
     local service container_id health
 
-    for service in "${HEALTH_SERVICES[@]}"; do
+    for service in "$@"; do
         container_id="$(docker compose ps -q "$service" 2>/dev/null || true)"
         [[ -n "$container_id" ]] || return 1
 
@@ -22,6 +23,14 @@ services_ready() {
             "$container_id")"
         [[ "$health" == "healthy" || "$health" == "running" ]] || return 1
     done
+}
+
+services_ready() {
+    services_healthy "${HEALTH_SERVICES[@]}"
+}
+
+pollers_ready() {
+    services_healthy "${POLLER_HEALTH_SERVICES[@]}"
 }
 
 rollback() {
@@ -142,7 +151,12 @@ RELEASE_PAUSE_STARTED=true
 docker compose stop telegram_poller ai_telegram_poller queue scheduler
 docker compose up -d pgdb redis app
 docker compose exec -T --user root app sh -lc 'rm -f bootstrap/cache/*.php'
-docker compose exec -T app php artisan migrate --force
+# Limit lock waits to 15s so a blocked migration rolls back promptly; allow up to
+# 10 minutes per statement for legitimate production DDL. PGOPTIONS applies only
+# to this migration process and does not change normal application connections.
+docker compose exec -T \
+    -e PGOPTIONS='-c lock_timeout=15s -c statement_timeout=10min' \
+    app php artisan migrate --force
 docker compose exec -T app php artisan security:external-preflight
 docker compose exec -T app php artisan optimize:clear
 docker compose exec -T app php artisan config:cache
@@ -152,20 +166,40 @@ docker compose exec -T app php artisan view:cache
 # Horizon here is redundant and could turn a normal startup race into a rollback.
 docker compose up -d queue reverb scheduler
 docker compose up -d --force-recreate nginx
-docker compose up -d telegram_poller ai_telegram_poller
 
+release_ready=false
 for _ in {1..12}; do
     if services_ready && \
        docker compose exec -T app php artisan about --only=environment >/dev/null && \
        docker compose exec -T queue php artisan horizon:status | grep -qi running; then
-        rm -f "$PREVIOUS_NGINX_CONFIG"
-        trap - ERR
-        echo "Release completed successfully. Backup: $backup_file"
-        echo "Backup SHA-256: $backup_checksum"
-        exit 0
+        release_ready=true
+        break
     fi
     sleep 5
 done
 
-echo "Services did not become ready in 60 seconds." >&2
-false
+if [[ "$release_ready" != true ]]; then
+    echo "Core services did not become ready in 60 seconds; pollers remain stopped." >&2
+    false
+fi
+
+docker compose up -d telegram_poller ai_telegram_poller
+
+pollers_healthy=false
+for _ in {1..12}; do
+    if pollers_ready; then
+        pollers_healthy=true
+        break
+    fi
+    sleep 5
+done
+
+if [[ "$pollers_healthy" != true ]]; then
+    echo "Telegram pollers did not become healthy in 60 seconds." >&2
+    false
+fi
+
+rm -f "$PREVIOUS_NGINX_CONFIG"
+trap - ERR
+echo "Release completed successfully. Backup: $backup_file"
+echo "Backup SHA-256: $backup_checksum"

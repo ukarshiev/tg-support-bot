@@ -62,6 +62,54 @@ class ReleaseScriptSafetyTest extends TestCase
         $this->assertStringContainsString('Telegram keeps pending updates for 24 hours', $script);
     }
 
+    public function test_release_limits_migration_lock_and_statement_waits(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');
+
+        $this->assertIsString($script);
+        $timeoutPosition = strpos(
+            $script,
+            "PGOPTIONS='-c lock_timeout=15s -c statement_timeout=10min'",
+        );
+        $migratePosition = strpos($script, 'app php artisan migrate --force');
+
+        $this->assertNotFalse($timeoutPosition);
+        $this->assertNotFalse($migratePosition);
+        $this->assertLessThan($migratePosition, $timeoutPosition);
+    }
+
+    public function test_release_starts_pollers_only_after_core_readiness_checks(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');
+
+        $this->assertIsString($script);
+        $readinessPosition = strpos($script, 'release_ready=false');
+        $aboutPosition = strpos($script, 'php artisan about --only=environment', $readinessPosition);
+        $horizonPosition = strpos($script, 'php artisan horizon:status', $readinessPosition);
+        $readinessGuardPosition = strpos($script, 'if [[ "$release_ready" != true ]]', $readinessPosition);
+        $pollerStartPosition = strpos(
+            $script,
+            'docker compose up -d telegram_poller ai_telegram_poller',
+            $readinessPosition,
+        );
+        $pollerHealthPosition = strpos($script, 'if pollers_ready; then', $pollerStartPosition);
+
+        $this->assertNotFalse($readinessPosition);
+        $this->assertNotFalse($aboutPosition);
+        $this->assertNotFalse($horizonPosition);
+        $this->assertNotFalse($readinessGuardPosition);
+        $this->assertNotFalse($pollerStartPosition);
+        $this->assertNotFalse($pollerHealthPosition);
+        $this->assertLessThan($pollerStartPosition, $aboutPosition);
+        $this->assertLessThan($pollerStartPosition, $horizonPosition);
+        $this->assertLessThan($pollerStartPosition, $readinessGuardPosition);
+        $this->assertLessThan($pollerHealthPosition, $pollerStartPosition);
+        $this->assertStringContainsString(
+            'readonly POLLER_HEALTH_SERVICES=(telegram_poller ai_telegram_poller)',
+            $script,
+        );
+    }
+
     public function test_rollback_restarts_every_service_paused_for_release(): void
     {
         $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');
