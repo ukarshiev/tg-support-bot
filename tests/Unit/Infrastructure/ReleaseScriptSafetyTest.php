@@ -29,6 +29,57 @@ class ReleaseScriptSafetyTest extends TestCase
         $this->assertLessThan($migratePosition, $clearPosition);
     }
 
+    public function test_release_pauses_ingress_and_workers_around_migration(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');
+
+        $this->assertIsString($script);
+        $backupPosition = strpos($script, 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"');
+        $rememberImagesPosition = strpos($script, 'for service in "${SERVICES[@]}";', $backupPosition);
+        $buildPosition = strpos($script, 'docker compose build --pull', $backupPosition);
+        $stopPosition = strpos(
+            $script,
+            'docker compose stop telegram_poller ai_telegram_poller queue scheduler',
+            $backupPosition,
+        );
+        $appPosition = strpos($script, 'docker compose up -d pgdb redis app', $backupPosition);
+        $migratePosition = strpos($script, 'php artisan migrate --force', $backupPosition);
+        $queuePosition = strpos($script, 'docker compose up -d queue reverb scheduler', $backupPosition);
+
+        $this->assertNotFalse($backupPosition);
+        $this->assertNotFalse($rememberImagesPosition);
+        $this->assertNotFalse($buildPosition);
+        $this->assertNotFalse($stopPosition);
+        $this->assertNotFalse($appPosition);
+        $this->assertNotFalse($migratePosition);
+        $this->assertNotFalse($queuePosition);
+        $this->assertLessThan($rememberImagesPosition, $backupPosition);
+        $this->assertLessThan($buildPosition, $rememberImagesPosition);
+        $this->assertLessThan($stopPosition, $buildPosition);
+        $this->assertLessThan($appPosition, $stopPosition);
+        $this->assertLessThan($migratePosition, $stopPosition);
+        $this->assertLessThan($queuePosition, $migratePosition);
+        $this->assertStringContainsString('Telegram keeps pending updates for 24 hours', $script);
+    }
+
+    public function test_rollback_restarts_every_service_paused_for_release(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');
+
+        $this->assertIsString($script);
+        $rollbackStart = strpos($script, 'rollback()');
+        $rollbackEnd = strpos($script, 'trap rollback ERR');
+        $this->assertNotFalse($rollbackStart);
+        $this->assertNotFalse($rollbackEnd);
+
+        $rollback = substr($script, $rollbackStart, $rollbackEnd - $rollbackStart);
+        $this->assertStringContainsString('RELEASE_PAUSE_STARTED', $rollback);
+        $this->assertStringContainsString('telegram_poller', $rollback);
+        $this->assertStringContainsString('ai_telegram_poller', $rollback);
+        $this->assertStringContainsString('queue', $rollback);
+        $this->assertStringContainsString('scheduler', $rollback);
+    }
+
     public function test_release_uses_current_compose_services_and_renders_nginx_config(): void
     {
         $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');

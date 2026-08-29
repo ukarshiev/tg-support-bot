@@ -8,6 +8,7 @@ declare -A PREVIOUS_IMAGE_NAMES=()
 declare -A PREVIOUS_IMAGE_TAGS=()
 PREVIOUS_NGINX_CONFIG=""
 HAD_PREVIOUS_NGINX_CONFIG=false
+RELEASE_PAUSE_STARTED=false
 
 services_ready() {
     local service container_id health
@@ -40,9 +41,13 @@ rollback() {
         rm -f docker/nginx/default.conf
     fi
 
-    docker compose up -d --no-build --force-recreate app queue reverb scheduler || true
+    docker compose up -d --no-build --force-recreate app reverb || true
     docker compose up -d --no-build --force-recreate nginx || true
-    docker compose up -d --no-build --force-recreate telegram_poller ai_telegram_poller || true
+    if [[ "$RELEASE_PAUSE_STARTED" == true ]]; then
+        echo "Rollback: restarting message receivers, queue, and scheduler." >&2
+        docker compose up -d --no-build --force-recreate \
+            telegram_poller ai_telegram_poller queue scheduler || true
+    fi
     docker compose logs --tail=200 app queue nginx || true
     rm -f "$PREVIOUS_NGINX_CONFIG"
     exit "$exit_code"
@@ -99,16 +104,6 @@ fi
 sed "s/__MAIN_DOMAIN__/${main_domain}/g" "$nginx_template" > "${nginx_config}.tmp"
 mv "${nginx_config}.tmp" "$nginx_config"
 
-for service in "${SERVICES[@]}"; do
-    container_id="$(docker compose ps -q "$service" 2>/dev/null || true)"
-    if [[ -n "$container_id" ]]; then
-        PREVIOUS_IMAGE_IDS[$service]="$(docker inspect --format '{{.Image}}' "$container_id")"
-        PREVIOUS_IMAGE_NAMES[$service]="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
-        PREVIOUS_IMAGE_TAGS[$service]="tg-support-bot-rollback-${service}:previous"
-        docker image tag "${PREVIOUS_IMAGE_IDS[$service]}" "${PREVIOUS_IMAGE_TAGS[$service]}"
-    fi
-done
-
 umask 077
 REPO_ROOT="$(pwd -P)"
 readonly REPO_ROOT
@@ -131,7 +126,20 @@ test -s "$backup_file"
 chmod 600 "$backup_file"
 backup_checksum="$(sha256sum "$backup_file" | awk '{print $1}')"
 
+for service in "${SERVICES[@]}"; do
+    container_id="$(docker compose ps -q "$service" 2>/dev/null || true)"
+    if [[ -n "$container_id" ]]; then
+        PREVIOUS_IMAGE_IDS[$service]="$(docker inspect --format '{{.Image}}' "$container_id")"
+        PREVIOUS_IMAGE_NAMES[$service]="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+        PREVIOUS_IMAGE_TAGS[$service]="tg-support-bot-rollback-${service}:previous"
+        docker image tag "${PREVIOUS_IMAGE_IDS[$service]}" "${PREVIOUS_IMAGE_TAGS[$service]}"
+    fi
+done
+
 docker compose build --pull
+echo "Telegram message reception is temporarily paused. Telegram keeps pending updates for 24 hours; accumulated updates will be processed after the pollers restart."
+RELEASE_PAUSE_STARTED=true
+docker compose stop telegram_poller ai_telegram_poller queue scheduler
 docker compose up -d pgdb redis app
 docker compose exec -T --user root app sh -lc 'rm -f bootstrap/cache/*.php'
 docker compose exec -T app php artisan migrate --force
@@ -140,10 +148,11 @@ docker compose exec -T app php artisan optimize:clear
 docker compose exec -T app php artisan config:cache
 docker compose exec -T app php artisan route:cache
 docker compose exec -T app php artisan view:cache
+# queue was stopped before migration and is started with the new image; terminating
+# Horizon here is redundant and could turn a normal startup race into a rollback.
 docker compose up -d queue reverb scheduler
 docker compose up -d --force-recreate nginx
 docker compose up -d telegram_poller ai_telegram_poller
-docker compose exec -T queue php artisan horizon:terminate
 
 for _ in {1..12}; do
     if services_ready && \
