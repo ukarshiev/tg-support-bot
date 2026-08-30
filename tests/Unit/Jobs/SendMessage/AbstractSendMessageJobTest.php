@@ -66,6 +66,27 @@ class AbstractSendMessageJobTest extends TestCase
         $this->assertSame('Link:  https://t.me/test', $job->queryParams->text);
     }
 
+    public function test_missing_message_edit_is_handled_as_no_op(): void
+    {
+        $job = (new RetryProbeSendMessageJob())->withFakeQueueInteractions();
+        $job->botUserId = 777;
+        $job->typeMessage = 'outgoing';
+
+        $job->handleTelegramResponse(new TelegramAnswerDto(
+            ok: false,
+            response_code: 400,
+            type_error: 'MESSAGE_TO_EDIT_NOT_FOUND',
+            rawData: [
+                'ok' => false,
+                'error_code' => 400,
+                'description' => 'Bad Request: message to edit not found',
+            ],
+        ));
+
+        $job->assertNotReleased();
+        $job->assertNotFailed();
+    }
+
     #[DataProvider('forbiddenDescriptions')]
     public function test_telegram_403_is_classified_by_normalized_description_substring(
         string $description,

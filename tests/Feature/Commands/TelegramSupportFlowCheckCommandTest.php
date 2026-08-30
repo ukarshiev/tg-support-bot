@@ -54,6 +54,8 @@ class TelegramSupportFlowCheckCommandTest extends TestCase
             ->where('to_id', '>', 0)
             ->exists());
 
+        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/editMessageReplyMarkup'));
+
         Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/sendMessage')
             && $request['chat_id'] === '-1001'
             && $request['message_thread_id'] === 777

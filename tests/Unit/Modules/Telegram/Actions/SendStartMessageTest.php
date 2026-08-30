@@ -9,6 +9,7 @@ use App\Models\Message;
 use App\Modules\Telegram\Actions\SelectLanguage;
 use App\Modules\Telegram\Actions\SendStartMessage;
 use App\Modules\Telegram\Actions\ShowLanguageSelectionPage;
+use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Jobs\SendContactMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
@@ -398,5 +399,43 @@ class SendStartMessageTest extends TestCase
         Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/answerCallbackQuery')
             && (string) $request['callback_query_id'] === '902'
             && !isset($request['text']));
+    }
+
+    public function test_zero_message_id_uses_callback_id_for_duplicate_language_protection(): void
+    {
+        $sourceDto = TelegramUpdateDtoMock::getDto();
+        $botUser = BotUser::getOrCreateByTelegramUpdate($sourceDto);
+
+        $firstDto = new TelegramUpdateDto(
+            updateId: 1001,
+            typeQuery: 'callback_query',
+            aiTechMessage: false,
+            typeSource: 'private',
+            chatId: $sourceDto->chatId,
+            messageId: 0,
+            callbackId: 'support-flow-check:1001',
+            languageCode: 'pl',
+            callbackData: 'select_language:pl',
+        );
+        $secondDto = new TelegramUpdateDto(
+            updateId: 1002,
+            typeQuery: 'callback_query',
+            aiTechMessage: false,
+            typeSource: 'private',
+            chatId: $sourceDto->chatId,
+            messageId: 0,
+            callbackId: 'support-flow-check:1001',
+            languageCode: 'en',
+            callbackData: 'select_language:en',
+        );
+
+        app(SelectLanguage::class)->execute($botUser, $firstDto);
+        app(SelectLanguage::class)->execute($botUser->refresh(), $secondDto);
+
+        $this->assertSame('pl', $botUser->refresh()->preferred_language_code);
+        Queue::assertPushed(SendTelegramMessageJob::class, 1);
+        Queue::assertNotPushed(SendTelegramSimpleQueryJob::class, function (SendTelegramSimpleQueryJob $job): bool {
+            return $job->queryParams->methodQuery === 'editMessageReplyMarkup';
+        });
     }
 }

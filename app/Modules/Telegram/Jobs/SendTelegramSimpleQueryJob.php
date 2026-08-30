@@ -86,7 +86,11 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
                     return;
                 }
 
-                if (in_array($response->type_error, ['TOPIC_NOT_MODIFIED', 'MESSAGE_NOT_MODIFIED'], true)) {
+                if (in_array($response->type_error, [
+                    'TOPIC_NOT_MODIFIED',
+                    'MESSAGE_NOT_MODIFIED',
+                    'MESSAGE_TO_EDIT_NOT_FOUND',
+                ], true)) {
                     return;
                 }
 

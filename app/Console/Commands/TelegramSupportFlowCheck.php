@@ -529,16 +529,17 @@ class TelegramSupportFlowCheck extends Command
         );
     }
 
-    private function callbackUpdate(BotUser $botUser, int $messageId, string $data, string $languageCode): TelegramUpdateDto
+    private function callbackUpdate(BotUser $botUser, int $updateId, string $data, string $languageCode): TelegramUpdateDto
     {
         return new TelegramUpdateDto(
-            updateId: $messageId,
+            updateId: $updateId,
             typeQuery: 'callback_query',
             aiTechMessage: false,
             typeSource: 'private',
             isBot: false,
             chatId: (int) $botUser->chat_id,
-            messageId: $messageId,
+            messageId: 0,
+            callbackId: "support-flow-check:{$updateId}:{$languageCode}",
             text: "Выберите язык / Choose your language:\nСтраница 1/2",
             username: $botUser->username,
             displayName: $botUser->display_name,

@@ -186,7 +186,11 @@ abstract class AbstractSendMessageJob implements ShouldQueue
             return;
         }
 
-        if ($response->response_code === 400 && in_array($response->type_error, ['TOPIC_NOT_MODIFIED', 'MESSAGE_NOT_MODIFIED'])) {
+        if ($response->response_code === 400 && in_array($response->type_error, [
+            'TOPIC_NOT_MODIFIED',
+            'MESSAGE_NOT_MODIFIED',
+            'MESSAGE_TO_EDIT_NOT_FOUND',
+        ], true)) {
             Log::channel('app')->info("{$response->type_error} -> no-op, skipping", [
                 'job' => static::class,
                 'bot_user_id' => $this->botUserId,

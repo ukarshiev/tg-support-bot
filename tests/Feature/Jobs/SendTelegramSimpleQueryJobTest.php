@@ -115,6 +115,30 @@ class SendTelegramSimpleQueryJobTest extends TestCase
         $job->handle();
     }
 
+    public function test_missing_message_edit_is_a_no_op_without_retry_or_failure(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*/editMessageReplyMarkup' => Http::response([
+                'ok' => false,
+                'error_code' => 400,
+                'description' => 'Bad Request: message to edit not found',
+            ], 400),
+        ]);
+
+        $job = (new SendTelegramSimpleQueryJob(TGTextMessageDto::from([
+            'methodQuery' => 'editMessageReplyMarkup',
+            'chat_id' => $this->botUser->chat_id,
+            'message_id' => 999999,
+            'reply_markup' => ['inline_keyboard' => []],
+        ])))->withFakeQueueInteractions();
+
+        $job->handle();
+
+        $job->assertNotReleased();
+        $job->assertNotFailed();
+        Http::assertSentCount(1);
+    }
+
     public function test_successful_client_delivery_atomically_clears_unavailable_state(): void
     {
         $this->botUser->markUnavailable('Forbidden: bot was blocked by the user');
