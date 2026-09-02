@@ -41,6 +41,14 @@ use Illuminate\Support\Facades\Log;
 
 class TelegramBotController
 {
+    /** Commands available inside a client's support topic. */
+    private const TOPIC_COMMANDS = [
+        'contact',
+        'ai_generate',
+        'ban',
+        'unban',
+    ];
+
     private TelegramUpdateDto $dataHook;
 
     protected ?string $platform;
@@ -141,11 +149,8 @@ class TelegramBotController
                     'message_id' => $this->dataHook->messageId,
                 ]));
             } elseif (!$this->dataHook->isBot) {
-                if ($this->dataHook->typeSource === 'supergroup') {
-                    if ($this->dataHook->text === '/contact' && $this->isSupergroup()) {
-                        app(SendContactMessage::class)->execute($this->botUser);
-                        return;
-                    }
+                if ($this->handleSupergroupCommand()) {
+                    return;
                 }
 
                 switch ($this->platform) {
@@ -213,11 +218,6 @@ class TelegramBotController
                         return;
                     }
 
-                    if (str_contains((string) $this->dataHook->text, '/ai_generate') && $this->isSupergroup()) {
-                        app(SendAiAnswerMessage::class)->execute($this->dataHook);
-                        return;
-                    }
-
                     if (in_array($this->dataHook->text, ['/lang', '/language'], true) && !$this->isSupergroup()) {
                         app(SendStartMessage::class)->force($this->dataHook);
                         return;
@@ -252,6 +252,61 @@ class TelegramBotController
                     return;
             }
         }
+    }
+
+    /**
+     * Consume every slash-command from a manager's forum topic before the
+     * platform delivery pipeline can treat it as a regular client reply.
+     */
+    private function handleSupergroupCommand(): bool
+    {
+        if (!$this->isSupergroup()) {
+            return false;
+        }
+
+        $text = (string) ($this->dataHook->text ?? $this->dataHook->caption);
+        if ($text === '' || !str_starts_with($text, '/')) {
+            return false;
+        }
+
+        $command = $this->extractSupergroupCommand($text);
+
+        match ($command) {
+            'contact' => app(SendContactMessage::class)->execute($this->botUser),
+            'ai_generate' => app(SendAiAnswerMessage::class)->execute($this->dataHook),
+            'ban' => app(BannedContactMessage::class)->execute($this->botUser, true),
+            'unban' => app(BannedContactMessage::class)->execute($this->botUser, false),
+            default => $this->sendSupergroupCommandHelp(),
+        };
+
+        return true;
+    }
+
+    private function extractSupergroupCommand(string $text): ?string
+    {
+        if (preg_match('/^\/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s|$)/iu', $text, $matches) !== 1) {
+            return null;
+        }
+
+        $command = mb_strtolower($matches[1]);
+
+        return in_array($command, self::TOPIC_COMMANDS, true) ? $command : null;
+    }
+
+    private function sendSupergroupCommandHelp(): void
+    {
+        $commands = implode(', ', array_map(
+            static fn (string $command): string => '/' . $command,
+            self::TOPIC_COMMANDS,
+        ));
+
+        SendTelegramSimpleQueryJob::dispatch(TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => (string) app(SettingsService::class)->get('telegram.group_id'),
+            'message_thread_id' => $this->dataHook->messageThreadId,
+            'text' => __('messages.topic_commands_help', ['commands' => $commands]),
+            'parse_mode' => 'html',
+        ]));
     }
 
     /**

@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the Bot User management domain — creation, identification, banning, and platform association of users.
 > **Context:** Read this file before modifying anything related to `BotUser` model, user creation, banning, topic management, or platform identification.
-> **Version:** 1.1
+> **Version:** 1.2
 
 ---
 
@@ -80,6 +80,12 @@ _Enforced in:_ `app/Models/BotUser.php`, `SendTelegramMessageJob`, `SendTelegram
 **BR-016** — The user-blocked notice may be posted only when the bot user already has a `topic_id`. The notice must never create a forum topic. The web conversation card must show the unavailable reason and timestamp even when no topic exists.
 _Enforced in:_ `app/Modules/Telegram/Actions/BanMessage.php`, `App\Livewire\Chat\ConversationPage`, `resources/views/livewire/chat/conversation-page.blade.php`
 
+**BR-017** — Any manager message in a Telegram support forum topic whose first character is `/` is a service command and must be consumed before any platform delivery pipeline. It must never be persisted or delivered as a regular outgoing client message. Unknown commands must produce a topic-local help message built from the actually routed topic commands.
+_Enforced in:_ `app/Modules/Telegram/Controllers/TelegramBotController.php @ handleSupergroupCommand()`
+
+**BR-018** — `/ban` and `/unban` in a client's forum topic, including Telegram's `@bot_username` suffix, must invoke `BannedContactMessage` just like the contact-card buttons. After either operation, the topic must receive an explicit status confirmation together with the refreshed contact card.
+_Enforced in:_ `app/Modules/Telegram/Controllers/TelegramBotController.php @ handleSupergroupCommand()`, `app/Modules/Telegram/Actions/BannedContactMessage.php`
+
 **BR-020** — When `CloseTopic::execute()` successfully closes a conversation (`is_closed = true`), a `Feedback` record with `status = 'awaiting_rating'` must be created and a rating form must be sent to the user on their platform. Every close event creates a new feedback record — history accumulates.
 _Enforced in:_ `app/Modules/Telegram/Actions/CloseTopic.php`, `app/Modules/Feedback/Actions/SendFeedbackForm.php`
 
@@ -101,7 +107,7 @@ stateDiagram-v2
     active --> banned: BanMessage action executed
     active --> unavailable: Telegram confirms recipient cannot receive
     unavailable --> active: Successful delivery or incoming private message
-    banned --> active: Manual unban (not yet implemented)
+    banned --> active: Inline button or /unban command
     banned --> [*]
 ```
 
@@ -130,6 +136,8 @@ The agent must use these methods to look up or create `BotUser`:
 - When a user is banned, the topic must be closed via `CloseTopic` action
 - When a banned topic is needed again, it must be reopened (not recreated)
 - A recipient-unavailable notice can use an existing topic but must never create one
+- Manager slash-commands are consumed inside the topic and must never enter client delivery
+- `/ban`, `/unban`, `/ban@bot_username`, and `/unban@bot_username` reuse `BannedContactMessage`
 
 ---
 
@@ -162,6 +170,7 @@ The agent must use these methods to look up or create `BotUser`:
 - ❌ Setting `topic_id` directly without going through `TopicCreateJob`
 - ❌ Banning a user without setting `banned_at`
 - ❌ Sending a regular reply to a `BotUser` where `isBanned()` returns true
+- ❌ Forwarding a manager's forum-topic slash-command to the client
 - ❌ Changing `platform` of an existing `BotUser`
 - ❌ Identifying a user by `chat_id` alone without specifying `platform`
 
@@ -169,6 +178,7 @@ The agent must use these methods to look up or create `BotUser`:
 
 ## Changelog
 
+- Version 1.2: Added BR-017 and BR-018 for the forum-topic command barrier, ban/unban commands, Telegram bot mentions, and explicit manager confirmation.
 - Version 1.1: Added BR-014 through BR-016 for honest Telegram 403 classification, atomic availability state, no-topic notice suppression, and the operator-facing web badge.
 
 ---

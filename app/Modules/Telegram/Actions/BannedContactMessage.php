@@ -39,9 +39,10 @@ class BannedContactMessage
 
         $queryParams = $this->sendContactMessage->getQueryParams($botUser);
 
-        if ($botUser->isBanned()) {
-            $queryParams->text = '<b>' . __('messages.ban_status_message') . "</b> \n\n" . $queryParams->text;
-        }
+        $statusMessage = $botUser->isBanned()
+            ? __('messages.ban_status_message')
+            : __('messages.unban_status_message');
+        $queryParams->text = '<b>' . $statusMessage . "</b> \n\n" . $queryParams->text;
 
         if ($messageId !== null) {
             $queryParams->message_id = $messageId;
