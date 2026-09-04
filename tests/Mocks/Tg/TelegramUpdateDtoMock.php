@@ -5,6 +5,7 @@ namespace Tests\Mocks\Tg;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use Illuminate\Support\Facades\Request;
+use Tests\Mocks\PayloadIdentifier;
 
 class TelegramUpdateDtoMock extends TelegramUpdateDto
 {
@@ -15,12 +16,16 @@ class TelegramUpdateDtoMock extends TelegramUpdateDto
      */
     public static function getDtoParams(?BotUser $botUser = null): array
     {
+        $timestamp = time();
+        $messageIdentifier = PayloadIdentifier::next();
+        $userIdentifier = $botUser?->chat_id ?? 1_424_646_511;
+
         return [
-            'update_id' => time(),
+            'update_id' => $messageIdentifier,
             'message' => [
-                'message_id' => time(),
+                'message_id' => $messageIdentifier,
                 'from' => [
-                    'id' => time(),
+                    'id' => $userIdentifier,
                     'is_bot' => false,
                     'first_name' => 'Test',
                     'last_name' => 'Testov',
@@ -28,13 +33,13 @@ class TelegramUpdateDtoMock extends TelegramUpdateDto
                     'language_code' => 'ru',
                 ],
                 'chat' => [
-                    'id' => time(),
+                    'id' => $userIdentifier,
                     'first_name' => 'Test',
                     'last_name' => 'Testov',
                     'username' => 'usertest',
                     'type' => 'private',
                 ],
-                'date' => time(),
+                'date' => $timestamp,
                 'text' => 'Тестовое сообщение',
             ],
         ];

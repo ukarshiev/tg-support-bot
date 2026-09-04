@@ -10,12 +10,13 @@ class ExternalMessageResponseDtoMock extends TelegramUpdateDto
 {
     public static function getDtoParams(): array
     {
+        $timestamp = time();
         return [
             'message_type' => 'outgoing',
-            'to_id' => time(),
-            'from_id' => time(),
+            'to_id' => 1_424_646_511,
+            'from_id' => 9_000_000_001,
             'text' => 'Тестовое сообщение',
-            'date' => date('d.m.Y H:i:s'),
+            'date' => date('d.m.Y H:i:s', $timestamp),
             'content_type' => 'text' ,
             'file_id' => null,
             'file_url' => null,

@@ -5,6 +5,7 @@ namespace Tests\Mocks\Tg;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use Illuminate\Support\Facades\Request;
+use Tests\Mocks\PayloadIdentifier;
 
 class TelegramUpdate_AiButtonAction extends TelegramUpdateDto
 {
@@ -15,12 +16,15 @@ class TelegramUpdate_AiButtonAction extends TelegramUpdateDto
      */
     public static function getDtoParams(?BotUser $botUser = null): array
     {
+        $timestamp = time();
+        $messageIdentifier = PayloadIdentifier::next();
+
         return [
-            'update_id' => time(),
+            'update_id' => $messageIdentifier,
             'callback_query' => [
-                'id' => time(),
+                'id' => $messageIdentifier,
                 'from' => [
-                    'id' => time(),
+                    'id' => 9_000_000_001,
                     'is_bot' => false,
                     'first_name' => 'Test',
                     'last_name' => 'Testov',
@@ -28,37 +32,37 @@ class TelegramUpdate_AiButtonAction extends TelegramUpdateDto
                     'language_code' => 'ru',
                 ],
                 'message' => [
-                    'message_id' => time(),
+                    'message_id' => $messageIdentifier,
                     'from' => [
-                        'id' => time(),
+                        'id' => 9_000_000_002,
                         'is_bot' => true,
                         'first_name' => 'Prog-Time AI',
                         'username' => 'prog_time_ai_bot',
                     ],
                     'chat' => [
-                        'id' => time(),
+                        'id' => -100_000_000_000,
                         'title' => 'Prog-Time | Чаты',
                         'is_forum' => true,
                         'type' => 'supergroup',
                     ],
-                    'date' => time(),
-                    'edit_date' => time(),
+                    'date' => $timestamp,
+                    'edit_date' => $timestamp,
                     'message_thread_id' => 0,
                     'reply_to_message' => [
-                        'message_id' => time(),
+                        'message_id' => $messageIdentifier + 1,
                         'from' => [
-                            'id' => time(),
+                            'id' => 9_000_000_003,
                             'is_bot' => true,
                             'first_name' => 'Prog-Time |Администратор сайта',
                             'username' => 'prog_time_bot',
                         ],
                         'chat' => [
-                            'id' => time(),
+                            'id' => -100_000_000_000,
                             'title' => 'Prog-Time | Чаты',
                             'is_forum' => true,
                             'type' => 'supergroup',
                         ],
-                        'date' => time(),
+                        'date' => $timestamp,
                         'message_thread_id' => 0,
                         'forum_topic_created' => [
                             'name' => '#1424646511 (telegram)',
@@ -73,25 +77,25 @@ class TelegramUpdate_AiButtonAction extends TelegramUpdateDto
                             [
                                 [
                                     'text' => '✅ Отправить',
-                                    'callback_data' => 'ai_message_send_' . time(),
+                                    'callback_data' => 'ai_message_send_' . $messageIdentifier,
                                 ],
                                 [
                                     'text' => '❌ Отменить',
-                                    'callback_data' => 'ai_message_delete_' . time(),
+                                    'callback_data' => 'ai_message_delete_' . $messageIdentifier,
                                 ],
                             ],
                             [
                                 [
                                     'text' => '📝 Редактировать ответ',
-                                    'switch_inline_query_current_chat' => 'ai_message_edit_' . time() . " \n\nДобро пожаловать в TG Support Bot!",
+                                    'switch_inline_query_current_chat' => 'ai_message_edit_' . $messageIdentifier . " \n\nДобро пожаловать в TG Support Bot!",
                                 ],
                             ],
                         ],
                     ],
                     'is_topic_message' => true,
                 ],
-                'chat_instance' => time(),
-                'data' => 'ai_message_send_' . time(),
+                'chat_instance' => 8_000_000_001,
+                'data' => 'ai_message_send_' . $messageIdentifier,
             ],
         ];
     }

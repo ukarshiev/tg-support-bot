@@ -4,6 +4,7 @@ namespace Tests\Mocks\Max;
 
 use App\Modules\Max\DTOs\MaxUpdateDto;
 use Illuminate\Support\Facades\Request;
+use Tests\Mocks\PayloadIdentifier;
 
 class MaxUpdateDtoMock
 {
@@ -12,21 +13,24 @@ class MaxUpdateDtoMock
      */
     public static function getDtoParams(): array
     {
+        $timestamp = time();
+        $messageIdentifier = PayloadIdentifier::next();
+
         return [
             'update_type' => 'message_created',
-            'timestamp' => time() * 1000,
+            'timestamp' => $timestamp * 1000,
             'message' => [
                 'sender' => [
-                    'user_id' => time(),
+                    'user_id' => 1_424_646_511,
                     'name' => 'Test User',
                 ],
                 'recipient' => [
-                    'user_id' => time(),
+                    'user_id' => 9_000_000_001,
                 ],
-                'timestamp' => time() * 1000,
+                'timestamp' => $timestamp * 1000,
                 'body' => [
-                    'mid' => 'msg-' . time(),
-                    'seq' => 1,
+                    'mid' => 'msg-' . $messageIdentifier,
+                    'seq' => $messageIdentifier,
                     'text' => 'Test text',
                     'attachments' => [],
                 ],

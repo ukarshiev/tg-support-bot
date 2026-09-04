@@ -60,7 +60,7 @@ class TgExternalEditServiceTest extends TestCase
         // Изменение сообщения
         $editPayload = [
             'update_id' => time(),
-            'edited_message' => TelegramUpdateDto_ExternalMock::getDtoParams()['message'],
+            'edited_message' => TelegramUpdateDto_ExternalMock::getDtoParams($this->botUser)['message'],
         ];
 
         $editTextMessage = 'Новый текст сообщения';

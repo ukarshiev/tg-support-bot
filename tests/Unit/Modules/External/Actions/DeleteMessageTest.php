@@ -53,8 +53,6 @@ class DeleteMessageTest extends TestCase
         $dto = ExternalMessageDtoMock::getDto($payload);
         app(DeleteMessage::class)->execute($dto);
 
-        $messageData = Message::first();
-
-        $this->assertNull($messageData);
+        $this->assertNull(Message::find($messageData->id));
     }
 }

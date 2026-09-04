@@ -64,7 +64,7 @@ class EditAiMessageTest extends TestCase
         $usernameBot = app(\App\Services\Settings\SettingsService::class)->get('telegram_ai.username');
         $newMessage = "@{$usernameBot} ai_message_edit_{$messageData->id} \n {$editMessage}";
 
-        $dataParams = TelegramUpdateDto_GroupMock::getDtoParams();
+        $dataParams = TelegramUpdateDto_GroupMock::getDtoParams($this->botUser);
         $dataParams['message']['text'] = $newMessage;
         $dataParams['message']['message_thread_id'] = $this->botUser->topic_id;
         $dto = TelegramUpdate_AiButtonAction::getDto($dataParams);

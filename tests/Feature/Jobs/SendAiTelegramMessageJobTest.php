@@ -29,6 +29,8 @@ class SendAiTelegramMessageJobTest extends TestCase
 
     private int $groupId;
 
+    private array $dtoParams;
+
     public function setUp(): void
     {
         parent::setUp();
@@ -48,7 +50,11 @@ class SendAiTelegramMessageJobTest extends TestCase
         $this->telegramAiToken = 'test_ai_token';
         $settings->set('telegram_ai.token', $this->telegramAiToken);
 
-        $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
+        $this->dtoParams = TelegramUpdateDtoMock::getDtoParams();
+        $this->botUser = BotUser::getUserByChatId(
+            $this->dtoParams['message']['chat']['id'],
+            'telegram',
+        );
 
         $this->provider = 'gigachat';
         $this->baseProviderUrl = 'https://gigachat.devices.sberbank.ru/api/v1';
@@ -117,7 +123,7 @@ class SendAiTelegramMessageJobTest extends TestCase
             ]),
         ]);
 
-        $dtoParams = TelegramUpdateDtoMock::getDtoParams();
+        $dtoParams = $this->dtoParams;
         $dtoParams['message']['text'] = $managerTextMessage;
         $dto = TelegramUpdateDtoMock::getDto($dtoParams);
 

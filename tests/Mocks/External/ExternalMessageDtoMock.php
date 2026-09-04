@@ -4,6 +4,7 @@ namespace Tests\Mocks\External;
 
 use App\Modules\External\DTOs\ExternalMessageDto;
 use Illuminate\Support\Facades\Request;
+use Tests\Mocks\PayloadIdentifier;
 
 class ExternalMessageDtoMock
 {
@@ -12,10 +13,12 @@ class ExternalMessageDtoMock
      */
     public static function getDtoParams(): array
     {
+        $messageIdentifier = PayloadIdentifier::next();
+
         return [
             'source' => 'live_chat',
             'external_id' => '123456',
-            'message_id' => time(),
+            'message_id' => $messageIdentifier,
             'text' => 'Тестовое сообщение',
             'uploaded_file' => null,
         ];

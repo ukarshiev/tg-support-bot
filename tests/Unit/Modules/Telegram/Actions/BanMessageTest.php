@@ -27,7 +27,9 @@ class BanMessageTest extends TestCase
 
     public function test_send_ban_message_with_correct_text(): void
     {
-        $dto = TelegramUpdateDto_GroupMock::getDto();
+        $dto = TelegramUpdateDto_GroupMock::getDto(
+            TelegramUpdateDto_GroupMock::getDtoParams($this->botUser),
+        );
         $this->botUser->update(['topic_id' => 321]);
 
         app(BanMessage::class)->execute($this->botUser->id, $dto);
@@ -42,7 +44,11 @@ class BanMessageTest extends TestCase
     {
         $this->botUser->update(['topic_id' => null]);
 
-        app(BanMessage::class)->execute($this->botUser->id, TelegramUpdateDto_GroupMock::getDto());
+        $dto = TelegramUpdateDto_GroupMock::getDto(
+            TelegramUpdateDto_GroupMock::getDtoParams($this->botUser),
+        );
+
+        app(BanMessage::class)->execute($this->botUser->id, $dto);
 
         Queue::assertNotPushed(SendTelegramTopicMessageJob::class);
     }

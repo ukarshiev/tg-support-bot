@@ -5,6 +5,7 @@ namespace Tests\Unit\Modules\Vk\Services;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
+use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Modules\Vk\Jobs\MirrorVkIncomingMessageJob;
 use App\Modules\Vk\Services\VkEditService;
 use App\Modules\Vk\Services\VkMessageService;
@@ -17,9 +18,9 @@ class VkEditServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private int $chatId;
-
     private ?BotUser $botUser;
+
+    private VkUpdateDto $newMessageDto;
 
     public function setUp(): void
     {
@@ -28,14 +29,14 @@ class VkEditServiceTest extends TestCase
         Queue::fake();
         Message::truncate();
 
-        $this->chatId = time();
-        $this->botUser = BotUser::getUserByChatId($this->chatId, 'vk');
+        $this->newMessageDto = VkUpdateDtoMock::getDto();
+        $this->botUser = BotUser::getUserByChatId($this->newMessageDto->from_id, 'vk');
     }
 
     public function test_edit_text_message(): void
     {
         // новое сообщение
-        $dtoNewMessage = VkUpdateDtoMock::getDto();
+        $dtoNewMessage = $this->newMessageDto;
         (new VkMessageService($dtoNewMessage))->handleUpdate();
         // ---------------
 

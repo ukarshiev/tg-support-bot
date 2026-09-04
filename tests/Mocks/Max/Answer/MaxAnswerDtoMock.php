@@ -3,6 +3,7 @@
 namespace Tests\Mocks\Max\Answer;
 
 use App\Modules\Max\DTOs\MaxAnswerDto;
+use Tests\Mocks\PayloadIdentifier;
 
 class MaxAnswerDtoMock
 {
@@ -13,7 +14,7 @@ class MaxAnswerDtoMock
     {
         return [
             'response_code' => 200,
-            'response' => 'msg-' . time(),
+            'response' => 'msg-' . PayloadIdentifier::next(),
         ];
     }
 

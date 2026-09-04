@@ -3,6 +3,7 @@
 namespace Tests\Mocks\Vk\Answer;
 
 use App\Modules\Vk\DTOs\VkAnswerDto;
+use Tests\Mocks\PayloadIdentifier;
 
 class VkAnswerDtoMock
 {
@@ -13,7 +14,7 @@ class VkAnswerDtoMock
     {
         return [
             'response_code' => 200,
-            'response' => time(),
+            'response' => PayloadIdentifier::next(),
         ];
     }
 

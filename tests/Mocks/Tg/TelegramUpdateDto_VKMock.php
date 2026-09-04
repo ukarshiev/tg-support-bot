@@ -5,6 +5,7 @@ namespace Tests\Mocks\Tg;
 use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use Illuminate\Support\Facades\Request;
+use Tests\Mocks\PayloadIdentifier;
 
 class TelegramUpdateDto_VKMock extends TelegramUpdateDto
 {
@@ -15,16 +16,19 @@ class TelegramUpdateDto_VKMock extends TelegramUpdateDto
      */
     public static function getDtoParams(?BotUser $botUser = null): array
     {
+        $timestamp = time();
+        $messageIdentifier = PayloadIdentifier::next();
+
         if (!$botUser) {
-            $botUser = BotUser::getUserByChatId(time(), 'vk');
+            $botUser = BotUser::getUserByChatId(1_424_646_511, 'vk');
         }
 
         return [
-            'update_id' => time(),
+            'update_id' => $messageIdentifier,
             'message' => [
-                'message_id' => time(),
+                'message_id' => $messageIdentifier,
                 'from' => [
-                    'id' => time(),
+                    'id' => 9_000_000_001,
                     'is_bot' => false,
                     'first_name' => 'Test',
                     'last_name' => 'Testov',
@@ -32,12 +36,12 @@ class TelegramUpdateDto_VKMock extends TelegramUpdateDto
                     'language_code' => 'ru',
                 ],
                 'chat' => [
-                    'id' => time() + 100,
+                    'id' => -100_000_000_000,
                     'title' => 'Prog-Time | Чаты',
                     'is_forum' => true,
                     'type' => 'supergroup',
                 ],
-                'date' => time(),
+                'date' => $timestamp,
                 'message_thread_id' => $botUser->topic_id,
                 'text' => 'Тестовое сообщение',
                 'is_topic_message' => true,

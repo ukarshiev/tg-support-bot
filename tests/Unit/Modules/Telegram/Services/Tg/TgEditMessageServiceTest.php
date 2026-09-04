@@ -69,7 +69,7 @@ class TgEditMessageServiceTest extends TestCase
         ];
 
         // Создаём сообщение с caption
-        $payload = TelegramUpdateDtoMock::getDtoParams();
+        $payload = TelegramUpdateDtoMock::getDtoParams($this->botUser);
         unset($payload['message']['text']);
 
         $payload['message']['photo'] = $photo;
@@ -102,7 +102,7 @@ class TgEditMessageServiceTest extends TestCase
         // Редактируем caption
         $editPayload = [
             'update_id' => time(),
-            'edited_message' => TelegramUpdateDtoMock::getDtoParams()['message'],
+            'edited_message' => TelegramUpdateDtoMock::getDtoParams($this->botUser)['message'],
         ];
 
         unset($editPayload['edited_message']['text']);
@@ -131,7 +131,7 @@ class TgEditMessageServiceTest extends TestCase
 
     public function test_missing_original_message_skips_edit_without_exception(): void
     {
-        $payload = TelegramUpdateDtoMock::getDtoParams();
+        $payload = TelegramUpdateDtoMock::getDtoParams($this->botUser);
         $payload['edited_message'] = $payload['message'];
         $payload['edited_message']['chat']['id'] = $this->botUser->chat_id;
         $payload['edited_message']['message_id'] = 999999;

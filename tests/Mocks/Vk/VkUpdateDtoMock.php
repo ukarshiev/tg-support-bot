@@ -4,6 +4,7 @@ namespace Tests\Mocks\Vk;
 
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use Illuminate\Support\Facades\Request;
+use Tests\Mocks\PayloadIdentifier;
 
 class VkUpdateDtoMock
 {
@@ -12,10 +13,13 @@ class VkUpdateDtoMock
      */
     public static function getDtoParams(): array
     {
+        $timestamp = time();
+        $messageIdentifier = PayloadIdentifier::next();
+
         return [
-            'group_id' => time(),
+            'group_id' => 123_456_789,
             'type' => 'message_new',
-            'event_id' => '23ff3b705c7ee0ac3e762d40fa4016b88ed384a1',
+            'event_id' => 'test-event-' . $messageIdentifier,
             'v' => '5.199',
             'object' => [
                 'client_info' => [
@@ -36,22 +40,22 @@ class VkUpdateDtoMock
                     'lang_id' => 0,
                 ],
                 'message' => [
-                    'date' => time(),
-                    'from_id' => time(),
-                    'id' => time(),
-                    'version' => time(),
+                    'date' => $timestamp,
+                    'from_id' => 1_424_646_511,
+                    'id' => $messageIdentifier,
+                    'version' => 1,
                     'out' => 0,
                     'fwd_messages' => [],
                     'important' => false,
                     'is_hidden' => false,
                     'attachments' => [],
-                    'conversation_message_id' => time(),
+                    'conversation_message_id' => $messageIdentifier,
                     'text' => 'Test text',
-                    'peer_id' => time(),
+                    'peer_id' => 1_424_646_511,
                     'random_id' => 0,
                 ],
             ],
-            'secret' => time(),
+            'secret' => 'test-secret',
         ];
     }
 

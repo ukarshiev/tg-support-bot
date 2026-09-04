@@ -31,7 +31,7 @@ class SendAiAnswerMessageTest extends TestCase
 
     public function test_generate_ai_message(): void
     {
-        $dtoParams = TelegramUpdateDto_GroupMock::getDtoParams();
+        $dtoParams = TelegramUpdateDto_GroupMock::getDtoParams($this->botUser);
         $dtoParams['message']['text'] = '/ai_generate напиши приветствие';
         $dto = TelegramUpdateDto_GroupMock::getDto($dtoParams);
 
