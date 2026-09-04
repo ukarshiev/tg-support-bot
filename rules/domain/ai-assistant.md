@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the AI assistant integration domain — draft generation, manager review, acceptance, and cancellation of AI responses.
 > **Context:** Read this file before modifying anything related to `AiCondition`, `AiMessage`, AI providers, AI actions, AI bot webhook, or AI bot controllers.
-> **Version:** 1.2
+> **Version:** 1.3
 
 ---
 
@@ -103,8 +103,8 @@ _Enforced in:_ `app/Modules/Ai/Actions/DeliverAiAnswerToUser.php`, `app/Modules/
 **BR-018a** — `DeliverAiAnswerToUser::execute()` ALWAYS persists an outgoing `messages` row directly (before the platform send job is dispatched) for built-in platforms (telegram/vk/max). This guarantees the AI answer is visible in the admin chat thread at `/admin/chats` regardless of whether the platform send ultimately succeeds (wrong/placeholder token, user blocked bot, etc.). The "simple" (non-saving) send jobs are used so there is exactly ONE `messages` row — no duplicate. For Telegram the AI answer is sent as PLAIN text with `parse_mode` explicitly disabled (`null`, omitted from the request) and `messages.text` stores the same HTML-stripped plain text: AI output is untrusted and frequently not valid Telegram HTML (stray `<`, `&`, code), which Telegram would reject with 400 "can't parse entities" so the answer would never reach the user. Cancel (`AiCancelMessage`) never creates a `messages` row. Pluggable platform channels (the `default` branch / `PlatformChannelRegistry`) own their own persistence.
 _Enforced in:_ `app/Modules/Ai/Actions/DeliverAiAnswerToUser.php`
 
-**BR-019** — `SendAiDraftJob` and `SendAiReplyJob` post the AI marker into the supergroup forum topic of the `BotUser`. The `BotUser.topic_id` may still be in flight when the AI job runs (VK/Max users hit `TopicCreateJob` asynchronously on their first message). In that case the AI job releases itself back to the queue with a short delay instead of posting into `message_thread_id=null`. The job retries (`$tries = 3`) until the topic exists, then proceeds.
-_Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/SendAiReplyJob.php`
+**BR-019** — Draft generation and Telegram delivery are separate durable steps. `SendAiDraftJob` MUST persist the generated response to `ai_messages` before dispatching `SendPendingAiDraftToTelegramJob`. Missing forum topics and Telegram API failures may delay the Telegram copy, but MUST NOT remove or prevent the admin-workspace draft. `SendAiReplyJob` retains its separate auto-reply behavior.
+_Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/SendPendingAiDraftToTelegramJob.php`, `app/Modules/Ai/Jobs/SendAiReplyJob.php`
 
 ---
 
@@ -232,8 +232,9 @@ $provider = 'openai';
 User message → main bot → forwarded to topic
 → AI bot webhook → AiBotController → AiBotWebhookJob
 → ShouldAiReply filter (pass)
-→ SendAiDraftJob → AiAssistantService::processMessage() → draft text
-→ AI bot posts draft with "Accept / Cancel" inline buttons
+→ SendAiDraftJob → AiAssistantService::processMessage() → persist AiMessage
+→ SendPendingAiDraftToTelegramJob → AI bot posts one or more valid HTML parts
+→ final part receives "Accept / Edit / Cancel" inline buttons
 → Manager clicks "Accept" → AiAcceptMessage → SendReplyAction → user
 ```
 
@@ -273,7 +274,8 @@ The AI bot replies **only** when all of the following are true:
 | `app/Modules/Ai/Controllers/AiBotController.php` | Receives AI bot webhook; dispatches `AiBotWebhookJob` |
 | `app/Modules/Ai/Middleware/AiBotQuery.php` | Validates `X-Telegram-Bot-Api-Secret-Token` for AI bot webhook |
 | `app/Modules/Ai/Jobs/AiBotWebhookJob.php` | Main webhook processing: filtering + route selection (draft vs auto-reply) |
-| `app/Modules/Ai/Jobs/SendAiDraftJob.php` | Generates draft via AI, posts to topic as AI bot with inline buttons |
+| `app/Modules/Ai/Jobs/SendAiDraftJob.php` | Generates and durably persists a pending draft, then queues Telegram delivery |
+| `app/Modules/Ai/Jobs/SendPendingAiDraftToTelegramJob.php` | Retries topic delivery, splits long HTML safely, and attaches actions to the final part |
 | `app/Modules/Ai/Jobs/SendAiReplyJob.php` | Posts AI reply directly to topic as AI bot (auto-reply mode) |
 | `app/Modules/Ai/Services/ShouldAiReply.php` | Filtering logic — decides if AI bot should reply to a given update |
 | `app/Modules/Ai/Services/AiBotApi.php` | Telegram API wrapper using the AI bot token |
@@ -317,9 +319,13 @@ _Enforced in:_ `app/Modules/Ai/Services/ShouldAiReply.php`
 **BR-021** — The **Telegram AI bot** (`telegram_ai.token`) is OPTIONAL. The master AI toggle (`ai.enabled`) can always be enabled regardless of whether the AI bot is configured. When the AI bot is not configured, drafts are stored in `ai_messages` with `message_id=null` and reviewed only via the `/admin/chats` workspace. When configured, drafts are also posted to the supergroup forum topic.
 _Enforced in:_ `app/Livewire/Settings/AiAssistantPage.php::updatedAiEnabled()`; `resources/views/livewire/settings/ai-assistant-page.blade.php`
 
-**BR-022** — The draft review surface is determined dynamically per-job by whether the AI bot is configured (`telegram_ai.token` non-empty AND `ChannelStatusService::telegram()['connected']` AND `telegram.group_id` non-empty):
-- **AI bot configured**: `SendAiDraftJob` posts to the Telegram supergroup via `AiBotApi`, stores `AiMessage` with `message_id` (Telegram msg id) and `status='pending'`. Manager reviews via inline buttons in supergroup topic AND via the `/admin/chats` workspace.
-- **AI bot not configured**: `SendAiDraftJob` stores `AiMessage` with `message_id=null`, `status='pending'`. Manager reviews only via the `/admin/chats` workspace.
+**BR-022** — `SendAiDraftJob` always stores an `AiMessage` first with `message_id=null` and `status='pending'`. When the AI bot token and group are configured, it dispatches `SendPendingAiDraftToTelegramJob`; successful delivery updates `message_id`, while any delivery failure leaves the saved draft reviewable in `/admin/chats` and eligible for retry. Without Telegram configuration, review remains admin-only.
+_Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/SendPendingAiDraftToTelegramJob.php`
+
+**BR-022a** — A Telegram AI draft MUST be split into valid standalone HTML messages of at most 4096 characters. Tags and HTML entities MUST NOT be cut at a part boundary. Inline Accept/Edit/Cancel buttons belong only to the final part, and `ai_messages.message_id` stores that final Telegram message ID so existing callback and reply resolution continues to work.
+_Enforced in:_ `app/Modules/Ai/Jobs/SendPendingAiDraftToTelegramJob.php`, `app/Modules/Ai/Actions/AiAction.php`, `app/Modules/Ai/Actions/AcceptAiDraftReplyMessage.php`
+
+**BR-022b** — A null or blank provider response is an explicit failed generation attempt: it MUST be logged with operational context and MUST NOT create an empty `ai_messages` row. It also MUST NOT create a `messages` row.
 _Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`
 
 **BR-023** — The `ai_messages.status` column tracks lifecycle: `pending` (awaiting review) → `accepted` (sent to user) or `cancelled` (discarded). Default: `pending`.

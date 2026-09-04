@@ -4,6 +4,8 @@ namespace Tests\Unit\Modules\Ai\Jobs;
 
 use App\Models\AiMessage;
 use App\Models\BotUser;
+use App\Models\Message;
+use App\Modules\Ai\Actions\AiAcceptMessage;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
@@ -52,7 +54,7 @@ class SendAiDraftJobTest extends TestCase
         Queue::fake();
     }
 
-    public function test_posts_draft_to_supergroup_when_ai_bot_configured(): void
+    public function test_persists_draft_before_queueing_telegram_delivery(): void
     {
         $aiResponseText = 'Чёрный чай подходит для демонстрации';
         $aiResponse = new AiResponseDto(
@@ -68,40 +70,24 @@ class SendAiDraftJobTest extends TestCase
         $aiService = $this->createMock(AiAssistantService::class);
         $aiService->method('processMessage')->willReturn($aiResponse);
 
-        Http::fake([
-            'https://api.telegram.org/bot' . $this->aiToken . '/sendMessage' => Http::response([
-                'ok' => true,
-                'result' => [
-                    'message_id' => 321,
-                    'chat' => ['id' => $this->groupId, 'type' => 'supergroup'],
-                    'date' => time(),
-                    'text' => $aiResponseText,
-                ],
-            ], 200),
-            'https://api.telegram.org/bot' . $this->aiToken . '/editMessageReplyMarkup' => Http::response([
-                'ok' => true,
-                'result' => true,
-            ], 200),
-        ]);
+        Http::fake();
 
         $updateDto = TelegramUpdateDtoMock::getDto();
         $job = new SendAiDraftJob($this->botUser->id, $updateDto, 'user question');
 
-        $job->handle(new AiBotApi(), $aiService);
+        $job->handle($aiService);
 
         $this->assertDatabaseHas('ai_messages', [
             'bot_user_id' => $this->botUser->id,
-            'message_id' => 321,
+            'message_id' => null,
             'text_ai' => $aiResponseText,
             'status' => 'pending',
         ]);
 
-        Http::assertSent(function ($request) {
-            return str_contains($request->url(), $this->aiToken . '/sendMessage')
-                && str_contains((string) ($request->data()['text'] ?? ''), 'ИИ-черновик')
-                && str_contains((string) ($request->data()['text'] ?? ''), 'Оригинал без перевода')
-                && !str_contains((string) ($request->data()['text'] ?? ''), 'Клиенту на');
+        Queue::assertPushed(SendPendingAiDraftToTelegramJob::class, function (SendPendingAiDraftToTelegramJob $job): bool {
+            return $job->aiMessageId === AiMessage::query()->sole()->id;
         });
+        Http::assertNothingSent();
     }
 
     public function test_operator_block_stays_russian_when_client_language_is_not_russian(): void
@@ -163,13 +149,18 @@ class SendAiDraftJobTest extends TestCase
             ], 200),
             'https://api.telegram.org/bot' . $this->aiToken . '/editMessageReplyMarkup' => Http::response([
                 'ok' => true,
-                'result' => true,
+                'result' => [
+                    'message_id' => 654,
+                    'chat' => ['id' => $this->groupId, 'type' => 'supergroup'],
+                    'date' => time(),
+                ],
             ], 200),
         ]);
 
         $job = new SendAiDraftJob($this->botUser->id, TelegramUpdateDtoMock::getDto(), 'Cześć');
 
-        $job->handle(new AiBotApi(), $aiService);
+        $job->handle($aiService);
+        (new SendPendingAiDraftToTelegramJob(AiMessage::query()->sole()->id))->handle(new AiBotApi());
 
         Http::assertSent(function ($request) use ($aiResponseText, $translatedText): bool {
             $text = (string) ($request->data()['text'] ?? '');
@@ -203,7 +194,7 @@ class SendAiDraftJobTest extends TestCase
         $updateDto = TelegramUpdateDtoMock::getDto();
         $job = new SendAiDraftJob($this->botUser->id, $updateDto, 'user question');
 
-        $job->handle(new AiBotApi(), $aiService);
+        $job->handle($aiService);
 
         $this->assertDatabaseHas('ai_messages', [
             'bot_user_id' => $this->botUser->id,
@@ -216,7 +207,7 @@ class SendAiDraftJobTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_rethrows_when_ai_returns_null_so_queue_can_retry(): void
+    public function test_empty_provider_response_is_logged_and_does_not_create_draft(): void
     {
         $aiService = $this->createMock(AiAssistantService::class);
         $aiService->method('processMessage')->willReturn(null);
@@ -224,10 +215,10 @@ class SendAiDraftJobTest extends TestCase
         $updateDto = TelegramUpdateDtoMock::getDto();
         $job = new SendAiDraftJob($this->botUser->id, $updateDto, 'user question');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('AI provider returned an empty response; draft was not created');
 
         try {
-            $job->handle(new AiBotApi(), $aiService);
+            $job->handle($aiService);
         } finally {
             $this->assertSame(0, AiMessage::count());
         }
@@ -256,7 +247,7 @@ class SendAiDraftJobTest extends TestCase
         $updateDto = TelegramUpdateDtoMock::getDto();
         $job = new SendAiDraftJob($this->botUser->id, $updateDto, 'user question');
 
-        $job->handle(new AiBotApi(), $aiService);
+        $job->handle($aiService);
 
         $this->assertDatabaseHas('ai_messages', [
             'bot_user_id' => $this->botUser->id,
@@ -304,7 +295,11 @@ class SendAiDraftJobTest extends TestCase
             ]),
             'https://api.telegram.org/bot' . $this->aiToken . '/editMessageReplyMarkup' => Http::response([
                 'ok' => true,
-                'result' => true,
+                'result' => [
+                    'message_id' => 777,
+                    'chat' => ['id' => $this->groupId, 'type' => 'supergroup'],
+                    'date' => time(),
+                ],
             ]),
         ]);
 
@@ -320,5 +315,121 @@ class SendAiDraftJobTest extends TestCase
                 && str_contains($text, 'Клиенту на EN')
                 && str_contains($text, 'Go to the support group.');
         });
+    }
+
+    public function test_telegram_failure_does_not_remove_already_persisted_draft(): void
+    {
+        $draft = AiMessage::create([
+            'bot_user_id' => $this->botUser->id,
+            'message_id' => null,
+            'text_ai' => 'Сохранённый ответ оператора',
+            'text_source' => 'Сохранённый ответ оператора',
+            'source_locale' => 'ru',
+            'translation_status' => 'ready',
+            'text_manager' => '',
+            'status' => AiMessage::STATUS_PENDING,
+        ]);
+
+        Http::fake([
+            'https://api.telegram.org/bot' . $this->aiToken . '/sendMessage' => Http::response([
+                'ok' => false,
+                'error_code' => 400,
+                'description' => 'Bad Request: message is too long',
+            ], 400),
+        ]);
+
+        try {
+            (new SendPendingAiDraftToTelegramJob($draft->id))->handle(new AiBotApi());
+            $this->fail('Telegram delivery failure must be retried by the queue.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Telegram API error', $exception->getMessage());
+        }
+
+        $this->assertDatabaseHas('ai_messages', [
+            'id' => $draft->id,
+            'message_id' => null,
+            'status' => AiMessage::STATUS_PENDING,
+            'text_ai' => 'Сохранённый ответ оператора',
+        ]);
+        $this->assertSame(0, Message::count());
+    }
+
+    public function test_long_html_draft_is_split_completely_and_actions_are_attached_to_last_part(): void
+    {
+        $sourceText = str_repeat('Русский <ответ> & пояснение. ', 220);
+        $translatedText = str_repeat('English <answer> & explanation. ', 220);
+        $draft = AiMessage::create([
+            'bot_user_id' => $this->botUser->id,
+            'message_id' => null,
+            'text_ai' => $sourceText,
+            'text_source' => $sourceText,
+            'text_translated' => $translatedText,
+            'source_locale' => 'ru',
+            'target_locale' => 'en',
+            'translation_status' => 'ready',
+            'text_manager' => '',
+            'status' => AiMessage::STATUS_PENDING,
+        ]);
+        $nextMessageId = 900;
+
+        Http::fake(function ($request) use (&$nextMessageId) {
+            if (str_contains($request->url(), '/editMessageReplyMarkup')) {
+                $messageId = $nextMessageId - 1;
+
+                return Http::response([
+                    'ok' => true,
+                    'result' => [
+                        'message_id' => $messageId,
+                        'chat' => ['id' => $this->groupId, 'type' => 'supergroup'],
+                        'date' => time(),
+                    ],
+                ]);
+            }
+
+            return Http::response([
+                'ok' => true,
+                'result' => [
+                    'message_id' => $nextMessageId++,
+                    'chat' => ['id' => $this->groupId, 'type' => 'supergroup'],
+                    'date' => time(),
+                    'text' => (string) ($request->data()['text'] ?? ''),
+                ],
+            ]);
+        });
+
+        (new SendPendingAiDraftToTelegramJob($draft->id))->handle(new AiBotApi());
+
+        $sendRequests = collect(Http::recorded())
+            ->map(fn (array $record) => $record[0])
+            ->filter(fn ($request) => str_contains($request->url(), '/sendMessage'))
+            ->values();
+        $this->assertGreaterThan(1, $sendRequests->count());
+
+        $joinedHtml = '';
+        foreach ($sendRequests as $request) {
+            $part = (string) $request->data()['text'];
+            $this->assertLessThanOrEqual(4096, mb_strlen($part));
+            $this->assertSame(substr_count($part, '<b>'), substr_count($part, '</b>'));
+            $joinedHtml .= $part;
+        }
+
+        $rendered = html_entity_decode(strip_tags($joinedHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $this->assertStringContainsString($sourceText, $rendered);
+        $this->assertStringContainsString($translatedText, $rendered);
+
+        $lastMessageId = $nextMessageId - 1;
+        $this->assertSame((string) $lastMessageId, (string) $draft->refresh()->message_id);
+        Http::assertSent(function ($request) use ($lastMessageId): bool {
+            $data = $request->data();
+
+            return str_contains($request->url(), '/editMessageReplyMarkup')
+                && ($data['message_id'] ?? null) === $lastMessageId
+                && ($data['reply_markup']['inline_keyboard'][0][0]['callback_data'] ?? null)
+                    === 'ai_message_send_' . $lastMessageId;
+        });
+
+        $resolvedDraft = (new AiAcceptMessage())->getMessageDataByCallbackData('ai_message_send_' . $lastMessageId);
+        $this->assertSame($draft->id, $resolvedDraft?->id);
+        $this->assertSame(0, Message::count());
     }
 }

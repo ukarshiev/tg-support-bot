@@ -2,13 +2,10 @@
 
 namespace App\Modules\Ai\Jobs;
 
-use App\Helpers\AiHelper;
 use App\Models\AiMessage;
 use App\Models\BotUser;
-use App\Modules\Admin\Services\ChannelStatusService;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
-use App\Modules\Ai\Services\AiBotApi;
 use App\Modules\Ai\Services\RussianOperatorTextService;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
@@ -49,15 +46,13 @@ class SendAiDraftJob implements ShouldQueue
 
     /**
      * Generate an AI draft and persist it for the admin panel workspace.
-     * Additionally posts the draft to the supergroup forum topic when the
-     * Telegram AI bot is configured (telegram_ai.token is set).
+     * Queues a separate Telegram delivery only after persistence succeeds.
      *
-     * @param AiBotApi           $aiBotApi
      * @param AiAssistantService $aiService
      *
      * @return void
      */
-    public function handle(AiBotApi $aiBotApi, AiAssistantService $aiService): void
+    public function handle(AiAssistantService $aiService): void
     {
         try {
             $botUser = BotUser::find($this->botUserId);
@@ -67,15 +62,10 @@ class SendAiDraftJob implements ShouldQueue
 
             $aiBotToken = (string) app(SettingsService::class)->get('telegram_ai.token');
             $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
-            $telegramConnected = app(ChannelStatusService::class)->telegram()['connected'];
             $aiBotAvailable = $aiBotToken !== '' && $groupId !== '';
-            $aiBotConfigured = $aiBotAvailable && $telegramConnected;
 
-            // Черновик сначала гарантированно сохраняется в админке. Отсутствие
-            // Telegram-темы не должно исчерпать попытки и потерять ответ ИИ.
-            if ($aiBotConfigured && empty($botUser->topic_id)) {
+            if ($aiBotAvailable && empty($botUser->topic_id)) {
                 TopicCreateJob::dispatch($botUser->id);
-                $aiBotConfigured = false;
                 Log::channel('app')->info('SendAiDraftJob: topic pending, draft will remain in admin workspace', [
                     'source' => 'send_ai_draft_topic_pending',
                     'bot_user_id' => $botUser->id,
@@ -96,44 +86,59 @@ class SendAiDraftJob implements ShouldQueue
             );
 
             $aiResponse = $aiService->processMessage($aiRequest);
-            if ($aiResponse === null) {
-                throw new \RuntimeException('AI provider returned null', 1);
+            if ($aiResponse === null || trim((string) $aiResponse->response) === '') {
+                Log::channel('app')->warning('AI provider returned an empty response; draft was not created', [
+                    'source' => 'send_ai_draft_empty_provider_response',
+                    'bot_user_id' => $botUser->id,
+                    'platform' => $botUser->platform,
+                    'provider' => $aiRequest->provider,
+                ]);
+
+                throw new \RuntimeException('AI provider returned an empty response; draft was not created', 1);
             }
 
             $sourceText = app(RussianOperatorTextService::class)->normalize($aiResponse->response);
-            [$targetLocale, $translatedText, $translationProvider, $translationStatus] = $this->translateDraft($botUser, $sourceText);
-
-            if ($aiBotConfigured) {
-                $aiMessage = $this->postDraftToSupergroup($aiBotApi, $botUser, $sourceText, $translatedText, $targetLocale, $aiBotToken, $groupId);
-            } else {
-                // Supergroup not configured: persist draft for admin panel only.
-                $aiMessage = AiMessage::create([
-                    'bot_user_id' => $botUser->id,
-                    'message_id' => null,
-                    'text_ai' => $sourceText,
-                    'text_source' => $sourceText,
-                    'text_translated' => $translatedText,
-                    'source_locale' => 'ru',
-                    'target_locale' => $targetLocale,
-                    'translation_provider' => $translationProvider,
-                    'translation_status' => $translationStatus,
-                    'source_hash' => hash('sha256', $sourceText),
-                    'text_manager' => '',
-                    'status' => AiMessage::STATUS_PENDING,
-                ]);
-
-                if ($aiBotAvailable) {
-                    SendPendingAiDraftToTelegramJob::dispatch($aiMessage->id)
-                        ->delay(now()->addSeconds(3));
-                }
-
-                Log::channel('app')->info('SendAiDraftJob: draft created (no AI bot configured)', [
-                    'source' => 'send_ai_draft_no_ai_bot',
+            if (trim($sourceText) === '') {
+                Log::channel('app')->warning('AI response became empty after normalization; draft was not created', [
+                    'source' => 'send_ai_draft_empty_normalized_response',
                     'bot_user_id' => $botUser->id,
                     'platform' => $botUser->platform,
-                    'telegram_delivery_queued' => $aiBotAvailable,
+                    'provider' => $aiRequest->provider,
                 ]);
+
+                throw new \RuntimeException('AI response became empty after normalization; draft was not created', 1);
             }
+
+            [$targetLocale, $translatedText, $translationProvider, $translationStatus] = $this->translateDraft($botUser, $sourceText);
+
+            // Сохранение — граница надёжности: Telegram вызывается только отдельной
+            // job после появления записи, видимой оператору в админке.
+            $aiMessage = AiMessage::create([
+                'bot_user_id' => $botUser->id,
+                'message_id' => null,
+                'text_ai' => $sourceText,
+                'text_source' => $sourceText,
+                'text_translated' => $translatedText,
+                'source_locale' => 'ru',
+                'target_locale' => $targetLocale,
+                'translation_provider' => $translationProvider,
+                'translation_status' => $translationStatus,
+                'source_hash' => hash('sha256', trim($sourceText)),
+                'text_manager' => '',
+                'status' => AiMessage::STATUS_PENDING,
+            ]);
+
+            if ($aiBotAvailable) {
+                SendPendingAiDraftToTelegramJob::dispatch($aiMessage->id);
+            }
+
+            Log::channel('app')->info('SendAiDraftJob: draft persisted before Telegram delivery', [
+                'source' => 'send_ai_draft_persisted',
+                'ai_message_id' => $aiMessage->id,
+                'bot_user_id' => $botUser->id,
+                'platform' => $botUser->platform,
+                'telegram_delivery_queued' => $aiBotAvailable,
+            ]);
 
             $slaMinutes = max(1, (int) (app(SettingsService::class)->get('ai.draft_sla_minutes') ?: 15));
             AlertStaleAiDraftJob::dispatch($aiMessage->id, $slaMinutes)
@@ -160,65 +165,6 @@ class SendAiDraftJob implements ShouldQueue
     }
 
     /**
-     * Post draft to the Telegram supergroup and persist the AiMessage with Telegram message_id.
-     * The AiMessage is also visible in the admin panel workspace via the pending drafts list.
-     *
-     * @param AiBotApi $aiBotApi
-     * @param BotUser  $botUser
-     * @param string   $aiResponseText
-     * @param string   $aiBotToken
-     * @param string   $groupId
-     *
-     * @return AiMessage
-     */
-    private function postDraftToSupergroup(
-        AiBotApi $aiBotApi,
-        BotUser $botUser,
-        string $aiResponseText,
-        ?string $translatedText,
-        ?string $targetLocale,
-        string $aiBotToken,
-        string $groupId,
-    ): AiMessage {
-        $draftText = $this->formatBilingualDraft($aiResponseText, $translatedText, $targetLocale);
-
-        $response = $aiBotApi->send('sendMessage', [
-            'chat_id' => $groupId,
-            'message_thread_id' => $botUser->topic_id,
-            'text' => $draftText,
-            'parse_mode' => 'html',
-        ]);
-
-        if ($response->ok !== true) {
-            throw new \RuntimeException('Telegram API error sending draft: ' . json_encode((array) $response), 1);
-        }
-
-        $aiMessage = AiMessage::create([
-            'bot_user_id' => $botUser->id,
-            'message_id' => $response->message_id,
-            'text_ai' => $aiResponseText,
-            'text_source' => $aiResponseText,
-            'text_translated' => $translatedText,
-            'source_locale' => 'ru',
-            'target_locale' => $targetLocale,
-            'translation_provider' => $translatedText !== null ? 'translation_core' : null,
-            'translation_status' => $translatedText !== null ? 'ready' : 'empty',
-            'source_hash' => hash('sha256', trim($aiResponseText)),
-            'text_manager' => '',
-            'status' => AiMessage::STATUS_PENDING,
-        ]);
-
-        $aiBotApi->send('editMessageReplyMarkup', [
-            'chat_id' => $groupId,
-            'message_thread_id' => $botUser->topic_id,
-            'message_id' => $response->message_id,
-            'reply_markup' => AiHelper::preparedAiReplyMarkup((int) $aiMessage->message_id, $aiResponseText),
-        ]);
-
-        return $aiMessage;
-    }
-
-    /**
      * @return array{string|null, string|null, string|null, string}
      */
     private function translateDraft(BotUser $botUser, string $sourceText): array
@@ -241,22 +187,5 @@ class SendAiDraftJob implements ShouldQueue
             $result->provider,
             $result->success ? 'ready' : 'error',
         ];
-    }
-
-    private function formatBilingualDraft(string $sourceText, ?string $translatedText, ?string $targetLocale): string
-    {
-        if ($targetLocale === null || $targetLocale === '' || $targetLocale === 'ru') {
-            return "<b>🤖 ИИ-черновик</b>\n\n"
-                . "<b>Оригинал без перевода:</b>\n" . e($sourceText);
-        }
-
-        $targetLabel = strtoupper($targetLocale);
-        $translatedBlock = $translatedText !== null && $translatedText !== ''
-            ? e($translatedText)
-            : 'Перевод пока недоступен.';
-
-        return "<b>🤖 ИИ-черновик</b>\n\n"
-            . "<b>🇷🇺 Для оператора:</b>\n" . e($sourceText) . "\n\n"
-            . "<b>🌐 Клиенту на {$targetLabel}:</b>\n" . $translatedBlock;
     }
 }
