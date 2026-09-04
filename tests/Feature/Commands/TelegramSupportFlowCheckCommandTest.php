@@ -6,6 +6,7 @@ use App\Console\Commands\TelegramSupportFlowCheck;
 use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Telegram\Services\SupportLanguageService;
+use App\Modules\Telegram\Support\TelegramClientDeliveryRetryPolicy;
 use App\Modules\Translation\Services\SupportLanguageSettings;
 use App\Modules\Translation\Support\TelegramMarkupSanitizer;
 use App\Services\Settings\SettingsService;
@@ -19,6 +20,67 @@ use Tests\TestCase;
 class TelegramSupportFlowCheckCommandTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_canary_timeout_is_distinct_from_delivery_window_and_run_deadline_is_capped(): void
+    {
+        $command = app(TelegramSupportFlowCheck::class);
+        $awaitMethod = new \ReflectionMethod($command, 'defaultAwaitTimeoutSeconds');
+        $deadlineMethod = new \ReflectionMethod($command, 'defaultRunDeadlineSeconds');
+
+        $awaitTimeout = $awaitMethod->invoke($command);
+
+        $this->assertSame(
+            TelegramClientDeliveryRetryPolicy::canaryConfirmationTimeoutSeconds(),
+            $awaitTimeout,
+        );
+        $this->assertSame(150, $awaitTimeout);
+        $this->assertNotSame(TelegramClientDeliveryRetryPolicy::retryWindowSeconds(), $awaitTimeout);
+        $this->assertLessThanOrEqual(
+            TelegramClientDeliveryRetryPolicy::CANARY_RUN_DEADLINE_LIMIT_SECONDS,
+            $deadlineMethod->invoke($command, 24, $awaitTimeout, 1100),
+        );
+        $this->assertSame(3600, $deadlineMethod->invoke($command, 24, $awaitTimeout, 1100));
+    }
+
+    public function test_unconfirmed_step_is_reported_as_timeout_not_final_failure(): void
+    {
+        $command = app(TelegramSupportFlowCheck::class);
+        $awaitMethod = new \ReflectionMethod($command, 'awaitCheck');
+        $reportMethod = new \ReflectionMethod($command, 'reportMessages');
+
+        $check = $awaitMethod->invoke(
+            $command,
+            fn (): array => [
+                'ok' => false,
+                'step' => 'select pl',
+                'detail' => 'исходная причина',
+            ],
+            0,
+            microtime(true) + 1,
+        );
+        $report = implode("\n", $reportMethod->invoke(
+            $command,
+            [
+                $check,
+                [
+                    'ok' => false,
+                    'status' => 'failed',
+                    'step' => 'select en',
+                    'detail' => 'доставка окончательно провалилась',
+                ],
+            ],
+            Carbon::parse('2026-09-05 01:00:00'),
+            false,
+        ));
+
+        $this->assertSame('timed_out', $check['status']);
+        $this->assertStringContainsString('не подтверждено за отведённое канарейке время', $check['detail']);
+        $this->assertStringContainsString('не подтверждено вовремя 1', $report);
+        $this->assertStringContainsString('окончательных ошибок 1', $report);
+        $this->assertStringContainsString('⚠️ select pl', $report);
+        $this->assertStringNotContainsString('❌ select pl', $report);
+        $this->assertStringContainsString('❌ select en — доставка окончательно провалилась', $report);
+    }
 
     public function test_support_flow_check_runs_start_lang_and_language_welcome_checks(): void
     {

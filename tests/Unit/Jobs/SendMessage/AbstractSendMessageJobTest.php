@@ -7,6 +7,7 @@ use App\Models\BotUser;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramTopicMessageJob;
+use App\Modules\Telegram\Support\TelegramClientDeliveryRetryPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -33,7 +34,77 @@ class AbstractSendMessageJobTest extends TestCase
             ],
         ));
 
-        $job->assertReleased(2);
+        $job->assertReleased(5);
+        $job->assertNotFailed();
+    }
+
+    public function test_transient_retry_delays_follow_the_shared_growing_policy(): void
+    {
+        $this->assertSame(
+            TelegramClientDeliveryRetryPolicy::ATTEMPTS,
+            (new RetryProbeSendMessageJob())->tries,
+        );
+
+        foreach (TelegramClientDeliveryRetryPolicy::BACKOFF_SECONDS as $index => $delay) {
+            $job = (new RetryProbeSendMessageJob())->withFakeQueueInteractions();
+            $job->botUserId = 777;
+            $job->typeMessage = 'outgoing';
+            $job->forcedAttempts = $index + 1;
+
+            $job->handleTelegramResponse(new TelegramAnswerDto(
+                ok: false,
+                response_code: 500,
+                rawData: ['ok' => false, 'response_code' => 500],
+            ));
+
+            $job->assertReleased($delay);
+            $job->assertNotFailed();
+        }
+    }
+
+    public function test_telegram_429_uses_retry_after_from_response(): void
+    {
+        $job = (new RetryProbeSendMessageJob())->withFakeQueueInteractions();
+        $job->botUserId = 777;
+        $job->typeMessage = 'outgoing';
+
+        $job->handleTelegramResponse(new TelegramAnswerDto(
+            ok: false,
+            response_code: 429,
+            rawData: [
+                'ok' => false,
+                'error_code' => 429,
+                'parameters' => ['retry_after' => 47],
+            ],
+        ));
+
+        $job->assertReleased(47);
+        $job->assertNotFailed();
+    }
+
+    public function test_telegram_403_is_not_retried(): void
+    {
+        Queue::fake();
+        $botUser = BotUser::create([
+            'chat_id' => 100002,
+            'platform' => 'telegram',
+            'topic_id' => 124,
+        ]);
+        $job = (new RetryProbeSendMessageJob())->withFakeQueueInteractions();
+        $job->botUserId = $botUser->id;
+        $job->updateDto = null;
+
+        $job->handleTelegramResponse(new TelegramAnswerDto(
+            ok: false,
+            response_code: 403,
+            rawData: [
+                'ok' => false,
+                'error_code' => 403,
+                'description' => 'Forbidden: bot was blocked by the user',
+            ],
+        ));
+
+        $job->assertNotReleased();
         $job->assertNotFailed();
     }
 
@@ -164,6 +235,13 @@ class AbstractSendMessageJobTest extends TestCase
 
 class RetryProbeSendMessageJob extends AbstractSendMessageJob
 {
+    public int $forcedAttempts = 1;
+
+    public function attempts(): int
+    {
+        return $this->forcedAttempts;
+    }
+
     public function handle(): void
     {
         // Test probe only.

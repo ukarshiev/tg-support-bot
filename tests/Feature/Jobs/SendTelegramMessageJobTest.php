@@ -3,7 +3,9 @@
 namespace Tests\Feature\Jobs;
 
 use App\Models\BotUser;
+use App\Models\DeliveryOperation;
 use App\Models\Message;
+use App\Modules\Admin\Jobs\NotifyAdminReplyDeliveryFailedJob;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
@@ -73,6 +75,89 @@ class SendTelegramMessageJobTest extends TestCase
             'platform' => 'telegram',
             'to_id' => $dto->message_id,
         ]);
+    }
+
+    public function test_transient_failure_stays_retrying_and_later_delivery_succeeds(): void
+    {
+        $failed = new \App\Modules\Telegram\DTOs\TelegramAnswerDto(
+            ok: false,
+            response_code: 500,
+            rawData: ['ok' => false, 'response_code' => 500],
+        );
+        $delivered = TelegramAnswerDtoMock::getDto();
+        $telegram = \Mockery::mock(TelegramMethods::class);
+        $telegram->shouldReceive('sendQueryTelegram')->twice()->andReturn($failed, $delivered);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => $this->botUser->chat_id,
+            'text' => 'Ответ после восстановления связи',
+        ]);
+        $job = (new SendTelegramMessageJob(
+            $this->botUser->id,
+            $this->dto,
+            $params,
+            'outgoing',
+            $telegram,
+        ))->withFakeQueueInteractions();
+
+        $job->handle();
+
+        $job->assertReleased(5);
+        $this->assertDatabaseHas('delivery_operations', [
+            'trace_id' => $job->traceId,
+            'status' => DeliveryOperation::STATUS_RETRYING,
+        ]);
+        Queue::assertNotPushed(NotifyAdminReplyDeliveryFailedJob::class);
+
+        $job->handle();
+
+        $this->assertDatabaseHas('delivery_operations', [
+            'trace_id' => $job->traceId,
+            'status' => DeliveryOperation::STATUS_DELIVERED,
+        ]);
+        Queue::assertNotPushed(NotifyAdminReplyDeliveryFailedJob::class);
+    }
+
+    public function test_exhausted_retry_window_marks_failure_and_queues_notification(): void
+    {
+        $failed = new \App\Modules\Telegram\DTOs\TelegramAnswerDto(
+            ok: false,
+            response_code: 500,
+            rawData: ['ok' => false, 'response_code' => 500],
+        );
+        $telegram = \Mockery::mock(TelegramMethods::class);
+        $telegram->shouldReceive('sendQueryTelegram')->once()->andReturn($failed);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => $this->botUser->chat_id,
+            'text' => 'Недоставленный ответ',
+        ]);
+        $job = (new SendTelegramMessageJob(
+            $this->botUser->id,
+            $this->dto,
+            $params,
+            'outgoing',
+            $telegram,
+        ))->withFakeQueueInteractions();
+        $queueJob = \Mockery::mock(\Illuminate\Contracts\Queue\Job::class);
+        $queueJob->shouldReceive('attempts')->andReturn($job->tries);
+        $job->setJob($queueJob);
+
+        try {
+            $job->handle();
+            $this->fail('The last transient failure must exhaust the retry window.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('retry window was exhausted', $exception->getMessage());
+        }
+
+        Queue::assertNotPushed(NotifyAdminReplyDeliveryFailedJob::class);
+        $job->failed(new \RuntimeException('retry window exhausted'));
+
+        $this->assertDatabaseHas('delivery_operations', [
+            'trace_id' => $job->traceId,
+            'status' => DeliveryOperation::STATUS_FAILED,
+        ]);
+        Queue::assertPushed(NotifyAdminReplyDeliveryFailedJob::class, 1);
     }
 
     public function test_outgoing_bot_message_is_mirrored_to_support_topic(): void

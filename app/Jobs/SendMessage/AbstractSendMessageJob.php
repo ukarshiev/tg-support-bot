@@ -15,6 +15,7 @@ use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramSimpleQueryJob;
 use App\Modules\Telegram\Jobs\SendVkTelegramMessageJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
+use App\Modules\Telegram\Support\TelegramClientDeliveryRetryPolicy;
 use App\Modules\Translation\Support\TelegramMarkupSanitizer;
 use App\Modules\Vk\DTOs\VkUpdateDto;
 use App\Services\Settings\SettingsService;
@@ -24,6 +25,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 abstract class AbstractSendMessageJob implements ShouldQueue
 {
@@ -32,7 +34,7 @@ abstract class AbstractSendMessageJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
-    public int $tries = 5;
+    public int $tries = TelegramClientDeliveryRetryPolicy::ATTEMPTS;
 
     public int $timeout = 20;
 
@@ -86,8 +88,11 @@ abstract class AbstractSendMessageJob implements ShouldQueue
     protected function telegramResponseHandler(TelegramAnswerDto $response): void
     {
         if ($response->response_code === 429) {
-            $retryAfter = $response->parameters->retry_after ?? 3;
+            $retryAfter = (int) ($response->rawData['parameters']['retry_after']
+                ?? $response->parameters->retry_after
+                ?? 3);
             Log::channel('app')->warning("429 Too Many Requests. Replay {$retryAfter}");
+            $this->ensureRetryAttemptRemains('Telegram rate limit persisted until the delivery retry window was exhausted.');
             $this->release($retryAfter);
             return;
         }
@@ -199,7 +204,9 @@ abstract class AbstractSendMessageJob implements ShouldQueue
         }
 
         if (($response->response_code ?? 0) >= 500) {
-            $delay = min(30, 2 ** max(1, $this->attempts()));
+            $attempt = $this->attempts();
+            $this->ensureRetryAttemptRemains('Transient Telegram API error persisted until the delivery retry window was exhausted.');
+            $delay = TelegramClientDeliveryRetryPolicy::retryDelayAfterAttempt($attempt);
 
             Log::channel('app')->warning('Transient Telegram API error -> retrying job', [
                 'job' => static::class,
@@ -231,6 +238,13 @@ abstract class AbstractSendMessageJob implements ShouldQueue
                 'chat_id' => $response->chat_id,
             ],
         );
+    }
+
+    private function ensureRetryAttemptRemains(string $message): void
+    {
+        if ($this->attempts() >= $this->tries) {
+            throw new RuntimeException($message);
+        }
     }
 
     /**

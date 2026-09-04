@@ -19,8 +19,6 @@ use Illuminate\Support\Facades\Log;
 
 class SendTelegramMessageJob extends AbstractSendMessageJob
 {
-    public int $tries = 5;
-
     public int $timeout = 20;
 
     public int $botUserId;

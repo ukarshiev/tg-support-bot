@@ -9,6 +9,7 @@ use App\Modules\Telegram\Actions\SendStartMessage;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\Services\SupportLanguageService;
+use App\Modules\Telegram\Support\TelegramClientDeliveryRetryPolicy;
 use App\Modules\Translation\Support\TelegramMarkupSanitizer;
 use App\Services\Settings\SettingsService;
 use Illuminate\Console\Command;
@@ -21,14 +22,6 @@ class TelegramSupportFlowCheck extends Command
     private const LOCK_KEY = 'telegram:support-flow-check:lock';
 
     private const LOCK_RELEASE_MARGIN_SECONDS = 60;
-
-    private const DELIVERY_BACKOFF_SECONDS = [2, 5, 10, 20];
-
-    private const DELIVERY_ATTEMPTS = 5;
-
-    private const TELEGRAM_REQUEST_TIMEOUT_SECONDS = 8;
-
-    private const QUEUE_ALLOWANCE_SECONDS = 15;
 
     private const DEFAULT_LANGUAGE_PAUSE_MILLISECONDS = 1100;
 
@@ -73,12 +66,15 @@ class TelegramSupportFlowCheck extends Command
         }
 
         try {
-            $awaitTimeoutSeconds = $this->integerOptionOrSetting(
-                'await-timeout',
-                'telegram.health_check_await_timeout_seconds',
-                $settings,
-                $this->defaultAwaitTimeoutSeconds(),
-                1,
+            $awaitTimeoutSeconds = min(
+                $this->integerOptionOrSetting(
+                    'await-timeout',
+                    'telegram.health_check_await_timeout_seconds',
+                    $settings,
+                    $this->defaultAwaitTimeoutSeconds(),
+                    1,
+                ),
+                TelegramClientDeliveryRetryPolicy::CANARY_CONFIRMATION_TIMEOUT_SECONDS,
             );
             $languagePauseMilliseconds = $this->integerOptionOrSetting(
                 'language-pause',
@@ -87,16 +83,19 @@ class TelegramSupportFlowCheck extends Command
                 self::DEFAULT_LANGUAGE_PAUSE_MILLISECONDS,
                 0,
             );
-            $runDeadlineSeconds = $this->integerOptionOrSetting(
-                'deadline',
-                'telegram.health_check_deadline_seconds',
-                $settings,
-                $this->defaultRunDeadlineSeconds(
-                    count($languageCodes),
-                    $awaitTimeoutSeconds,
-                    $languagePauseMilliseconds,
+            $runDeadlineSeconds = min(
+                $this->integerOptionOrSetting(
+                    'deadline',
+                    'telegram.health_check_deadline_seconds',
+                    $settings,
+                    $this->defaultRunDeadlineSeconds(
+                        count($languageCodes),
+                        $awaitTimeoutSeconds,
+                        $languagePauseMilliseconds,
+                    ),
+                    1,
                 ),
-                1,
+                TelegramClientDeliveryRetryPolicy::CANARY_RUN_DEADLINE_LIMIT_SECONDS,
             );
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
@@ -244,6 +243,7 @@ class TelegramSupportFlowCheck extends Command
                 $prefix = match ($check['status']) {
                     'passed' => 'OK ',
                     'skipped' => 'SKIP ',
+                    'timed_out' => 'TIMEOUT ',
                     default => 'FAIL ',
                 };
                 $this->line($prefix . $check['step'] . ' — ' . $check['detail']);
@@ -302,11 +302,7 @@ class TelegramSupportFlowCheck extends Command
 
     private function defaultAwaitTimeoutSeconds(): int
     {
-        // Пять сетевых попыток могут занять по 8 секунд каждая. Добавляем все
-        // backoff (2+5+10+20) и 15 секунд на ожидание очереди: 40+37+15=92.
-        return (self::DELIVERY_ATTEMPTS * self::TELEGRAM_REQUEST_TIMEOUT_SECONDS)
-            + array_sum(self::DELIVERY_BACKOFF_SECONDS)
-            + self::QUEUE_ALLOWANCE_SECONDS;
+        return TelegramClientDeliveryRetryPolicy::canaryConfirmationTimeoutSeconds();
     }
 
     private function defaultRunDeadlineSeconds(
@@ -317,7 +313,10 @@ class TelegramSupportFlowCheck extends Command
         $checkBudget = ($languageCount + 2) * $awaitTimeoutSeconds;
         $pauseBudget = (int) ceil(max(0, $languageCount - 1) * $languagePauseMilliseconds / 1000);
 
-        return $checkBudget + $pauseBudget + self::REPORT_ALLOWANCE_SECONDS;
+        return min(
+            $checkBudget + $pauseBudget + self::REPORT_ALLOWANCE_SECONDS,
+            TelegramClientDeliveryRetryPolicy::CANARY_RUN_DEADLINE_LIMIT_SECONDS,
+        );
     }
 
     private function hasFullStepBudget(float $runDeadline, int $awaitTimeoutSeconds): bool
@@ -356,7 +355,8 @@ class TelegramSupportFlowCheck extends Command
             usleep(100_000);
         } while (microtime(true) < $deadline);
 
-        $result['status'] = 'failed';
+        $result['status'] = 'timed_out';
+        $result['detail'] = 'не подтверждено за отведённое канарейке время; доставка может продолжаться в очереди';
         return $result;
     }
 
@@ -439,13 +439,23 @@ class TelegramSupportFlowCheck extends Command
     {
         $passed = collect($checks)->where('status', 'passed')->pluck('step')->all();
         $failed = collect($checks)->where('status', 'failed');
+        $timedOut = collect($checks)->where('status', 'timed_out');
         $skipped = collect($checks)->where('status', 'skipped');
         $uncheckedLanguages = $skipped->pluck('language_code')->filter()->values()->all();
+        $reportIcon = match (true) {
+            $failed->isNotEmpty() => '❌',
+            $timedOut->isNotEmpty() || $skipped->isNotEmpty() => '⚠️',
+            $ok => '✅',
+            default => '⚠️',
+        };
 
         $lines = [
-            ($ok ? '✅' : '❌') . ' Служебная проверка Telegram-flow',
+            $reportIcon . ' Служебная проверка Telegram-flow',
             'Старт: ' . $startedAt->format('d.m.Y H:i:s'),
-            'Итог: успешно ' . count($passed) . ', ошибок ' . $failed->count() . ', не проверено ' . $skipped->count(),
+            'Итог: успешно ' . count($passed)
+                . ', окончательных ошибок ' . $failed->count()
+                . ', не подтверждено вовремя ' . $timedOut->count()
+                . ', не проверено ' . $skipped->count(),
         ];
 
         if ($passed !== []) {
@@ -453,6 +463,9 @@ class TelegramSupportFlowCheck extends Command
         }
         foreach ($failed as $check) {
             $lines[] = '❌ ' . $check['step'] . ' — ' . $check['detail'];
+        }
+        foreach ($timedOut as $check) {
+            $lines[] = '⚠️ ' . $check['step'] . ' — ' . $check['detail'];
         }
         if ($uncheckedLanguages !== []) {
             $lines[] = '⏭ Не проверены из-за общего дедлайна: ' . implode(', ', $uncheckedLanguages);
