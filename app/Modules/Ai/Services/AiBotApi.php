@@ -14,15 +14,16 @@ class AiBotApi
      * Delegates to TelegramMethods::sendQueryTelegram but always injects
      * the AI bot token (TELEGRAM_AI_BOT_TOKEN) instead of the main bot token.
      *
-     * @param string     $methodQuery Telegram API method name
-     * @param array|null $dataQuery   Request payload
+     * @param string      $methodQuery    Telegram API method name
+     * @param array|null  $dataQuery      Request payload
+     * @param string|null $idempotencyKey Stable key used to resume multipart delivery
      *
      * @return TelegramAnswerDto
      */
-    public function send(string $methodQuery, ?array $dataQuery = null): TelegramAnswerDto
+    public function send(string $methodQuery, ?array $dataQuery = null, ?string $idempotencyKey = null): TelegramAnswerDto
     {
         $token = (string) app(SettingsService::class)->get('telegram_ai.token');
 
-        return TelegramMethods::sendQueryTelegram($methodQuery, $dataQuery, $token);
+        return TelegramMethods::sendQueryTelegram($methodQuery, $dataQuery, $token, $idempotencyKey);
     }
 }

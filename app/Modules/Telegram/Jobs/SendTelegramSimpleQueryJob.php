@@ -14,6 +14,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
 {
@@ -29,12 +30,15 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
     /** @var TGTextMessageDto */
     public mixed $queryParams;
 
+    public readonly string $deliverySequenceKey;
+
     public function __construct(
         TGTextMessageDto $queryParams,
         public readonly ?int $feedbackId = null,
         public readonly ?int $deliveryOperationId = null,
     ) {
         $this->queryParams = $queryParams;
+        $this->deliverySequenceKey = (string) Str::uuid();
         $groupId = (string) app(SettingsService::class)->get('telegram.group_id');
         $destination = (string) $queryParams->chat_id;
         $this->onQueue($groupId !== '' && $destination === $groupId
@@ -70,7 +74,8 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
             $response = TelegramMethods::sendQueryTelegram(
                 $methodQuery,
                 $params,
-                $this->queryParams->token
+                $this->queryParams->token,
+                $this->deliverySequenceKey,
             );
 
             if (!$response->ok) {
@@ -90,6 +95,7 @@ class SendTelegramSimpleQueryJob extends AbstractSendMessageJob
                     'TOPIC_NOT_MODIFIED',
                     'MESSAGE_NOT_MODIFIED',
                     'MESSAGE_TO_EDIT_NOT_FOUND',
+                    'MESSAGE_TOO_LONG',
                 ], true)) {
                     return;
                 }

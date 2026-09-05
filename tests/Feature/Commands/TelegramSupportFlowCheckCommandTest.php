@@ -173,7 +173,7 @@ class TelegramSupportFlowCheckCommandTest extends TestCase
         }
     }
 
-    public function test_report_messages_never_exceed_telegram_limit(): void
+    public function test_report_delegates_length_limiting_to_central_telegram_sender(): void
     {
         $checks = [];
         for ($index = 0; $index < 150; $index++) {
@@ -194,23 +194,8 @@ class TelegramSupportFlowCheckCommandTest extends TestCase
             false,
         );
 
-        $this->assertGreaterThan(1, count($messages));
-        foreach ($messages as $message) {
-            $this->assertLessThanOrEqual(4096, mb_strlen($message));
-        }
-    }
-
-    public function test_report_split_flushes_exactly_full_buffer_before_next_line(): void
-    {
-        $method = new \ReflectionMethod(TelegramSupportFlowCheck::class, 'splitReportLines');
-        $messages = $method->invoke(
-            app(TelegramSupportFlowCheck::class),
-            [str_repeat('a', 4096), 'next line'],
-        );
-
-        $this->assertCount(2, $messages);
-        $this->assertSame(4096, mb_strlen($messages[0]));
-        $this->assertSame('next line', $messages[1]);
+        $this->assertCount(1, $messages);
+        $this->assertGreaterThan(4096, mb_strlen($messages[0]));
     }
 
     public function test_languages_not_started_before_deadline_are_reported_as_unchecked(): void

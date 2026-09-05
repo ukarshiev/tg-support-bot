@@ -64,6 +64,7 @@ class TopicCreateJob implements ShouldQueue
                 $this->botUser = $botUser;
 
                 if (!empty($this->botUser->topic_id)) {
+                    Cache::forget($this->creationRequestedKey());
                     Log::channel('app')->info('TopicCreateJob: topic already exists, skipped duplicate create', [
                         'bot_user_id' => $this->botUser->id,
                         'topic_id' => $this->botUser->topic_id,
@@ -82,6 +83,7 @@ class TopicCreateJob implements ShouldQueue
                 if ($response->ok === true) {
                     $this->botUser->topic_id = $response->message_thread_id;
                     $this->botUser->save();
+                    Cache::forget($this->creationRequestedKey());
 
                     return;
                 }
@@ -130,6 +132,11 @@ class TopicCreateJob implements ShouldQueue
             'bot_user_id' => $this->botUserId,
             'error_class' => $exception::class,
         ]);
+    }
+
+    private function creationRequestedKey(): string
+    {
+        return "telegram:topic-create-requested:bot-user:{$this->botUserId}";
     }
 
     /**

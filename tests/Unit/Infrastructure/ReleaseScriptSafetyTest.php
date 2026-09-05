@@ -169,6 +169,23 @@ class ReleaseScriptSafetyTest extends TestCase
         $this->assertStringContainsString('scheduler', $rollback);
     }
 
+    public function test_rollback_reports_missing_image_and_failed_health_recovery(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');
+
+        $this->assertIsString($script);
+        $rollbackStart = strpos($script, 'rollback()');
+        $rollbackEnd = strpos($script, 'trap rollback ERR');
+        $rollback = substr($script, $rollbackStart, $rollbackEnd - $rollbackStart);
+
+        $this->assertStringContainsString('docker image inspect "${PREVIOUS_IMAGE_TAGS[$service]}"', $rollback);
+        $this->assertStringContainsString("previous image for service '\${service}' is missing", $rollback);
+        $this->assertStringContainsString('if services_ready; then', $rollback);
+        $this->assertStringContainsString('if pollers_ready; then', $rollback);
+        $this->assertStringContainsString('AUTOMATIC ROLLBACK FAILED. Production may be unavailable; manual intervention is required.', $rollback);
+        $this->assertStringContainsString('exit 2', $rollback);
+    }
+
     public function test_release_uses_current_compose_services_and_renders_nginx_config(): void
     {
         $script = file_get_contents(dirname(__DIR__, 3) . '/start.sh');

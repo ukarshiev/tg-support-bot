@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 class TelegramPollUpdatesCommandTest extends TestCase
@@ -19,6 +20,13 @@ class TelegramPollUpdatesCommandTest extends TestCase
         parent::setUp();
         Cache::forget('telegram:poller:offset');
         Cache::forget('telegram:ai-poller:offset');
+        Sleep::fake();
+    }
+
+    protected function tearDown(): void
+    {
+        Sleep::fake(false);
+        parent::tearDown();
     }
 
     public function test_main_poller_does_not_crash_when_get_updates_transport_fails_once(): void
@@ -205,6 +213,39 @@ class TelegramPollUpdatesCommandTest extends TestCase
         ]);
         $discarded = DiscardedTelegramUpdate::where('update_id', 440)->firstOrFail();
         $this->assertSame('application failure', $discarded->payload['message']['text']);
+    }
+
+    public function test_short_application_failure_recovers_before_update_is_quarantined(): void
+    {
+        app(SettingsService::class)->set('telegram.token', 'main-token');
+        app(SettingsService::class)->set('telegram.secret_key', 'main-secret');
+        $webhookAttempts = 0;
+
+        Http::fake([
+            'https://api.telegram.org/botmain-token/getMe' => Http::response(['ok' => true, 'result' => ['id' => 1]]),
+            'https://api.telegram.org/botmain-token/deleteWebhook' => Http::response(['ok' => true]),
+            'https://api.telegram.org/botmain-token/getUpdates' => Http::response([
+                'ok' => true,
+                'result' => [['update_id' => 450, 'message' => ['text' => 'temporary failure']]],
+            ]),
+            'http://nginx/api/telegram/bot' => function () use (&$webhookAttempts) {
+                $webhookAttempts++;
+
+                return $webhookAttempts < 3
+                    ? Http::response(['error' => 'application starting'], 500)
+                    : Http::response(null, 204);
+            },
+        ]);
+
+        $this->artisan('telegram:poll-updates', ['--once' => true, '--timeout' => 1])->assertSuccessful();
+
+        $this->assertSame(3, $webhookAttempts);
+        $this->assertSame(451, Cache::get('telegram:poller:offset'));
+        $this->assertDatabaseMissing('discarded_telegram_updates', ['update_id' => 450]);
+        Sleep::assertSequence([
+            Sleep::for(5)->seconds(),
+            Sleep::for(15)->seconds(),
+        ]);
     }
 
     public function test_one_poison_update_does_not_block_the_following_update(): void

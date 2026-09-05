@@ -47,12 +47,20 @@ pollers_ready() {
 
 rollback() {
     local exit_code=$?
+    local rollback_failed=false
+    local rollback_core_ready=false
+    local rollback_pollers_ready=false
     set +e
     echo "Release failed; restoring previous application images." >&2
 
     for service in "${SERVICES[@]}"; do
         if [[ -n "${PREVIOUS_IMAGE_TAGS[$service]:-}" && -n "${PREVIOUS_IMAGE_NAMES[$service]:-}" ]]; then
-            docker image tag "${PREVIOUS_IMAGE_TAGS[$service]}" "${PREVIOUS_IMAGE_NAMES[$service]}"
+            if ! docker image inspect "${PREVIOUS_IMAGE_TAGS[$service]}" >/dev/null 2>&1; then
+                echo "AUTOMATIC ROLLBACK FAILED: previous image for service '${service}' is missing: ${PREVIOUS_IMAGE_TAGS[$service]}" >&2
+                rollback_failed=true
+                continue
+            fi
+            docker image tag "${PREVIOUS_IMAGE_TAGS[$service]}" "${PREVIOUS_IMAGE_NAMES[$service]}" || rollback_failed=true
         fi
     done
 
@@ -69,8 +77,40 @@ rollback() {
         docker compose up -d --no-build --force-recreate \
             telegram_poller ai_telegram_poller queue scheduler || true
     fi
+
+    for ((attempt = 1; attempt <= CORE_READY_TIMEOUT_SECONDS / READY_CHECK_INTERVAL_SECONDS; attempt++)); do
+        if services_ready; then
+            rollback_core_ready=true
+            break
+        fi
+        sleep "$READY_CHECK_INTERVAL_SECONDS"
+    done
+    if [[ "$rollback_core_ready" != true ]]; then
+        echo "AUTOMATIC ROLLBACK FAILED: core services did not recover in ${CORE_READY_TIMEOUT_SECONDS} seconds." >&2
+        rollback_failed=true
+    fi
+
+    if [[ "$RELEASE_PAUSE_STARTED" == true ]]; then
+        for ((attempt = 1; attempt <= POLLER_READY_TIMEOUT_SECONDS / READY_CHECK_INTERVAL_SECONDS; attempt++)); do
+            if pollers_ready; then
+                rollback_pollers_ready=true
+                break
+            fi
+            sleep "$READY_CHECK_INTERVAL_SECONDS"
+        done
+        if [[ "$rollback_pollers_ready" != true ]]; then
+            echo "AUTOMATIC ROLLBACK FAILED: Telegram pollers did not recover in ${POLLER_READY_TIMEOUT_SECONDS} seconds." >&2
+            rollback_failed=true
+        fi
+    fi
+
     docker compose logs --tail=200 app queue nginx || true
     rm -f "$PREVIOUS_NGINX_CONFIG"
+    if [[ "$rollback_failed" == true ]]; then
+        echo "AUTOMATIC ROLLBACK FAILED. Production may be unavailable; manual intervention is required." >&2
+        exit 2
+    fi
+    echo "Automatic rollback completed and restored services are healthy." >&2
     exit "$exit_code"
 }
 

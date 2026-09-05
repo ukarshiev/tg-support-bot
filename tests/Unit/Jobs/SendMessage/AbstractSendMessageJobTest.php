@@ -9,6 +9,7 @@ use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Jobs\SendTelegramTopicMessageJob;
 use App\Modules\Telegram\Support\TelegramClientDeliveryRetryPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -153,6 +154,35 @@ class AbstractSendMessageJobTest extends TestCase
                 'description' => 'Bad Request: message to edit not found',
             ],
         ));
+
+        $job->assertNotReleased();
+        $job->assertNotFailed();
+    }
+
+    public function test_message_too_long_is_logged_as_deterministic_and_not_retried(): void
+    {
+        Log::shouldReceive('channel')->with('app')->once()->andReturnSelf();
+        Log::shouldReceive('error')->once()->withArgs(
+            fn (string $message, array $context): bool => $message === 'Telegram rejected an oversized outgoing message; retry disabled'
+                && $context['method'] === 'sendMessage'
+                && $context['actual_length'] === 4097,
+        );
+        $job = (new RetryProbeSendMessageJob())->withFakeQueueInteractions();
+        $job->botUserId = 777;
+        $job->typeMessage = 'outgoing';
+        $job->queryParams = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => 123,
+            'text' => str_repeat('я', 4097),
+        ]);
+
+        $response = TelegramAnswerDto::fromData([
+            'ok' => false,
+            'error_code' => 400,
+            'description' => 'Bad Request: message is too long',
+        ]);
+        $this->assertInstanceOf(TelegramAnswerDto::class, $response);
+        $job->handleTelegramResponse($response);
 
         $job->assertNotReleased();
         $job->assertNotFailed();

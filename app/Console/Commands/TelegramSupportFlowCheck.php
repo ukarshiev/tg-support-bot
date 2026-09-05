@@ -27,8 +27,6 @@ class TelegramSupportFlowCheck extends Command
 
     private const REPORT_ALLOWANCE_SECONDS = 60;
 
-    private const REPORT_MESSAGE_LIMIT = 4096;
-
     protected $signature = 'telegram:support-flow-check
         {--chat-id= : Telegram chat_id служебного диалога}
         {--languages= : Языки через запятую; без опции проверяются все включённые}
@@ -474,55 +472,7 @@ class TelegramSupportFlowCheck extends Command
             $lines[] = '⏭ ' . $check['step'] . ' — ' . $check['detail'];
         }
 
-        return $this->splitReportLines($lines);
-    }
-
-    /**
-     * @param list<string> $lines
-     *
-     * @return list<string>
-     */
-    private function splitReportLines(array $lines): array
-    {
-        $messages = [];
-        $current = '';
-
-        foreach ($lines as $line) {
-            do {
-                if (mb_strlen($current) >= self::REPORT_MESSAGE_LIMIT) {
-                    $messages[] = $current;
-                    $current = '';
-                }
-
-                $separator = $current === '' ? '' : "\n";
-                $available = max(
-                    0,
-                    self::REPORT_MESSAGE_LIMIT - mb_strlen($current) - mb_strlen($separator),
-                );
-                if ($available <= 0) {
-                    if ($current !== '') {
-                        $messages[] = $current;
-                    }
-                    $current = '';
-                    continue;
-                }
-
-                $part = mb_substr($line, 0, $available);
-                $current .= $separator . $part;
-                $line = mb_substr($line, mb_strlen($part));
-
-                if (mb_strlen($current) >= self::REPORT_MESSAGE_LIMIT) {
-                    $messages[] = $current;
-                    $current = '';
-                }
-            } while ($line !== '');
-        }
-
-        if ($current !== '') {
-            $messages[] = $current;
-        }
-
-        return $messages;
+        return [implode("\n", $lines)];
     }
 
     private function messageUpdate(BotUser $botUser, string $text, int $messageId): TelegramUpdateDto

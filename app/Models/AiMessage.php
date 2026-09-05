@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string      $status
  * @property string|null $text_ai
  * @property string|null $text_manager
+ * @property string|null $source_hash
  */
 class AiMessage extends Model
 {

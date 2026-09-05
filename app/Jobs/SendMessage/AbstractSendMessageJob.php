@@ -102,6 +102,19 @@ abstract class AbstractSendMessageJob implements ShouldQueue
             return;
         }
 
+        if ($response->response_code === 400 && $response->type_error === 'MESSAGE_TOO_LONG') {
+            $content = $this->queryParams->text ?? $this->queryParams->caption ?? '';
+            Log::channel('app')->error('Telegram rejected an oversized outgoing message; retry disabled', [
+                'source' => 'telegram_message_too_long',
+                'job' => static::class,
+                'bot_user_id' => $this->botUserId,
+                'method' => $this->queryParams->methodQuery ?? null,
+                'actual_length' => is_string($content) ? mb_strlen($content) : null,
+            ]);
+
+            return;
+        }
+
         if ($response->response_code === 400 && $response->type_error === 'MARKDOWN_ERROR') {
             Log::channel('app')->warning('MARKDOWN_ERROR -> switching message to plain text', [
                 'job' => static::class,

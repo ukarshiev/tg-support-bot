@@ -11,10 +11,14 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 
 class TelegramPollUpdates extends Command
 {
     private const INTERNAL_WEBHOOK_MAX_ATTEMPTS = 3;
+
+    /** @var list<int> */
+    private const INTERNAL_WEBHOOK_RETRY_DELAYS = [5, 15];
 
     protected $signature = 'telegram:poll-updates {--once : Выполнить один цикл и завершиться} {--sleep=1 : Пауза между циклами без updates} {--timeout=10 : Таймаут long polling в Telegram}';
 
@@ -163,8 +167,13 @@ class TelegramPollUpdates extends Command
                         break;
                     }
 
-                    Log::channel('app')->warning('Telegram poller: internal webhook rejected update; retrying', $logContext);
-                    sleep($sleepSeconds);
+                    $retryDelay = self::INTERNAL_WEBHOOK_RETRY_DELAYS[$attempts - 1];
+                    Log::channel('app')->warning('Telegram poller: internal webhook rejected update; retrying', array_replace($logContext, [
+                        'retry_delay_seconds' => $retryDelay,
+                    ]));
+                    // Попытки идут примерно в 0/5/20 секунд: короткий сбой успевает
+                    // восстановиться, а действительно битый update всё ещё имеет предел.
+                    Sleep::sleep($retryDelay);
                 }
 
                 if ($updateId > 0) {

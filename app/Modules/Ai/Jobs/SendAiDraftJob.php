@@ -8,7 +8,6 @@ use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\Services\AiAssistantService;
 use App\Modules\Ai\Services\RussianOperatorTextService;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
-use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Modules\Translation\DTOs\TranslationRequest;
 use App\Modules\Translation\Services\TranslationService;
 use App\Services\Settings\SettingsService;
@@ -65,7 +64,6 @@ class SendAiDraftJob implements ShouldQueue
             $aiBotAvailable = $aiBotToken !== '' && $groupId !== '';
 
             if ($aiBotAvailable && empty($botUser->topic_id)) {
-                TopicCreateJob::dispatch($botUser->id);
                 Log::channel('app')->info('SendAiDraftJob: topic pending, draft will remain in admin workspace', [
                     'source' => 'send_ai_draft_topic_pending',
                     'bot_user_id' => $botUser->id,
@@ -113,8 +111,11 @@ class SendAiDraftJob implements ShouldQueue
 
             // Сохранение — граница надёжности: Telegram вызывается только отдельной
             // job после появления записи, видимой оператору в админке.
-            $aiMessage = AiMessage::create([
+            $sourceHash = hash('sha256', trim($sourceText));
+            $aiMessage = AiMessage::firstOrCreate([
                 'bot_user_id' => $botUser->id,
+                'source_hash' => $sourceHash,
+            ], [
                 'message_id' => null,
                 'text_ai' => $sourceText,
                 'text_source' => $sourceText,
@@ -123,10 +124,20 @@ class SendAiDraftJob implements ShouldQueue
                 'target_locale' => $targetLocale,
                 'translation_provider' => $translationProvider,
                 'translation_status' => $translationStatus,
-                'source_hash' => hash('sha256', trim($sourceText)),
                 'text_manager' => '',
                 'status' => AiMessage::STATUS_PENDING,
             ]);
+
+            if (!$aiMessage->wasRecentlyCreated) {
+                Log::channel('app')->info('SendAiDraftJob: duplicate generated draft skipped', [
+                    'source' => 'send_ai_draft_duplicate_skipped',
+                    'ai_message_id' => $aiMessage->id,
+                    'bot_user_id' => $botUser->id,
+                    'source_hash' => $sourceHash,
+                ]);
+
+                return;
+            }
 
             if ($aiBotAvailable) {
                 SendPendingAiDraftToTelegramJob::dispatch($aiMessage->id);

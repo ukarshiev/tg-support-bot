@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines the complete database schema. It ensures that AI agents and developers fully understand data structure, relationships, and constraints before making changes.
 > **Context:** Read this file before creating or modifying tables, columns, indexes, migrations, or Eloquent models.
-> **Version:** 1.2
+> **Version:** 1.3
 
 ---
 
@@ -112,6 +112,7 @@ erDiagram
         string status
         text text_manager
         text text_ai
+        string source_hash "nullable, composite UK with bot_user_id"
         timestamps
     }
 
@@ -394,15 +395,18 @@ Stores AI-generated draft responses before manager review.
 | `status` | `string` | No | `pending` | Lifecycle status: `pending` (awaiting review), `accepted` (sent to user), `cancelled` (discarded) |
 | `text_manager` | `text` | Yes | NULL | Instructions provided by the manager to AI |
 | `text_ai` | `text` | Yes | NULL | AI-generated response text |
+| `source_hash` | `string(64)` | Yes | NULL | Hash of the normalized AI answer; together with `bot_user_id` provides draft idempotency |
 | `created_at` | `timestamp` | Yes | NULL | Creation time |
 | `updated_at` | `timestamp` | Yes | NULL | Last update time |
 
 **Indexes:**
 - PRIMARY on `id`
 - FOREIGN KEY `bot_user_id` → `bot_users.id` ON DELETE CASCADE
+- UNIQUE on (`bot_user_id`, `source_hash`) — prevents duplicate drafts for the same user and normalized AI answer; multiple legacy NULL hashes remain allowed
 
 **Migrations:**
 - `database/migrations/2026_06_16_000001_add_status_to_ai_messages_table.php` — adds `status` column (default `pending`) and makes `message_id` nullable
+- `database/migrations/2026_09_05_000001_make_ai_message_source_hash_unique_per_user.php` — preserves duplicate historical rows by clearing only their repeated hashes, then adds the idempotency constraint
 
 ---
 
@@ -526,6 +530,7 @@ All migrations are in `database/migrations/`. Name format: `YYYY_MM_DD_HHMMSS_de
 
 ## Changelog
 
+- Version 1.3: Added the unique AI draft identity on `ai_messages(bot_user_id, source_hash)`.
 - Version 1.2: Added durable `discarded_telegram_updates` quarantine for poller updates skipped after deterministic webhook failures.
 - Version 1.1: Added the `bot_users` recipient-unavailable state and its reversible migration.
 

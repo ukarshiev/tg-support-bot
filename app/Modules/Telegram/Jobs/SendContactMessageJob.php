@@ -118,6 +118,15 @@ class SendContactMessageJob implements ShouldQueue
             return;
         }
 
+        if ($response->type_error === 'MESSAGE_TOO_LONG') {
+            $operation->update([
+                'status' => DeliveryOperation::STATUS_FAILED,
+                'last_error' => 'code=400 type=MESSAGE_TOO_LONG',
+            ]);
+
+            return;
+        }
+
         $operation->update([
             'status' => ($response->response_code ?? 0) >= 500
                 ? DeliveryOperation::STATUS_RETRYING

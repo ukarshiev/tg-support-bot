@@ -3,7 +3,9 @@
 namespace Tests\Unit\Modules\Telegram\Api;
 
 use App\Modules\Telegram\Api\TelegramMethods;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class TelegramMethodsTest extends TestCase
@@ -194,5 +196,142 @@ class TelegramMethodsTest extends TestCase
 
         $this->assertEquals($resultQuery->response_code, 200);
         $this->assertEquals($testMessage, $resultQuery->text);
+    }
+
+    public function test_central_sender_splits_long_text_and_returns_last_message(): void
+    {
+        $messageId = 100;
+        Http::fake(function ($request) use (&$messageId) {
+            return Http::response([
+                'ok' => true,
+                'result' => [
+                    'message_id' => $messageId++,
+                    'chat' => ['id' => $this->chatId, 'type' => 'private'],
+                    'date' => time(),
+                    'text' => $request->data()['text'],
+                ],
+            ]);
+        });
+        $text = str_repeat('длинный текст со словами ', 300);
+
+        $response = TelegramMethods::sendQueryTelegram('sendMessage', [
+            'chat_id' => $this->chatId,
+            'text' => $text,
+            'parse_mode' => 'html',
+            'reply_markup' => ['inline_keyboard' => [[['text' => 'OK', 'callback_data' => 'ok']]]],
+        ]);
+
+        $requests = collect(Http::recorded())->map(fn (array $record) => $record[0])->values();
+        $this->assertGreaterThan(1, $requests->count());
+        $this->assertSame($text, $requests->map(fn ($request) => $request->data()['text'])->implode(''));
+        $this->assertArrayNotHasKey('reply_markup', $requests->first()->data());
+        $this->assertArrayHasKey('reply_markup', $requests->last()->data());
+        $this->assertSame($messageId - 1, $response->message_id);
+    }
+
+    public function test_retry_of_multipart_message_skips_parts_already_delivered(): void
+    {
+        $idempotencyKey = 'telegram-methods-test:' . uniqid('', true);
+        Cache::forget('telegram:request-sequence:' . hash('sha256', $idempotencyKey));
+        $text = str_repeat('А', 4000) . ' '
+            . str_repeat('Б', 4000) . ' '
+            . str_repeat('В', 4000);
+        $success = static fn (int $messageId): array => [
+            'ok' => true,
+            'result' => [
+                'message_id' => $messageId,
+                'chat' => ['id' => 123, 'type' => 'private'],
+                'date' => time(),
+            ],
+        ];
+
+        Http::fakeSequence()
+            ->push($success(101))
+            ->push($success(102))
+            ->push(['ok' => false, 'error_code' => 500, 'description' => 'Temporary failure'], 500)
+            ->push($success(103));
+
+        $firstAttempt = TelegramMethods::sendQueryTelegram(
+            'sendMessage',
+            ['chat_id' => 123, 'text' => $text],
+            'test-token',
+            $idempotencyKey,
+        );
+        $secondAttempt = TelegramMethods::sendQueryTelegram(
+            'sendMessage',
+            ['chat_id' => 123, 'text' => $text],
+            'test-token',
+            $idempotencyKey,
+        );
+
+        $sentParts = collect(Http::recorded())->map(fn (array $record): string => (string) $record[0]->data()['text']);
+        $this->assertFalse($firstAttempt->ok);
+        $this->assertTrue($secondAttempt->ok);
+        $this->assertSame(103, $secondAttempt->message_id);
+        $this->assertCount(4, $sentParts);
+        $this->assertSame(1, $sentParts->filter(fn (string $part): bool => $part === $sentParts[0])->count());
+        $this->assertSame(1, $sentParts->filter(fn (string $part): bool => $part === $sentParts[1])->count());
+        $this->assertSame($sentParts[2], $sentParts[3]);
+    }
+
+    public function test_central_sender_truncates_caption_and_sends_full_text_after_media(): void
+    {
+        $messageId = 200;
+        Http::fake(function ($request) use (&$messageId) {
+            $data = $request->data();
+
+            return Http::response([
+                'ok' => true,
+                'result' => [
+                    'message_id' => $messageId++,
+                    'chat' => ['id' => $this->chatId, 'type' => 'private'],
+                    'date' => time(),
+                    'text' => $data['text'] ?? null,
+                    'caption' => $data['caption'] ?? null,
+                ],
+            ]);
+        });
+        $caption = str_repeat('подпись со словами ', 100);
+
+        $response = TelegramMethods::sendQueryTelegram('sendVideo', [
+            'chat_id' => $this->chatId,
+            'video' => 'file-id',
+            'caption' => $caption,
+        ]);
+
+        $requests = collect(Http::recorded())->map(fn (array $record) => $record[0])->values();
+        $this->assertCount(2, $requests);
+        $this->assertStringContainsString('подпись усечена', $requests[0]->data()['caption']);
+        $this->assertLessThanOrEqual(1024, mb_strlen($requests[0]->data()['caption']));
+        $this->assertSame($caption, $requests[1]->data()['text']);
+        $this->assertStringContainsString('/sendVideo', $requests[0]->url());
+        $this->assertStringContainsString('/sendMessage', $requests[1]->url());
+        $this->assertSame(200, $response->message_id);
+    }
+
+    public function test_message_too_long_is_classified_and_logged_with_method_and_length(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/*' => Http::response([
+                'ok' => false,
+                'error_code' => 400,
+                'description' => 'Bad Request: message is too long',
+            ], 400),
+        ]);
+        Log::shouldReceive('channel')->with('app')->once()->andReturnSelf();
+        Log::shouldReceive('error')->once()->withArgs(
+            fn (string $message, array $context): bool => $message === 'Telegram rejected an oversized outgoing message; retry disabled'
+                && $context['source'] === 'telegram_message_too_long'
+                && $context['method'] === 'sendMessage'
+                && $context['actual_length'] === 10,
+        );
+
+        $response = TelegramMethods::sendQueryTelegram('sendMessage', [
+            'chat_id' => $this->chatId,
+            'text' => '1234567890',
+        ]);
+
+        $this->assertFalse($response->ok);
+        $this->assertSame('MESSAGE_TOO_LONG', $response->type_error);
     }
 }

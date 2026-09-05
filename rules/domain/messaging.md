@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the core messaging domain — the routing of messages between users (Telegram, VK, External) and the support team.
 > **Context:** Read this file before modifying anything related to message sending, editing, routing, or platform integrations.
-> **Version:** 1.1
+> **Version:** 1.3
 
 ---
 
@@ -113,6 +113,18 @@ _Enforced in:_ `app/Modules/Telegram/Services/Tg/TgMessageService.php`
 
 **BR-014 (DEFERRED, issue #172)** — AI Accept-callback operator attribution (`DeliverAiAnswerToUser`, `TelegramBotController` Accept handler) — AI paths continue to pass `null` as the author until a dedicated task implements it.
 
+**BR-015** — Every outgoing Telegram message must pass through the central length guard in `TelegramMethods::sendQueryTelegram()` before `ParserMethods` performs the HTTP request.
+- `sendMessage` and `editMessageText` text is split into complete messages of at most 4096 characters.
+- Media captions in `send*` methods are limited to 1024 characters. An oversized caption is truncated at a word boundary with an explicit marker, then its complete original text is sent in one or more following `sendMessage` calls.
+- HTML and MarkdownV2 formatting is closed and reopened at part boundaries. HTML entities and Markdown escape sequences remain atomic.
+- Inline keyboards are attached only to the final text part. The final part response is returned to the caller, while a media sequence returns the primary media response after all follow-up text succeeds.
+- `MESSAGE_TOO_LONG` is a deterministic error: log the Telegram method and actual content length, then do not retry.
+- Multipart sends checkpoint every successful part in the shared cache. A retry with the same operation key resumes at the first unconfirmed part; queue jobs must pass a stable key stored in their serialized payload or derived from a persisted draft.
+_Enforced in:_ `app/Modules/Telegram/Api/TelegramMethods.php`, `app/Modules/Telegram/Support/TelegramOutgoingMessageLimiter.php`, `app/Enums/TelegramError.php`
+
+**BR-016** — Main poller application-webhook rejections are attempted at approximately 0, 5, and 20 seconds. This spacing allows a short application restart to recover without quarantining a live client update, while the third deterministic rejection still moves a genuinely poisoned update to durable quarantine.
+_Enforced in:_ `app/Console/Commands/TelegramPollUpdates.php`
+
 ---
 
 ## 5. Message Type State Machine
@@ -153,6 +165,7 @@ stateDiagram-v2
 
 - Jobs must handle `TelegramError::TOO_MANY_REQUESTS` by respecting `retry_after` from the API response.
 - Jobs must handle `TelegramError::TOPIC_NOT_FOUND` by recreating the topic.
+- Jobs must handle `TelegramError::MESSAGE_TOO_LONG` as a deterministic failure without retry.
 
 ---
 
@@ -196,6 +209,13 @@ $keyboard = ['inline_keyboard' => [[['text' => 'Yes', 'callback_data' => 'yes']]
 - ❌ Sending messages to banned users without the banned notification flow
 - ❌ Creating a new forum topic without checking if one already exists
 - ❌ Modifying `messages` table without updating related `external_messages` record
+
+---
+
+## Changelog
+
+- **1.3** — Added multipart Telegram delivery checkpoints and spaced poller webhook retries.
+- **1.2** — Added BR-015: central Telegram text/caption limits, markup-safe splitting, full caption follow-up, and deterministic `MESSAGE_TOO_LONG` handling.
 
 ---
 

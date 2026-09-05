@@ -16,6 +16,7 @@ use App\Modules\Telegram\Support\TelegramPipelineTrace;
 use App\Modules\Translation\Support\TelegramMarkupSanitizer;
 use App\Services\Settings\SettingsService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SendTelegramMessageJob extends AbstractSendMessageJob
 {
@@ -37,6 +38,8 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
 
     public string $traceId;
 
+    public string $deliverySequenceKey;
+
     public function __construct(
         int $botUserId,
         TelegramUpdateDto $updateDto,
@@ -50,6 +53,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
         $this->typeMessage = $typeMessage;
         $this->queuedAt = microtime(true);
         $this->traceId = TelegramPipelineTrace::id($updateDto);
+        $this->deliverySequenceKey = (string) Str::uuid();
         $this->onQueue('telegram-interactive');
 
         $this->telegramMethods = $telegramMethods ?? new TelegramMethods();
@@ -112,7 +116,8 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             $response = $this->telegramMethods->sendQueryTelegram(
                 $methodQuery,
                 $params,
-                $this->queryParams->token
+                $this->queryParams->token,
+                $this->deliverySequenceKey,
             );
 
             TelegramPipelineTrace::log('telegram_api_completed', $this->traceId, [

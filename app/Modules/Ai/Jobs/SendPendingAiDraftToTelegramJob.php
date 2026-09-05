@@ -13,6 +13,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /** Доставляет в Telegram черновик, который был готов раньше forum-темы клиента. */
@@ -28,8 +29,6 @@ class SendPendingAiDraftToTelegramJob implements ShouldQueue
     public array $backoff = [2, 5, 10, 30, 60, 120];
 
     public int $timeout = 20;
-
-    private const TELEGRAM_TEXT_LIMIT = 4096;
 
     public function __construct(public readonly int $aiMessageId)
     {
@@ -65,35 +64,35 @@ class SendPendingAiDraftToTelegramJob implements ShouldQueue
         }
 
         if (empty($botUser->topic_id)) {
-            TopicCreateJob::dispatch($botUser->id);
+            // Cache::add атомарен: только первая попытка ставит TopicCreateJob,
+            // а повторы этой delivery-job ждут заполнения topic_id без гонки тем.
+            if (Cache::add($this->topicCreationKey($botUser->id), true, now()->addHour())) {
+                TopicCreateJob::dispatch($botUser->id);
+            }
             $this->release(3);
 
             return;
         }
 
         $sourceText = (string) ($draft->text_source ?: $draft->text_ai);
-        $parts = $this->splitHtml($this->formatDraft(
+        $text = $this->formatDraft(
             $sourceText,
             $draft->text_translated,
             $draft->target_locale,
-        ));
-        $lastResponse = null;
+        );
+        $lastResponse = $aiBotApi->send('sendMessage', [
+            'chat_id' => $groupId,
+            'message_thread_id' => $botUser->topic_id,
+            'text' => $text,
+            'parse_mode' => 'html',
+        ], 'ai-draft:' . $draft->id . ':telegram-message');
 
-        foreach ($parts as $part) {
-            $lastResponse = $aiBotApi->send('sendMessage', [
-                'chat_id' => $groupId,
-                'message_thread_id' => $botUser->topic_id,
-                'text' => $part,
-                'parse_mode' => 'html',
-            ]);
-
-            if ($lastResponse->ok !== true) {
-                throw new \RuntimeException('Telegram API error sending pending draft: ' . json_encode((array) $lastResponse), 1);
+        if ($lastResponse->ok !== true) {
+            if ($lastResponse->type_error === 'MESSAGE_TOO_LONG') {
+                return;
             }
-        }
 
-        if ($lastResponse === null) {
-            throw new \RuntimeException('Telegram draft has no deliverable parts', 1);
+            throw new \RuntimeException('Telegram API error sending pending draft: ' . json_encode((array) $lastResponse), 1);
         }
 
         $markupResponse = $aiBotApi->send('editMessageReplyMarkup', [
@@ -116,7 +115,7 @@ class SendPendingAiDraftToTelegramJob implements ShouldQueue
             'ai_message_id' => $draft->id,
             'bot_user_id' => $botUser->id,
             'topic_id' => $botUser->topic_id,
-            'parts_count' => count($parts),
+            'text_length' => mb_strlen($text),
         ]);
     }
 
@@ -145,90 +144,8 @@ class SendPendingAiDraftToTelegramJob implements ShouldQueue
             . '<b>🌐 Клиенту на ' . strtoupper($targetLocale) . ":</b>\n" . $translatedBlock;
     }
 
-    /**
-     * Делит HTML на валидные самостоятельные сообщения. Открытые теги закрываются
-     * в конце части и снова открываются в следующей; HTML-сущности не разрезаются.
-     *
-     * @return list<string>
-     */
-    private function splitHtml(string $html): array
+    private function topicCreationKey(int $botUserId): string
     {
-        $tokens = preg_split(
-            '/(<\/?[a-zA-Z][^>]*>|&(?:#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);)/u',
-            $html,
-            -1,
-            PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY,
-        ) ?: [];
-
-        $atomicTokens = [];
-        foreach ($tokens as $token) {
-            if (str_starts_with($token, '<') || str_starts_with($token, '&')) {
-                $atomicTokens[] = $token;
-                continue;
-            }
-
-            foreach (preg_split('//u', $token, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $character) {
-                $atomicTokens[] = $character;
-            }
-        }
-
-        $parts = [];
-        $current = '';
-        /** @var list<array{name: string, opening: string}> $openTags */
-        $openTags = [];
-
-        foreach ($atomicTokens as $token) {
-            $nextOpenTags = $this->openTagsAfter($openTags, $token);
-            $candidate = $current . $token;
-
-            if ($current !== '' && mb_strlen($candidate . $this->closingTags($nextOpenTags)) > self::TELEGRAM_TEXT_LIMIT) {
-                $parts[] = $current . $this->closingTags($openTags);
-                $current = $this->openingTags($openTags) . $token;
-            } else {
-                $current = $candidate;
-            }
-
-            $openTags = $nextOpenTags;
-        }
-
-        if ($current !== '') {
-            $parts[] = $current . $this->closingTags($openTags);
-        }
-
-        return $parts;
-    }
-
-    /**
-     * @param list<array{name: string, opening: string}> $openTags
-     *
-     * @return list<array{name: string, opening: string}>
-     */
-    private function openTagsAfter(array $openTags, string $token): array
-    {
-        if (preg_match('/^<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>$/', $token, $matches) === 1) {
-            $openTags[] = ['name' => strtolower($matches[1]), 'opening' => $token];
-        } elseif (preg_match('/^<\/([a-zA-Z][a-zA-Z0-9]*)>$/', $token, $matches) === 1) {
-            $name = strtolower($matches[1]);
-            if ($openTags !== [] && $openTags[array_key_last($openTags)]['name'] === $name) {
-                array_pop($openTags);
-            }
-        }
-
-        return $openTags;
-    }
-
-    /** @param list<array{name: string, opening: string}> $openTags */
-    private function openingTags(array $openTags): string
-    {
-        return implode('', array_column($openTags, 'opening'));
-    }
-
-    /** @param list<array{name: string, opening: string}> $openTags */
-    private function closingTags(array $openTags): string
-    {
-        return implode('', array_map(
-            static fn (array $tag): string => '</' . $tag['name'] . '>',
-            array_reverse($openTags),
-        ));
+        return "telegram:topic-create-requested:bot-user:{$botUserId}";
     }
 }

@@ -8,6 +8,7 @@ use App\Models\Message;
 use App\Modules\Ai\Actions\AiAcceptMessage;
 use App\Modules\Ai\DTOs\AiRequestDto;
 use App\Modules\Ai\DTOs\AiResponseDto;
+use App\Modules\Ai\Jobs\AlertStaleAiDraftJob;
 use App\Modules\Ai\Jobs\SendAiDraftJob;
 use App\Modules\Ai\Jobs\SendPendingAiDraftToTelegramJob;
 use App\Modules\Ai\Services\AiAssistantService;
@@ -18,6 +19,7 @@ use App\Modules\Translation\DTOs\TranslationRequest;
 use App\Modules\Translation\DTOs\TranslationResult;
 use App\Modules\Translation\Services\TranslationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\TelegramUpdateDtoMock;
@@ -50,6 +52,7 @@ class SendAiDraftJobTest extends TestCase
         $this->botUser = BotUser::getUserByChatId(time(), 'telegram');
         $this->botUser->topic_id = 77;
         $this->botUser->save();
+        Cache::forget("telegram:topic-create-requested:bot-user:{$this->botUser->id}");
 
         Queue::fake();
     }
@@ -88,6 +91,34 @@ class SendAiDraftJobTest extends TestCase
             return $job->aiMessageId === AiMessage::query()->sole()->id;
         });
         Http::assertNothingSent();
+    }
+
+    public function test_retry_does_not_create_or_deliver_duplicate_draft(): void
+    {
+        $aiResponseText = 'Один и тот же ответ ИИ';
+        $aiResponse = new AiResponseDto(
+            response: $aiResponseText,
+            confidenceScore: 0.9,
+            shouldEscalate: false,
+            provider: 'openai',
+            modelUsed: 'gpt-4',
+            tokensUsed: 10,
+            responseTime: 0.5,
+        );
+        $aiService = $this->createMock(AiAssistantService::class);
+        $aiService->expects($this->exactly(2))->method('processMessage')->willReturn($aiResponse);
+        $job = new SendAiDraftJob($this->botUser->id, TelegramUpdateDtoMock::getDto(), 'user question');
+
+        $job->handle($aiService);
+        $job->handle($aiService);
+
+        $this->assertSame(1, AiMessage::query()->count());
+        $this->assertDatabaseHas('ai_messages', [
+            'bot_user_id' => $this->botUser->id,
+            'source_hash' => hash('sha256', $aiResponseText),
+        ]);
+        Queue::assertPushed(SendPendingAiDraftToTelegramJob::class, 1);
+        Queue::assertPushed(AlertStaleAiDraftJob::class, 1);
     }
 
     public function test_operator_block_stays_russian_when_client_language_is_not_russian(): void
@@ -224,7 +255,7 @@ class SendAiDraftJobTest extends TestCase
         }
     }
 
-    public function test_missing_topic_does_not_lose_draft_and_queues_topic_creation(): void
+    public function test_missing_topic_queues_topic_creation_only_once_while_delivery_retries_wait(): void
     {
         $this->botUser->topic_id = null;
         $this->botUser->save();
@@ -249,13 +280,18 @@ class SendAiDraftJobTest extends TestCase
 
         $job->handle($aiService);
 
+        $draft = AiMessage::query()->sole();
+        $pendingDelivery = new SendPendingAiDraftToTelegramJob($draft->id);
+        $pendingDelivery->handle(new AiBotApi());
+        $pendingDelivery->handle(new AiBotApi());
+
         $this->assertDatabaseHas('ai_messages', [
             'bot_user_id' => $this->botUser->id,
             'message_id' => null,
             'text_ai' => $aiResponseText,
             'status' => AiMessage::STATUS_PENDING,
         ]);
-        Queue::assertPushed(TopicCreateJob::class, fn (TopicCreateJob $job): bool => true);
+        Queue::assertPushed(TopicCreateJob::class, 1);
         Queue::assertPushed(SendPendingAiDraftToTelegramJob::class, function (SendPendingAiDraftToTelegramJob $job): bool {
             return $job->aiMessageId === AiMessage::query()->sole()->id;
         });
@@ -317,7 +353,7 @@ class SendAiDraftJobTest extends TestCase
         });
     }
 
-    public function test_telegram_failure_does_not_remove_already_persisted_draft(): void
+    public function test_message_too_long_is_deterministic_and_keeps_persisted_draft_pending(): void
     {
         $draft = AiMessage::create([
             'bot_user_id' => $this->botUser->id,
@@ -338,12 +374,7 @@ class SendAiDraftJobTest extends TestCase
             ], 400),
         ]);
 
-        try {
-            (new SendPendingAiDraftToTelegramJob($draft->id))->handle(new AiBotApi());
-            $this->fail('Telegram delivery failure must be retried by the queue.');
-        } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('Telegram API error', $exception->getMessage());
-        }
+        (new SendPendingAiDraftToTelegramJob($draft->id))->handle(new AiBotApi());
 
         $this->assertDatabaseHas('ai_messages', [
             'id' => $draft->id,

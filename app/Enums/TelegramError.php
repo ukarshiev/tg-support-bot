@@ -7,6 +7,7 @@ enum TelegramError: string
     case MESSAGE_NOT_MODIFIED = 'Bad Request: message is not modified';
     case MESSAGE_TO_EDIT_NOT_FOUND = 'Bad Request: message to edit not found';
     case MESSAGE_TEXT_IS_EMPTY = 'Bad Request: message text is empty';
+    case MESSAGE_TOO_LONG = 'Bad Request: message is too long';
 
     case TOPIC_NOT_FOUND = 'Bad Request: message thread not found';
     case TOPIC_DELETED = 'Bad Request: TOPIC_DELETED';
@@ -43,6 +44,7 @@ enum TelegramError: string
             self::MESSAGE_NOT_MODIFIED => 'Message not modified',
             self::MESSAGE_TO_EDIT_NOT_FOUND => 'Message to edit not found',
             self::MESSAGE_TEXT_IS_EMPTY => 'Message is empty',
+            self::MESSAGE_TOO_LONG => 'Message is too long',
 
             self::TOPIC_NOT_MODIFIED => 'Topic not modified',
 

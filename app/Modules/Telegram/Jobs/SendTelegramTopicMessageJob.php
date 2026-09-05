@@ -78,6 +78,10 @@ class SendTelegramTopicMessageJob implements ShouldQueue
             return;
         }
 
+        if ($response->type_error === 'MESSAGE_TOO_LONG') {
+            return;
+        }
+
         throw new RuntimeException(sprintf(
             'Telegram topic service message failed: code=%s type=%s',
             $response->response_code,

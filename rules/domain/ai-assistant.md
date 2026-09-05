@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the AI assistant integration domain — draft generation, manager review, acceptance, and cancellation of AI responses.
 > **Context:** Read this file before modifying anything related to `AiCondition`, `AiMessage`, AI providers, AI actions, AI bot webhook, or AI bot controllers.
-> **Version:** 1.3
+> **Version:** 1.4
 
 ---
 
@@ -105,6 +105,12 @@ _Enforced in:_ `app/Modules/Ai/Actions/DeliverAiAnswerToUser.php`
 
 **BR-019** — Draft generation and Telegram delivery are separate durable steps. `SendAiDraftJob` MUST persist the generated response to `ai_messages` before dispatching `SendPendingAiDraftToTelegramJob`. Missing forum topics and Telegram API failures may delay the Telegram copy, but MUST NOT remove or prevent the admin-workspace draft. `SendAiReplyJob` retains its separate auto-reply behavior.
 _Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`, `app/Modules/Ai/Jobs/SendPendingAiDraftToTelegramJob.php`, `app/Modules/Ai/Jobs/SendAiReplyJob.php`
+
+**BR-019a** — Draft persistence is idempotent by `(bot_user_id, source_hash)`. Retrying `SendAiDraftJob` with the same normalized provider answer reuses the existing row and MUST NOT enqueue a second Telegram delivery or stale-draft alert.
+_Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`; unique index `ai_messages_user_source_hash_unique`
+
+**BR-019b** — When a draft waits for a missing forum topic, an atomic cache marker permits at most one `TopicCreateJob` dispatch during the waiting window. Delivery retries only re-check `BotUser.topic_id`; successful topic creation clears the marker.
+_Enforced in:_ `app/Modules/Ai/Jobs/SendPendingAiDraftToTelegramJob.php`, `app/Modules/Telegram/Jobs/TopicCreateJob.php`
 
 ---
 
@@ -352,3 +358,7 @@ _Enforced in:_ `app/Modules/Ai/Actions/AiCancelMessage.php`
 |---|---|
 | Yes | Telegram supergroup (inline buttons) + `/admin/chats` workspace |
 | No | `/admin/chats` workspace only |
+
+## Changelog
+
+- Version 1.4: Made draft persistence idempotent and topic-creation waiting race-safe.
