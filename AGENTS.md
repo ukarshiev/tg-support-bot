@@ -1,4 +1,4 @@
-# Последняя редакция: 18.07.2026 12:31 UTC+3
+# Последняя редакция: 05.09.2026 UTC+3
 
 # Инструкции для агента
 
@@ -203,6 +203,29 @@ Plane URL: `https://plane.karumweb.ru`.
 7. В changelog-записи по возможности указывать Plane-задачу. Если работа продолжает старую мигрированную задачу — дополнительно указывать её `Linear ID: KAR-*`.
 
 Запрещено закрывать работу как полностью готовую, если для changelog-значимого изменения не создана и не обновлена Plane-задача, кроме случая явной недоступности Plane. Если Plane недоступен, это нужно прямо написать в финальном отчёте и не выдумывать номер задачи.
+
+## Правила для Codex-исполнителя
+
+Этот файл — единственный, который Codex читает нативно. Архитектура, слои и стандарты кода описаны в `CLAUDE.md` и каталоге `rules/` (`rules/README.md` — точка входа). Перед правкой кода Codex обязан прочитать `CLAUDE.md` и профильный файл из `rules/domain/*`, `rules/process/*`, `rules/database/*` по таблице в `CLAUDE.md`.
+
+Codex работает только исполнителем в route-цикле (`docs/agents/route-codex.md`). Ему разрешено:
+
+- править и создавать файлы в рамках задачи;
+- запускать `vendor/bin/pint` и `vendor/bin/phpstan analyse`.
+
+Codex запрещено без исключений:
+
+- любые `git` команды (add, commit, push, checkout, stash, rebase);
+- любые `docker` и `docker compose` команды;
+- `php artisan migrate*`, `db:*`, `tinker`, `db:seed`, любые сиды и фабрики против БД;
+- `php artisan test`, `vendor/bin/phpunit`, `.\scripts\run-isolated-tests.ps1` — тесты запускает только оркестратор;
+- deploy, правка `.env`, webhook-команды (`telegram:set-webhook`, `ai-bot:set-webhook`);
+- добавление composer/npm-зависимостей и новых env-ключей без явного запроса в промпте;
+- правка файлов вне описанной задачи и файлов из чужого незакоммиченного WIP.
+
+Инварианты, нарушение которых считается critical на ревью: отправка в Telegram/VK/Max только через Jobs; AI-черновики не пишут в `messages`; секреты только через `SettingsService`, никаких `config()`/`env()` для runtime-настроек; DTO вместо `Request` в Services/Actions; токены и пароли не попадают в логи; новый класс — с PHPDoc и тестом по зеркальному пути `tests/Unit|Feature`.
+
+Оркестратор (Claude) делает всё остальное: ревью diff, gate `.\scripts\project-tools.ps1 quality`, commit `TGSUPBOT-{N} | описание`, merge в `main`, push, deploy, контроль и комментарий в Plane. Шаблон финального отчёта: `docs/agents/final-report-template.md`.
 
 ## Graphify
 

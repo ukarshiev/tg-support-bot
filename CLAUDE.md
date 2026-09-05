@@ -377,16 +377,20 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 ### Message Format
 
 ```
-issues-{number} | {brief description}
+TGSUPBOT-{number} | {что изменилось, по-русски}
 ```
+
+`{number}` — номер задачи в Plane (workspace `karum`, проект `TgSupportBot`). Несколько задач перечисляются через запятую: `TGSUPBOT-48, TGSUPBOT-52 | …`. Если задачи ещё нет, её нужно создать до коммита (см. `AGENTS.md`, «Plane-задачи как артефакты работ»).
 
 ### Examples
 
 ```
-issues-123 | add VK sticker support
-issues-45 | fix telegram webhook error handling
-issues-78 | update rules documentation
+TGSUPBOT-65 | Отложенный диалог поддержки до первого сообщения
+TGSUPBOT-48, TGSUPBOT-52 | DeepSeek fallback и повторная доставка AI-черновика
+TGSUPBOT-84 | Правила route-цикла Claude + Codex
 ```
+
+The legacy upstream format `issues-{number} | …` is only used when contributing to `upstream` (prog-time/tg-support-bot).
 
 ### Change Types
 
@@ -405,11 +409,18 @@ issues-78 | update rules documentation
 ## Branch Naming
 
 ```
-issues-{number}
-issues-{number}-{brief-description}
+tgsupbot-{number}-{brief-description}
 ```
 
-Examples: `issues-38`, `issues-45-fix-telegram-webhook`
+Examples: `tgsupbot-65-deferred-support-dialog`, `tgsupbot-84-route-codex`
+
+Task branches are cut from `main` and merged back into `main` (merge commit or fast-forward), then pushed to `origin/main`. Never push to `upstream` (prog-time/tg-support-bot) — it is read-only for this fork. Deploy happens only from `main`.
+
+---
+
+## Agent Orchestration (route-cycle)
+
+For medium and complex tasks, Claude acts as an orchestrator and delegates code generation to a Codex worker. The contract lives in `docs/agents/route-codex.md` (restore source, in git) and the local skill `.claude/skills/route/SKILL.md` (not in git). Codex restrictions are in `AGENTS.md`, section «Правила для Codex-исполнителя». Final report format: `docs/agents/final-report-template.md`.
 
 ---
 
