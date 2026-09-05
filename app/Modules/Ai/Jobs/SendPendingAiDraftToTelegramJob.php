@@ -200,6 +200,7 @@ class SendPendingAiDraftToTelegramJob implements ShouldQueue
 
     /**
      * @param list<array{name: string, opening: string}> $openTags
+     *
      * @return list<array{name: string, opening: string}>
      */
     private function openTagsAfter(array $openTags, string $token): array
