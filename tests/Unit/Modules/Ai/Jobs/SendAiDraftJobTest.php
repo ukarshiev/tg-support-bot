@@ -115,10 +115,42 @@ class SendAiDraftJobTest extends TestCase
         $this->assertSame(1, AiMessage::query()->count());
         $this->assertDatabaseHas('ai_messages', [
             'bot_user_id' => $this->botUser->id,
-            'source_hash' => hash('sha256', $aiResponseText),
+            'source_hash' => hash('sha256', $job->generationKey . '|' . $aiResponseText),
         ]);
         Queue::assertPushed(SendPendingAiDraftToTelegramJob::class, 1);
         Queue::assertPushed(AlertStaleAiDraftJob::class, 1);
+    }
+
+    public function test_equal_answers_for_different_client_events_create_separate_drafts(): void
+    {
+        $aiResponseText = 'Одинаковый полезный ответ';
+        $aiResponse = new AiResponseDto(
+            response: $aiResponseText,
+            confidenceScore: 0.9,
+            shouldEscalate: false,
+            provider: 'openai',
+            modelUsed: 'gpt-4',
+            tokensUsed: 10,
+            responseTime: 0.5,
+        );
+        $aiService = $this->createMock(AiAssistantService::class);
+        $aiService->expects($this->exactly(2))->method('processMessage')->willReturn($aiResponse);
+
+        (new SendAiDraftJob(
+            $this->botUser->id,
+            TelegramUpdateDtoMock::getDto(),
+            'Первое сообщение',
+        ))->handle($aiService);
+        (new SendAiDraftJob(
+            $this->botUser->id,
+            TelegramUpdateDtoMock::getDto(),
+            'Второе сообщение',
+        ))->handle($aiService);
+
+        $this->assertSame(2, AiMessage::query()->count());
+        $this->assertSame(2, AiMessage::query()->distinct()->count('source_hash'));
+        Queue::assertPushed(SendPendingAiDraftToTelegramJob::class, 2);
+        Queue::assertPushed(AlertStaleAiDraftJob::class, 2);
     }
 
     public function test_operator_block_stays_russian_when_client_language_is_not_russian(): void

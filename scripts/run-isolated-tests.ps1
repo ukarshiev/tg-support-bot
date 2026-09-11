@@ -45,6 +45,9 @@ if ($LASTEXITCODE -ne 0) {
 $dockerArguments = @(
     'run', '--rm',
     '--network', 'none',
+    '--cpus', '1.5',
+    '--memory', '512m',
+    '--pids-limit', '256',
     '--read-only',
     '--user', '33:33',
     '--mount', "type=bind,source=$repositoryPath,target=/work,readonly",

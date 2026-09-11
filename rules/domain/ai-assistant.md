@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the AI assistant integration domain — draft generation, manager review, acceptance, and cancellation of AI responses.
 > **Context:** Read this file before modifying anything related to `AiCondition`, `AiMessage`, AI providers, AI actions, AI bot webhook, or AI bot controllers.
-> **Version:** 1.4
+> **Version:** 1.6
 
 ---
 
@@ -69,6 +69,9 @@ _Enforced in:_ `config/ai.php @ disable_timeout` (timeout applied in AiAction fl
 
 **BR-008** — AI responses must never exceed the token limits defined per provider in config.
 _Enforced in:_ `config/ai.php @ providers.*.max_tokens`
+
+**BR-008a** — Provider reasoning is internal metadata and must never be used as a draft or user-facing answer. If DeepSeek returns an empty final `content` with a non-empty `reasoning_content`, the reasoning is discarded, the provider call is treated as failed, and the queue retry policy handles another attempt. The default DeepSeek completion budget is 4000 tokens when `ai.deepseek_max_tokens` is not configured.
+_Enforced in:_ `app/Modules/Ai/Services/DeepSeekProvider.php`; `app/Modules/Ai/Jobs/SendAiDraftJob.php`
 
 **BR-009** — The AI conversation context is sourced from the `messages` table by `bot_user_id` (incoming → `role: user` excluding slash-commands; any outgoing → `role: assistant`). The window is bounded by `max_context_tokens` (token budget) using a `mb_strlen / 4` heuristic with a sliding window from the newest entries; older entries that would exceed the budget are dropped. Redis-backed context (`ai_context_*`) is no longer used. The `max_context_tokens` limit is read live at runtime by `AiChatHistoryService` via `SettingsService` (no `config()` fallback) and defaults to 3000 — it is **not** exposed in the admin panel UI (removed from the AI assistant screen).
 _Enforced in:_ `app/Modules/Ai/Services/AiChatHistoryService.php`; `config/ai.php @ max_context_tokens` (default: 3000); `app/Services/Settings/SettingKeyRegistry.php @ ai.max_context_tokens`
@@ -346,6 +349,9 @@ _Enforced in:_ `app/Modules/Ai/Actions/AiAcceptMessage.php`; `app/Modules/Ai/Act
 **BR-026** — `SendAiReplyJob` (auto-reply mode) posts to the supergroup when the AI bot is configured, then delivers to the user via `DeliverAiAnswerToUser`. When AI bot is not configured, it skips the supergroup post and delivers directly. In both cases `AiMessage` is created with `status='accepted'`.
 _Enforced in:_ `app/Modules/Ai/Jobs/SendAiReplyJob.php`
 
+**BR-026a** — Draft idempotency is scoped to one generation event. Retrying the same queued event must reuse its stable generation key, while different client events may persist identical generated text as separate drafts.
+_Enforced in:_ `app/Modules/Ai/Jobs/SendAiDraftJob.php`
+
 **BR-027** — On Accept (both Telegram callback and admin panel `executeForDraft`), the supergroup draft message is **deleted** (not edited to plain text). `AiAcceptMessage::execute()` dispatches `SendTelegramMessageJob` with `deleteMessage` when `message_id` is present. `AiAcceptMessage::executeForDraft()` also dispatches delete when `message_id` is set. This cleans up the draft bubble from the supergroup topic after the manager accepts.
 _Enforced in:_ `app/Modules/Ai/Actions/AiAcceptMessage.php`
 
@@ -361,4 +367,6 @@ _Enforced in:_ `app/Modules/Ai/Actions/AiCancelMessage.php`
 
 ## Changelog
 
+- Version 1.6: Scoped AI draft deduplication to one generation event instead of the user's entire history.
+- Version 1.5: Prohibited exposing provider reasoning as a draft and documented the safe DeepSeek failure/retry behavior.
 - Version 1.4: Made draft persistence idempotent and topic-creation waiting race-safe.

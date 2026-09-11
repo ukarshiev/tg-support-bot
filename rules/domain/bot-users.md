@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the Bot User management domain — creation, identification, banning, and platform association of users.
 > **Context:** Read this file before modifying anything related to `BotUser` model, user creation, banning, topic management, or platform identification.
-> **Version:** 1.2
+> **Version:** 1.3
 
 ---
 
@@ -79,6 +79,9 @@ _Enforced in:_ `app/Models/BotUser.php`, `SendTelegramMessageJob`, `SendTelegram
 
 **BR-016** — The user-blocked notice may be posted only when the bot user already has a `topic_id`. The notice must never create a forum topic. The web conversation card must show the unavailable reason and timestamp even when no topic exists.
 _Enforced in:_ `app/Modules/Telegram/Actions/BanMessage.php`, `App\Livewire\Chat\ConversationPage`, `resources/views/livewire/chat/conversation-page.blade.php`
+
+**BR-016a** — A confirmed recipient-unavailable response produces only the dedicated user-blocked notice. The generic admin-reply failure notifier must not duplicate that event with a raw Telegram `code=403` message.
+_Enforced in:_ `app/Modules/Admin/Services/AdminReplyFailureNotifier.php`, `app/Modules/Telegram/Jobs/SendTelegramMessageJob.php`
 
 **BR-017** — Any manager message in a Telegram support forum topic whose first character is `/` is a service command and must be consumed before any platform delivery pipeline. It must never be persisted or delivered as a regular outgoing client message. Unknown commands must produce a topic-local help message built from the actually routed topic commands.
 _Enforced in:_ `app/Modules/Telegram/Controllers/TelegramBotController.php @ handleSupergroupCommand()`
@@ -178,6 +181,7 @@ The agent must use these methods to look up or create `BotUser`:
 
 ## Changelog
 
+- Version 1.3: Suppressed duplicate raw 403 delivery notifications after a confirmed user-blocked event.
 - Version 1.2: Added BR-017 and BR-018 for the forum-topic command barrier, ban/unban commands, Telegram bot mentions, and explicit manager confirmation.
 - Version 1.1: Added BR-014 through BR-016 for honest Telegram 403 classification, atomic availability state, no-topic notice suppression, and the operator-facing web badge.
 

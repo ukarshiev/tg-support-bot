@@ -152,8 +152,8 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
                     return;
                 }
             } else {
-                $this->markDeliveryOperationFailed($deliveryOperation, $response);
                 $this->telegramResponseHandler($response);
+                $this->markDeliveryOperationFailed($deliveryOperation, $response);
             }
         } catch (\Throwable $e) {
             Log::channel('app')->log($e->getCode() === 1 ? 'warning' : 'error', $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);

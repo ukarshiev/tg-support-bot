@@ -29,6 +29,8 @@ class SendAiDraftJob implements ShouldQueue
 
     public int $timeout = 30;
 
+    public readonly string $generationKey;
+
     /**
      * @param int                    $botUserId   BotUser primary key
      * @param TelegramUpdateDto|null $updateDto   Parsed webhook update; null when AI is triggered
@@ -40,6 +42,9 @@ class SendAiDraftJob implements ShouldQueue
         public readonly ?TelegramUpdateDto $updateDto,
         public readonly string $userMessage,
     ) {
+        $this->generationKey = $updateDto !== null && $updateDto->updateId > 0
+            ? 'telegram:update:' . $updateDto->updateId
+            : (string) \Illuminate\Support\Str::uuid();
         $this->onQueue('ai');
     }
 
@@ -111,7 +116,9 @@ class SendAiDraftJob implements ShouldQueue
 
             // Сохранение — граница надёжности: Telegram вызывается только отдельной
             // job после появления записи, видимой оператору в админке.
-            $sourceHash = hash('sha256', trim($sourceText));
+            // The same queued event may be retried, but two different client
+            // messages are allowed to produce identical useful answers.
+            $sourceHash = hash('sha256', $this->generationKey . '|' . trim($sourceText));
             $aiMessage = AiMessage::firstOrCreate([
                 'bot_user_id' => $botUser->id,
                 'source_hash' => $sourceHash,
