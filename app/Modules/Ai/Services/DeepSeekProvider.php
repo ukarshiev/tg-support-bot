@@ -13,6 +13,8 @@ class DeepSeekProvider extends BaseAiProvider
 {
     private const DEFAULT_MODEL = 'deepseek-v4-pro';
 
+    private const DEFAULT_MAX_TOKENS = 4000;
+
     private ?string $accessToken = null;
 
     public function __construct()
@@ -109,7 +111,7 @@ class DeepSeekProvider extends BaseAiProvider
         $messages = $this->buildMessages($request);
         $model = $this->resolveModelName();
         $this->modelName = $model;
-        $maxTokens = (int) ($this->config['max_tokens'] ?? 1000);
+        $maxTokens = (int) ($this->config['max_tokens'] ?? self::DEFAULT_MAX_TOKENS);
         $temperature = (float) ($this->config['temperature'] ?? 0.7);
 
         $response = Http::withHeaders([
@@ -158,13 +160,12 @@ class DeepSeekProvider extends BaseAiProvider
         $reasoningContent = trim((string) ($messagePayload['reasoning_content'] ?? ''));
 
         if ($content === '' && $reasoningContent !== '') {
-            Log::channel('app')->warning('DeepSeek API returned empty final content; fallback to reasoning_content.', [
-                'source' => 'ai_fallback',
+            Log::channel('app')->warning('DeepSeek API returned reasoning without final content; reasoning was discarded.', [
+                'source' => 'ai_reasoning_discarded',
                 'provider' => 'DeepSeek',
                 'model' => $response['model'] ?? null,
                 'finish_reason' => $response['choices'][0]['finish_reason'] ?? null,
             ]);
-            $content = $reasoningContent;
         }
 
         if ($content === '') {

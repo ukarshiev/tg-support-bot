@@ -160,6 +160,44 @@ class SendTelegramMessageJobTest extends TestCase
         Queue::assertPushed(NotifyAdminReplyDeliveryFailedJob::class, 1);
     }
 
+    public function test_confirmed_user_block_posts_only_dedicated_notice_without_raw_403_notification(): void
+    {
+        $blocked = new \App\Modules\Telegram\DTOs\TelegramAnswerDto(
+            ok: false,
+            response_code: 403,
+            type_error: 'FORBIDDEN',
+            rawData: [
+                'ok' => false,
+                'error_code' => 403,
+                'description' => 'Forbidden: bot was blocked by the user',
+            ],
+        );
+        $telegram = \Mockery::mock(TelegramMethods::class);
+        $telegram->shouldReceive('sendQueryTelegram')->once()->andReturn($blocked);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => $this->botUser->chat_id,
+            'text' => 'Ответ заблокировавшему пользователю',
+        ]);
+        $job = new SendTelegramMessageJob(
+            $this->botUser->id,
+            $this->dto,
+            $params,
+            'outgoing',
+            $telegram,
+        );
+
+        $job->handle();
+
+        $this->assertTrue($this->botUser->refresh()->is_unavailable);
+        $this->assertDatabaseHas('delivery_operations', [
+            'trace_id' => $job->traceId,
+            'status' => DeliveryOperation::STATUS_FAILED,
+        ]);
+        Queue::assertNotPushed(NotifyAdminReplyDeliveryFailedJob::class);
+        Queue::assertPushed(\App\Modules\Telegram\Jobs\SendTelegramTopicMessageJob::class, 1);
+    }
+
     public function test_outgoing_bot_message_is_mirrored_to_support_topic(): void
     {
         Queue::fake();

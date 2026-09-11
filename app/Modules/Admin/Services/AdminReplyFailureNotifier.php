@@ -32,6 +32,12 @@ class AdminReplyFailureNotifier
             return false;
         }
 
+        // The Telegram delivery handler already posts the dedicated
+        // "user blocked the bot" notice. Do not duplicate it with a raw 403.
+        if ($isAdminReplyFailure && $botUser->is_unavailable) {
+            return false;
+        }
+
         $notificationType = $isIncomingMirrorFailure ? 'support-mirror-failure' : 'admin-reply-failure';
         $notification = DeliveryOperation::firstOrCreate(
             ['operation_key' => hash('sha256', "{$notificationType}-notification:" . $failedOperation->operation_key)],

@@ -120,8 +120,11 @@ class DeepSeekProviderTest extends TestCase
         (new DeepSeekProvider())->processMessage($aiRequest);
 
         Http::assertSent(function ($request) {
-            $messages = $request->data()['messages'] ?? [];
+            $body = $request->data();
+            $messages = $body['messages'] ?? [];
+
             return count($messages) === 5
+                && $body['max_tokens'] === 4000
                 && $messages[0]['role'] === 'system'
                 && $messages[0]['content'] === 'System prompt'
                 && $messages[1] === ['role' => 'user', 'content' => 'Старое от пользователя']
@@ -166,12 +169,12 @@ class DeepSeekProviderTest extends TestCase
         });
     }
 
-    public function test_uses_reasoning_content_when_content_is_empty(): void
+    public function test_does_not_expose_reasoning_content_when_final_content_is_empty(): void
     {
         $settings = app(\App\Services\Settings\SettingsService::class);
         $settings->set('ai.deepseek_model', 'deepseek-v4-pro');
 
-        $expected = 'Ответ из reasoning_content';
+        $reasoning = 'Внутреннее размышление модели, которое нельзя показывать оператору.';
 
         Http::fake([
             $this->baseProviderUrl => Http::response([
@@ -181,9 +184,9 @@ class DeepSeekProviderTest extends TestCase
                         'message' => [
                             'role' => 'assistant',
                             'content' => '',
-                            'reasoning_content' => $expected,
+                            'reasoning_content' => $reasoning,
                         ],
-                        'finish_reason' => 'stop',
+                        'finish_reason' => 'length',
                     ],
                 ],
                 'usage' => ['total_tokens' => 15],
@@ -200,7 +203,6 @@ class DeepSeekProviderTest extends TestCase
 
         $aiResponse = (new DeepSeekProvider())->processMessage($aiRequest);
 
-        $this->assertNotNull($aiResponse);
-        $this->assertSame($expected, $aiResponse->response);
+        $this->assertNull($aiResponse);
     }
 }
