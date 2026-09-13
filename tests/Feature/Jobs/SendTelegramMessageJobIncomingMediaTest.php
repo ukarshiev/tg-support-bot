@@ -6,8 +6,10 @@ use App\Models\BotUser;
 use App\Models\Message;
 use App\Modules\Telegram\Api\TelegramMethods;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
+use App\Modules\Telegram\Jobs\SendContactMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMirrorJob;
+use App\Modules\Telegram\Jobs\TopicCreateJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\Answer\TelegramAnswerDtoMock;
@@ -68,6 +70,17 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
         return $mock;
     }
 
+    private function chainedMirrorJob(): SendTelegramMirrorJob
+    {
+        $topicJob = Queue::pushed(TopicCreateJob::class)->first();
+        $this->assertInstanceOf(TopicCreateJob::class, $topicJob);
+
+        $mirrorJob = unserialize($topicJob->chained[1]);
+        $this->assertInstanceOf(SendTelegramMirrorJob::class, $mirrorJob);
+
+        return $mirrorJob;
+    }
+
     public function test_incoming_photo_saves_caption_as_text_with_attachment(): void
     {
         Queue::fake();
@@ -100,8 +113,14 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
             'file_type' => 'photo',
             'file_id' => 'PHOTO_FILE_ID',
         ]);
-        Queue::assertPushed(SendTelegramMirrorJob::class, fn (SendTelegramMirrorJob $job): bool =>
-            $job->messageId === $message->id && $job->text === 'Подпись к фото');
+        Queue::assertPushedWithChain(TopicCreateJob::class, [
+            SendContactMessageJob::class,
+            SendTelegramMirrorJob::class,
+        ]);
+        $mirrorJob = $this->chainedMirrorJob();
+        $this->assertSame($message->id, $mirrorJob->messageId);
+        $this->assertSame('Подпись к фото', $mirrorJob->text);
+        Queue::assertNotPushed(SendTelegramMirrorJob::class);
     }
 
     public function test_incoming_photo_without_caption_saves_null_text(): void
@@ -126,8 +145,17 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
             'message_type' => 'incoming',
             'text' => null,
         ]);
-        Queue::assertPushed(SendTelegramMirrorJob::class, fn (SendTelegramMirrorJob $job): bool =>
-            $job->text === null);
+
+        $message = Message::where('bot_user_id', $botUser->id)->first();
+        $this->assertNotNull($message);
+        Queue::assertPushedWithChain(TopicCreateJob::class, [
+            SendContactMessageJob::class,
+            SendTelegramMirrorJob::class,
+        ]);
+        $mirrorJob = $this->chainedMirrorJob();
+        $this->assertSame($message->id, $mirrorJob->messageId);
+        $this->assertNull($mirrorJob->text);
+        Queue::assertNotPushed(SendTelegramMirrorJob::class);
     }
 
     public function test_incoming_plain_text_still_saved(): void

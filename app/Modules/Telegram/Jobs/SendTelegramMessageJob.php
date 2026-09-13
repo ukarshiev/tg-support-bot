@@ -425,10 +425,6 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
 
     private function isFirstVisibleIncomingMessage(BotUser $botUser, Message $message): bool
     {
-        if (empty($botUser->preferred_language_code)) {
-            return false;
-        }
-
         return !Message::query()
             ->where('bot_user_id', $botUser->id)
             ->where('message_type', 'incoming')

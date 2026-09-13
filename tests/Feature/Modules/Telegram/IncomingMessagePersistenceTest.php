@@ -14,6 +14,7 @@ use App\Modules\Max\Services\MaxMessageService;
 use App\Modules\Telegram\Actions\SelectLanguage;
 use App\Modules\Telegram\Controllers\TelegramBotController;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
+use App\Modules\Telegram\Jobs\SendContactMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMessageJob;
 use App\Modules\Telegram\Jobs\SendTelegramMirrorJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
@@ -167,7 +168,7 @@ class IncomingMessagePersistenceTest extends TestCase
         });
     }
 
-    public function test_telegram_incoming_without_selected_language_is_saved_and_queues_mirror(): void
+    public function test_telegram_incoming_without_selected_language_is_saved_and_queues_contact_before_mirror(): void
     {
         Queue::fake();
         Cache::flush();
@@ -201,8 +202,11 @@ class IncomingMessagePersistenceTest extends TestCase
             'from_id' => 556,
             'text' => 'Please help me',
         ]);
-        Queue::assertPushed(SendTelegramMirrorJob::class, 1);
-        Queue::assertNotPushed(TopicCreateJob::class);
+        Queue::assertPushedWithChain(TopicCreateJob::class, [
+            SendContactMessageJob::class,
+            SendTelegramMirrorJob::class,
+        ]);
+        Queue::assertNotPushed(SendTelegramMirrorJob::class);
     }
 
     public function test_telegram_language_selector_is_throttled_during_message_burst(): void
