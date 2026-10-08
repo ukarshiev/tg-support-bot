@@ -82,6 +82,7 @@ read_env() {
 $services = @("app", "queue", "reverb", "scheduler", "telegram_poller", "ai_telegram_poller")
 $images = @($services | ForEach-Object { "tg-support-bot-${_}:latest" })
 $manifest = @{}
+$lockAcquired = $false
 
 Write-Host "Deploy tg-support-bot from Windows to Ubuntu VM"
 Push-Location $PSScriptRoot
@@ -108,6 +109,29 @@ grep -q '^COMPOSE_FILE=docker-compose.yml:docker-compose.proxmox.yml' .env
             throw "-NoStart предназначен только для первой подготовки ВМ: стек уже работает, запуск без -NoStart обновит его штатно"
         }
     }
+    Invoke-Remote @'
+mkdir -p -- '.deploy'
+if ! mkdir -- '.deploy/lock'; then
+    if test -f '.deploy/lock/info'; then
+        cat -- '.deploy/lock/info' >&2
+    fi
+    printf '%s\n' 'Деплой уже идёт или прошлый оборвался. После проверки, что другой деплой не идёт, устаревший замок снимается командой rm -rf .deploy/lock на ВМ из каталога проекта.' >&2
+    exit 1
+fi
+'@ | Out-Null
+    $lockAcquired = $true
+    $commitHash = "unknown"
+    try {
+        $commitOutput = & git rev-parse --short HEAD 2> $null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($commitOutput -join ""))) {
+            $commitHash = ($commitOutput -join "").Trim()
+        }
+    } catch {
+        $commitHash = "unknown"
+    }
+    $lockInfo = "UTC: $([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))`nComputer: $env:COMPUTERNAME`nUser: $env:USERNAME`nCommit: $commitHash"
+    $quotedLockInfo = & $quoteBash $lockInfo
+    Invoke-Remote "printf '%s\n' $quotedLockInfo > '.deploy/lock/info'" | Out-Null
     if (-not $SkipBuild) {
         $status = & git status --porcelain
         if ($LASTEXITCODE -ne 0) { throw "Cannot check checkout cleanliness. Build stopped." }
@@ -139,9 +163,27 @@ grep -q '^COMPOSE_FILE=docker-compose.yml:docker-compose.proxmox.yml' .env
 
     Write-Host "4/11 Preserve previous VM images as rollback tags"
     $rollbackCommands = foreach ($service in $services) {
-        "if docker image inspect 'tg-support-bot-${service}:latest' >/dev/null 2>&1; then docker tag 'tg-support-bot-${service}:latest' 'tg-support-bot-rollback-${service}:previous'; fi"
+        $image = "tg-support-bot-${service}:latest"
+        $quotedImage = & $quoteBash $image
+        $quotedRollback = & $quoteBash "tg-support-bot-rollback-${service}:previous"
+        $quotedImageId = & $quoteBash $manifest[$image]
+        @'
+if current_id=$(docker image inspect --format '{{.Id}}' __IMAGE__ 2>/dev/null); then
+    if [[ "$current_id" != __IMAGE_ID__ ]]; then
+        docker tag __IMAGE__ __ROLLBACK__
+        updated=$((updated + 1))
+    else
+        unchanged=$((unchanged + 1))
+    fi
+else
+    unchanged=$((unchanged + 1))
+fi
+'@.Replace('__IMAGE__', $quotedImage).Replace('__IMAGE_ID__', $quotedImageId).Replace('__ROLLBACK__', $quotedRollback)
     }
-    Invoke-Remote ($rollbackCommands -join "`n") | Out-Null
+    $rollbackScript = "updated=0`nunchanged=0`n" + ($rollbackCommands -join "`n") + "`n" + @'
+printf 'Rollback tags: updated %s, left unchanged %s\n' "$updated" "$unchanged"
+'@
+    Invoke-Remote $rollbackScript | ForEach-Object { Write-Host $_ }
 
     Write-Host "5/11 Transfer archive and verify SHA256 and image IDs"
     $archiveName = "tg-support-bot-$([Guid]::NewGuid().ToString('N')).tar"
@@ -223,10 +265,10 @@ printf 'Fresh database backup: %s/%s\n' "$PWD" "$backup_path"
         Write-Host "9/11 Skip database migrations (миграции пропущены; use -ApplyMigrations -ConfirmProductionChange after approval)"
     }
 
-    Write-Host "10/11 Clear Laravel caches and restart services without volume removal"
+    Write-Host "10/11 Clear Laravel file caches without touching Redis or restarting services"
     Invoke-Remote @'
-docker compose exec -T app bash -lc 'php artisan cache:clear && php artisan config:clear && php artisan route:clear && php artisan view:clear'
-docker compose restart app nginx queue reverb scheduler telegram_poller ai_telegram_poller
+# Never run cache:clear here: it erases Telegram poller offsets in Redis.
+docker compose exec -T app bash -lc 'php artisan config:clear && php artisan route:clear && php artisan view:clear'
 '@ | Out-Null
 
     Write-Host "11/11 Check service status and both Telegram pollers"
@@ -271,5 +313,15 @@ done
     Write-Host "3) docker compose exec -T telegram_poller php artisan telegram:poller-health main --max-age=90"
     Write-Host "4) docker compose exec -T ai_telegram_poller php artisan telegram:poller-health ai --max-age=90"
 } finally {
-    Pop-Location
+    try {
+        if ($lockAcquired) {
+            try {
+                Invoke-Remote "rm -f -- '.deploy/lock/info'; rmdir -- '.deploy/lock'" | Out-Null
+            } catch {
+                Write-Warning "Не удалось снять замок деплоя. Проверьте .deploy/lock на ВМ перед следующим запуском. $($_.Exception.Message)" -WarningAction Continue
+            }
+        }
+    } finally {
+        Pop-Location
+    }
 }
