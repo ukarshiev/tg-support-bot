@@ -1,0 +1,19 @@
+# Дополнение для запуска TG Support Bot на Ubuntu-ВМ в Proxmox.
+# Сохраняет внутреннюю сеть pet и добавляет доступ к Telegram через прокси.
+# Внешнюю сеть openclaw-proxy создаёт и обслуживает сторонний Compose-проект.
+# Перед запуском бота эта сеть и прокси xray-egress должны быть доступны.
+services:
+    app:
+        networks: [pet, telegram_egress]
+    queue:
+        networks: [pet, telegram_egress]
+    scheduler:
+        networks: [pet, telegram_egress]
+    telegram_poller:
+        networks: [pet, telegram_egress]
+    ai_telegram_poller:
+        networks: [pet, telegram_egress]
+networks:
+    telegram_egress:
+        external: true
+        name: openclaw-proxy
