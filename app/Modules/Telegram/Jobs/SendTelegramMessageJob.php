@@ -231,6 +231,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
         if ($this->typeMessage === 'outgoing') {
             $fileId = $this->queryParams->photo
                 ?? $this->queryParams->document
+                ?? $this->queryParams->video
                 ?? $this->queryParams->voice
                 ?? $this->queryParams->sticker
                 ?? $this->queryParams->video_note
@@ -239,6 +240,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             $fileType = match (true) {
                 !empty($this->queryParams->photo) => 'photo',
                 !empty($this->queryParams->document) => 'document',
+                !empty($this->queryParams->video) => 'video',
                 !empty($this->queryParams->voice) => 'voice',
                 !empty($this->queryParams->sticker) => 'sticker',
                 !empty($this->queryParams->video_note) => 'video_note',
@@ -464,7 +466,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
 
     private function beginDeliveryOperation(BotUser $botUser, string $method, array $params): ?DeliveryOperation
     {
-        if ($this->typeMessage !== 'outgoing' || !in_array($method, ['sendMessage', 'sendPhoto', 'sendDocument', 'sendVoice'], true)) {
+        if ($this->typeMessage !== 'outgoing' || !in_array($method, ['sendMessage', 'sendPhoto', 'sendDocument', 'sendVoice', 'sendVideo'], true)) {
             return null;
         }
 

@@ -158,6 +158,50 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
         Queue::assertNotPushed(SendTelegramMirrorJob::class);
     }
 
+    public function test_incoming_video_saves_caption_and_video_attachment(): void
+    {
+        Queue::fake();
+        $botUser = $this->makeBotUser();
+
+        $dto = $this->incomingDtoWith([
+            'video' => ['file_id' => 'VIDEO_FILE_ID'],
+            'caption' => 'Подпись к видео клиента',
+        ], $botUser);
+
+        $this->assertNull($dto->text);
+        $this->assertSame('Подпись к видео клиента', $dto->caption);
+
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendVideo',
+            'chat_id' => '-100123456',
+            'video' => 'VIDEO_FILE_ID',
+            'caption' => 'Подпись к видео клиента',
+        ]);
+
+        (new SendTelegramMessageJob($botUser->id, $dto, $params, 'incoming', $this->mockTelegram()))->handle();
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'message_type' => 'incoming',
+            'text' => 'Подпись к видео клиента',
+        ]);
+
+        $message = Message::where('bot_user_id', $botUser->id)->first();
+        $this->assertNotNull($message);
+        $this->assertDatabaseHas('message_attachments', [
+            'message_id' => $message->id,
+            'file_type' => 'video',
+            'file_id' => 'VIDEO_FILE_ID',
+        ]);
+        Queue::assertPushedWithChain(TopicCreateJob::class, [
+            SendContactMessageJob::class,
+            SendTelegramMirrorJob::class,
+        ]);
+        $mirrorJob = $this->chainedMirrorJob();
+        $this->assertSame($message->id, $mirrorJob->messageId);
+        $this->assertSame('Подпись к видео клиента', $mirrorJob->text);
+    }
+
     public function test_incoming_plain_text_still_saved(): void
     {
         Queue::fake();

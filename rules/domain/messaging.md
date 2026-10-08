@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the core messaging domain — the routing of messages between users (Telegram, VK, External) and the support team.
 > **Context:** Read this file before modifying anything related to message sending, editing, routing, or platform integrations.
-> **Version:** 1.4
+> **Version:** 1.5
 
 ---
 
@@ -62,7 +62,7 @@ _Enforced in:_ `app/Models/BotUser.php @ getOrCreateByTelegramUpdate()`, `getOrC
 **BR-002** — Every sent message must be recorded in the `messages` table with `bot_user_id`, `platform`, `message_type`, `from_id`, `to_id`.
 _Enforced in:_ `app/Jobs/SendMessage/AbstractSendMessageJob.php @ saveMessage()`
 
-**BR-002a** — When persisting a Telegram message, `messages.text` must capture the **caption** for media messages (photo/document), since Telegram puts that text in `caption`, not `text`. `SendTelegramMessageJob::saveMessage()` resolves text as `text ?? caption` for both directions, so a photo-with-caption stores both the caption text and the attachment (otherwise the admin chat workspace would show only the image).
+**BR-002a** — When persisting a Telegram message, `messages.text` must capture the **caption** for media messages (photo/document/video), since Telegram puts that text in `caption`, not `text`. `SendTelegramMessageJob::saveMessage()` resolves text as `text ?? caption` for both directions, so media with a caption stores both the caption text and the attachment (otherwise the admin chat workspace would show only the file).
 _Enforced in:_ `app/Modules/Telegram/Jobs/SendTelegramMessageJob.php @ saveMessage()`
 
 **BR-003** — A user with `is_banned = true` must not receive replies and must receive a banned notification instead.
@@ -126,6 +126,9 @@ _Enforced in:_ `app/Modules/Telegram/Api/TelegramMethods.php`, `app/Modules/Tele
 
 **BR-016** — Main poller application-webhook rejections are attempted at approximately 0, 5, and 20 seconds. This spacing allows a short application restart to recover without quarantining a live client update, while the third deterministic rejection still moves a genuinely poisoned update to durable quarantine.
 _Enforced in:_ `app/Console/Commands/TelegramPollUpdates.php`
+
+**BR-017** — Ordinary Telegram `message.video` is a first-class media message distinct from `video_note`. The DTO/helper must preserve its `file_id` and `file_type=video`; operator video from a supergroup topic is delivered to the client with `sendVideo`, and client video is stored with an attachment and mirrored to the support topic with `sendVideo`. Caption remains in the dedicated `caption` field, is persisted as message text, and passes through the central 1024-character caption limiter. A video without caption must still use `sendVideo` and must never fall back to an empty `sendMessage`. Outgoing `sendVideo` to a client is tracked by a `DeliveryOperation` like `sendDocument`, so a retried job does not send the video twice.
+_Enforced in:_ `app/Helpers/TelegramHelper.php`, `app/Modules/Telegram/Services/Tg/TgMessageService.php`, `app/Modules/Telegram/Jobs/SendTelegramMessageJob.php`, `app/Modules/Telegram/Jobs/SendTelegramMirrorJob.php`
 
 ---
 
@@ -216,7 +219,8 @@ $keyboard = ['inline_keyboard' => [[['text' => 'Yes', 'callback_data' => 'yes']]
 
 ## Changelog
 
-- **1.4** — TGSUPBOT-92: added BR-015 single-request checkpoints and queued admin realtime broadcasts outside delivery jobs.
+- **1.5** — TGSUPBOT-92: added BR-015 single-request checkpoints and queued admin realtime broadcasts outside delivery jobs.
+- **1.4** — Added end-to-end ordinary Telegram video delivery, persistence, mirroring, and caption handling (TGSUPBOT-90).
 - **1.3** — Added multipart Telegram delivery checkpoints and spaced poller webhook retries.
 - **1.2** — Added BR-015: central Telegram text/caption limits, markup-safe splitting, full caption follow-up, and deterministic `MESSAGE_TOO_LONG` handling.
 

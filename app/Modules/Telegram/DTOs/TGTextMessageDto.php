@@ -22,6 +22,7 @@ use Spatie\LaravelData\Data;
  * @property string|null $file_id
  * @property string|null $photo
  * @property string|null $document
+ * @property string|null $video
  * @property string|null $voice
  * @property string|null $sticker
  * @property string|null $video_note
@@ -50,6 +51,7 @@ class TGTextMessageDto extends Data
         public ?string        $file_id = null,
         public ?string        $photo = null,
         public ?string        $document = null,
+        public ?string        $video = null,
         public ?UploadedFile  $uploaded_file = null,
         public ?string        $uploaded_file_path = null,
         public ?string        $voice = null,

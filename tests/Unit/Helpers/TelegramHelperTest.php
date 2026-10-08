@@ -128,6 +128,23 @@ class TelegramHelperTest extends TestCase
     }
 
     /**
+     * Тестируем извлечение обычного видео и его типа.
+     */
+    public function test_extract_file_id_and_type_from_video(): void
+    {
+        $data = [
+            'message' => [
+                'video' => [
+                    'file_id' => 'video_12345',
+                ],
+            ],
+        ];
+
+        $this->assertEquals('video_12345', TelegramHelper::extractFileId($data));
+        $this->assertEquals('video', TelegramHelper::extractFileType($data));
+    }
+
+    /**
      * Тестируем, когда ни один тип не присутствует → null
      */
     public function test_returns_null_when_no_supported_type(): void

@@ -242,6 +242,7 @@ class SendTelegramMirrorJob implements ShouldQueue
 
         [$method, $field] = match ($attachment->file_type) {
             'photo' => ['sendPhoto', 'photo'],
+            'video' => ['sendVideo', 'video'],
             'voice' => ['sendVoice', 'voice'],
             'sticker' => ['sendSticker', 'sticker'],
             'video_note' => ['sendVideoNote', 'video_note'],
@@ -249,7 +250,7 @@ class SendTelegramMirrorJob implements ShouldQueue
         };
 
         $params = $base + [$field => $attachment->file_id];
-        if (in_array($method, ['sendPhoto', 'sendDocument'], true) && is_string($message->text) && trim($message->text) !== '') {
+        if (in_array($method, ['sendPhoto', 'sendDocument', 'sendVideo'], true) && is_string($message->text) && trim($message->text) !== '') {
             $params['caption'] = $message->text;
         }
 

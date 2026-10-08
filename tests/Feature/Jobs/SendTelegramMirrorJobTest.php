@@ -124,6 +124,38 @@ class SendTelegramMirrorJobTest extends TestCase
             && $request['caption'] === 'Подпись клиента');
     }
 
+    public function test_incoming_video_is_mirrored_as_video_with_caption_and_topic(): void
+    {
+        app(SettingsService::class)->set('telegram.group_id', '-100123456789');
+        app(SettingsService::class)->set('telegram.token', 'test-token');
+
+        $botUser = BotUser::getOrCreateByTelegramUpdate(TelegramUpdateDtoMock::getDto());
+        $botUser->update(['topic_id' => 889]);
+        $message = Message::create([
+            'bot_user_id' => $botUser->id,
+            'platform' => 'telegram',
+            'message_type' => 'incoming',
+            'from_id' => 106,
+            'to_id' => 0,
+            'text' => 'Подпись видео клиента',
+        ]);
+        $message->attachments()->create(['file_id' => 'video-file', 'file_type' => 'video']);
+
+        Http::fake(['https://api.telegram.org/*' => Http::response([
+            'ok' => true,
+            'result' => ['message_id' => 1002, 'chat' => ['id' => -100123456789]],
+        ])]);
+
+        (new SendTelegramMirrorJob($botUser->id, $message->id, $message->text, 'telegram:update:106'))->handle();
+
+        Http::assertSent(fn ($request): bool =>
+            str_ends_with($request->url(), '/sendVideo')
+            && (int) $request['message_thread_id'] === 889
+            && $request['video'] === 'video-file'
+            && $request['caption'] === 'Подпись видео клиента');
+        Http::assertNotSent(fn ($request): bool => str_ends_with($request->url(), '/sendMessage'));
+    }
+
     public function test_mirror_without_topic_schedules_topic_creation_and_never_calls_general(): void
     {
         Queue::fake();
