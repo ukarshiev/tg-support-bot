@@ -221,6 +221,7 @@ Codex запрещено без исключений:
 - `php artisan test`, `vendor/bin/phpunit`, `.\scripts\run-isolated-tests.ps1` — тесты запускает только оркестратор;
 - deploy, правка `.env`, webhook-команды (`telegram:set-webhook`, `ai-bot:set-webhook`);
 - добавление composer/npm-зависимостей и новых env-ключей без явного запроса в промпте;
+- `composer install`, `composer update`, `npm ci`, `npm install`, любые изменения `vendor`, `node_modules` и lock-файлов; если проверка не запускается — остановиться и доложить, не чинить окружение;
 - правка файлов вне описанной задачи и файлов из чужого незакоммиченного WIP.
 
 Инварианты, нарушение которых считается critical на ревью: отправка в Telegram/VK/Max только через Jobs; AI-черновики не пишут в `messages`; секреты только через `SettingsService`, никаких `config()`/`env()` для runtime-настроек; DTO вместо `Request` в Services/Actions; токены и пароли не попадают в логи; новый класс — с PHPDoc и тестом по зеркальному пути `tests/Unit|Feature`.
