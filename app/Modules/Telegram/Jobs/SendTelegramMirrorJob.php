@@ -123,7 +123,7 @@ class SendTelegramMirrorJob implements ShouldQueue
             $method,
             $params,
             null,
-            $operationKey . '|' . $params['chat_id'] . '|' . $params['message_thread_id'],
+            $operationKey . '|' . (string) ($params['chat_id'] ?? '') . '|' . (string) ($params['message_thread_id'] ?? ''),
         );
 
         if ($response->ok) {
