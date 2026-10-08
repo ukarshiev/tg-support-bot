@@ -50,7 +50,7 @@ project_id `02bf3dd2-5ae3-4ba8-a53d-ccee86d46edc`.
 6. **Выход**: успех = у обеих моделей ноль critical/major. Лимит 3 круга; после 3-го
    без консенсуса — эскалация Владыке + skill `grilling` (/grill-me).
 7. **Delivery**: только Claude. Commit `TGSUPBOT-{N} | описание` → merge в `main` →
-   `git push origin main` → deploy `.\start-relaxaclub-windows-docker.ps1` → контроль
+   `git push origin main` → deploy `.\deploy-proxmox.ps1` на Ubuntu-ВМ → контроль
    сразу и через 2–3 часа → комментарий в Plane. Миграции только по процедуре
    `AGENTS.md` (дамп + явное подтверждение).
 8. **Самостоятельность решений**: развилки scope и дизайна агент решает сам, если есть
@@ -76,10 +76,10 @@ project_id `02bf3dd2-5ae3-4ba8-a53d-ccee86d46edc`.
 | Приёмка red → green | `git stash push -- <src>` | временный патч (`git diff` → `git apply -R` → `git apply`): стек stash общий для всех worktree |
 | Не перенесено | журнал `.codex-logs/routing.log`, плагин `codex`, пилот сравнения medium/high | — (добавляются отдельным решением Владыки) |
 | Ветки | канон `main` | ветка `tgsupbot-{N}-{slug}` → merge в `main`; `upstream` (prog-time) только для чтения |
-| Deploy | wrapper'ы сервисов, GPU-контракт worker | `.\start-relaxaclub-windows-docker.ps1`, миграции отдельным флагом после дампа |
+| Deploy | wrapper'ы сервисов, GPU-контракт worker | `.\deploy-proxmox.ps1` на Ubuntu-ВМ `192.168.1.101` (`docs/proxmox-docker.md`), миграции отдельным флагом после дампа |
 | Контроль после deploy | логи сервисов | `docker compose ps`, `telegram:poller-health main|ai`, логи `app queue telegram_poller ai_telegram_poller`, ночная `support-flow-check` |
 | Правила для Codex | `AGENTS.md` + `docs/agents/codex-rules.md` | `AGENTS.md` (раздел «Правила для Codex-исполнителя») → `CLAUDE.md` + `rules/` |
-| Боевой режим | отдельный контейнер | локальный Docker считается production: любые действия с БД по процедуре `AGENTS.md` |
+| Боевой режим | отдельный контейнер | production — стек на Ubuntu-ВМ (команды через `ssh karshiev@192.168.1.101`); стек на ПК остановлен и не запускается; любые действия с БД по процедуре `AGENTS.md` |
 
 ## Дедлайн Codex и контроль зависания (обязательно)
 
@@ -435,7 +435,7 @@ project_id 02bf3dd2-5ae3-4ba8-a53d-ccee86d46edc). Сначала обсужда�
 PHPStan level 6, CLAUDE.md и rules/. Codex НИКОГДА не выполняет git/docker/migrate/
 tinker/тесты/deploy.
 Приёмка: читаешь diff сам; зелёные тесты ≠ приёмка. Затем commit «TGSUPBOT-N | …» →
-merge в main → push origin main → deploy .\start-relaxaclub-windows-docker.ps1
+merge в main → push origin main → deploy .\deploy-proxmox.ps1 (прод на Ubuntu-ВМ 192.168.1.101)
 (миграции только после дампа и моего «да») → контроль сразу и через 2-3 часа
 (docker compose ps, poller-health, логи) → комментарий в Plane-задачу.
 Правила AGENTS.md и CLAUDE.md обязательны. Контракт связки: docs/agents/route-codex.md.

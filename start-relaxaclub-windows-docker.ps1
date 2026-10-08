@@ -1,12 +1,17 @@
 param(
     [switch]$RegenerateAppKey,
     [switch]$ApplyMigrations,
-    [switch]$ConfirmProductionChange
+    [switch]$ConfirmProductionChange,
+    [switch]$AllowLocalStack
 )
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "Start tg-support-bot for relaxaclub in Windows Docker"
+
+if (-not $AllowLocalStack) {
+    throw "Прод с 09.10.2026 работает на Ubuntu-ВМ. Запуск на ПК поднимет второй экземпляр бота: два поллера на одном токене Telegram и расхождение баз. Для деплоя используйте .\deploy-proxmox.ps1 (см. docs/proxmox-docker.md). Осознанный локальный запуск — откат после решения Владыки или стенд — только с флагом -AllowLocalStack."
+}
 
 if (($RegenerateAppKey -or $ApplyMigrations) -and -not $ConfirmProductionChange) {
     throw "Production-changing actions require -ConfirmProductionChange. Read the impact, create/verify a backup, and obtain explicit approval first."

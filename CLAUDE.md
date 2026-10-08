@@ -216,6 +216,10 @@ docker exec -it pet ./vendor/bin/phpunit
 docker exec -it pet php artisan test --filter=TestName
 ```
 
+### Production (since 09.10.2026)
+
+Production runs on the Ubuntu VM `192.168.1.101` in `/opt/tg-support-bot`, not on the local Docker Desktop. Deploy only with `.\deploy-proxmox.ps1` from a clean `main` checkout (see `docs/proxmox-docker.md`). Run production commands over SSH, e.g. `ssh karshiev@192.168.1.101 "cd /opt/tg-support-bot && docker compose ps"`. The local stack is stopped and must not be started: it would run a second bot instance on stale data.
+
 ---
 
 ## Code Standards
