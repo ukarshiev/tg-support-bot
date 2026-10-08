@@ -77,6 +77,52 @@ class SendTelegramMessageJobTest extends TestCase
         ]);
     }
 
+    public function test_outgoing_video_saves_caption_and_video_attachment(): void
+    {
+        $caption = 'Подпись оператора';
+        $dtoParams = TelegramAnswerDtoMock::getDtoParams();
+        $dtoParams['result']['caption'] = $caption;
+        unset($dtoParams['result']['text']);
+        $response = TelegramAnswerDtoMock::getDto($dtoParams);
+
+        /** @var TelegramMethods&\Mockery\MockInterface $mockTelegramMethods */
+        $mockTelegramMethods = \Mockery::mock(TelegramMethods::class);
+        $mockTelegramMethods
+            ->shouldReceive('sendQueryTelegram')
+            ->once()
+            ->with('sendVideo', \Mockery::on(fn (array $params): bool =>
+                ($params['video'] ?? null) === 'VIDEO_FROM_OPERATOR'
+                && ($params['caption'] ?? null) === $caption
+                && !array_key_exists('text', $params)), null, \Mockery::type('string'))
+            ->andReturn($response);
+
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendVideo',
+            'chat_id' => $this->botUser->chat_id,
+            'video' => 'VIDEO_FROM_OPERATOR',
+            'caption' => $caption,
+        ]);
+
+        (new SendTelegramMessageJob(
+            $this->botUser->id,
+            $this->dto,
+            $params,
+            'outgoing',
+            $mockTelegramMethods,
+        ))->handle();
+
+        $message = Message::where('bot_user_id', $this->botUser->id)
+            ->where('message_type', 'outgoing')
+            ->first();
+        $this->assertNotNull($message);
+        $this->assertSame($caption, $message->text);
+        $this->assertDatabaseHas('message_attachments', [
+            'message_id' => $message->id,
+            'file_type' => 'video',
+            'file_id' => 'VIDEO_FROM_OPERATOR',
+        ]);
+    }
+
     public function test_transient_failure_stays_retrying_and_later_delivery_succeeds(): void
     {
         $failed = new \App\Modules\Telegram\DTOs\TelegramAnswerDto(

@@ -185,6 +185,55 @@ class TgMessageServiceTest extends TestCase
         $this->assertEquals($this->botUser->id, $firstJob->botUserId);
     }
 
+    public function test_send_video_with_caption_from_supergroup(): void
+    {
+        $payload = $this->basicPayload;
+        unset($payload['message']['text']);
+        $payload['message']['chat']['type'] = 'supergroup';
+        $payload['message']['chat']['id'] = '-100000000000';
+        $payload['message']['video'] = [
+            'file_id' => 'video_with_caption',
+        ];
+        $payload['message']['caption'] = 'Подпись к видео';
+
+        $dto = TelegramUpdateDtoMock::getDto($payload);
+        (new TgMessageService($dto))->handleUpdate();
+
+        /** @phpstan-ignore-next-line */
+        $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $this->assertCount(1, $pushed);
+
+        $firstJob = $pushed[0]['job'];
+        $this->assertEquals('sendVideo', $firstJob->queryParams->methodQuery);
+        $this->assertEquals('video_with_caption', $firstJob->queryParams->video);
+        $this->assertEquals('Подпись к видео', $firstJob->queryParams->caption);
+        $this->assertNull($firstJob->queryParams->text);
+    }
+
+    public function test_send_video_without_caption_never_uses_empty_send_message(): void
+    {
+        $payload = $this->basicPayload;
+        unset($payload['message']['text']);
+        $payload['message']['chat']['type'] = 'supergroup';
+        $payload['message']['chat']['id'] = '-100000000000';
+        $payload['message']['video'] = [
+            'file_id' => 'video_without_caption',
+        ];
+
+        $dto = TelegramUpdateDtoMock::getDto($payload);
+        (new TgMessageService($dto))->handleUpdate();
+
+        /** @phpstan-ignore-next-line */
+        $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $this->assertCount(1, $pushed);
+
+        $firstJob = $pushed[0]['job'];
+        $this->assertEquals('sendVideo', $firstJob->queryParams->methodQuery);
+        $this->assertEquals('video_without_caption', $firstJob->queryParams->video);
+        $this->assertNull($firstJob->queryParams->caption);
+        $this->assertNull($firstJob->queryParams->text);
+    }
+
     public function test_send_voice(): void
     {
         $payload = $this->basicPayload;

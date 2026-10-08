@@ -69,6 +69,8 @@ class TelegramHelper
             $fileId = end($data['message']['photo'])['file_id'] ?? null;
         } elseif (!empty($data['message']['document'])) {
             $fileId = $data['message']['document']['file_id'];
+        } elseif (!empty($data['message']['video'])) {
+            $fileId = $data['message']['video']['file_id'];
         } elseif (!empty($data['message']['voice'])) {
             $fileId = $data['message']['voice']['file_id'];
         } elseif (!empty($data['message']['sticker'])) {
@@ -91,6 +93,8 @@ class TelegramHelper
             return 'photo';
         } elseif (!empty($data['message']['document'])) {
             return 'document';
+        } elseif (!empty($data['message']['video'])) {
+            return 'video';
         } elseif (!empty($data['message']['voice'])) {
             return 'voice';
         } elseif (!empty($data['message']['sticker'])) {

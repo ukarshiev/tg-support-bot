@@ -525,7 +525,7 @@ class TelegramBotController
                 'delivery_status' => Message::DELIVERY_DELIVERED,
                 'from_id' => $this->dataHook->messageId ?? 0,
                 'to_id' => 0,
-                // Capture caption for media messages (photo / document) per BR-002a.
+                // Capture caption for media messages (photo / document / video) per BR-002a.
                 'text' => $this->dataHook->text ?? $this->dataHook->caption ?? null,
             ]);
 

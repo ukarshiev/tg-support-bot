@@ -32,6 +32,8 @@ class TgMessageService extends FromTgMessageService
                 $this->sendPhoto();
             } elseif (!empty($this->update->rawData['message']['document'])) {
                 $this->sendDocument();
+            } elseif (!empty($this->update->rawData['message']['video'])) {
+                $this->sendVideo();
             } elseif (!empty($this->update->rawData['message']['location'])) {
                 $this->sendLocation();
             } elseif (!empty($this->update->rawData['message']['voice'])) {
@@ -125,6 +127,35 @@ class TgMessageService extends FromTgMessageService
     {
         $this->messageParamsDTO->methodQuery = 'sendDocument';
         $this->messageParamsDTO->document = $this->update->fileId;
+
+        $caption = $this->update->caption;
+        $keyboard = null;
+
+        if ($this->update->typeSource === 'supergroup' && $caption) {
+            $buttonParser = new ButtonParser();
+            $keyboardBuilder = new KeyboardBuilder();
+
+            $parsedMessage = $buttonParser->parse($caption);
+            $caption = $parsedMessage->text;
+            $keyboard = $keyboardBuilder->buildTelegramKeyboard($parsedMessage);
+        }
+
+        $this->messageParamsDTO->caption = $caption;
+        $this->messageParamsDTO->reply_markup = $keyboard;
+
+        if (!empty($this->update->entities) && ConversionMessageText::hasFormattingEntities($this->update->entities)) {
+            $this->messageParamsDTO->caption = ConversionMessageText::conversionMarkdownFormat($caption, $this->update->entities);
+            $this->messageParamsDTO->parse_mode = 'MarkdownV2';
+        }
+    }
+
+    /**
+     * @return void
+     */
+    protected function sendVideo(): void
+    {
+        $this->messageParamsDTO->methodQuery = 'sendVideo';
+        $this->messageParamsDTO->video = $this->update->fileId;
 
         $caption = $this->update->caption;
         $keyboard = null;
