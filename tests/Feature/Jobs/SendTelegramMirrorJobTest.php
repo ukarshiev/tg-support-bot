@@ -18,6 +18,43 @@ class SendTelegramMirrorJobTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_retry_after_delivery_operation_save_failure_reuses_telegram_response(): void
+    {
+        config(['cache.default' => 'array']);
+        Queue::fake();
+        app(SettingsService::class)->set('telegram.group_id', '-100123456789');
+        app(SettingsService::class)->set('telegram.token', 'test-token');
+        $botUser = BotUser::getOrCreateByTelegramUpdate(TelegramUpdateDtoMock::getDto());
+        $botUser->update(['topic_id' => 777, 'is_closed' => false]);
+        $message = Message::create([
+            'bot_user_id' => $botUser->id, 'platform' => 'telegram', 'message_type' => 'outgoing',
+            'from_id' => 111, 'to_id' => 222, 'text' => 'Mirror retry',
+        ]);
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => ['message_id' => 903]])]);
+        $failSave = true;
+        DeliveryOperation::updating(static function (DeliveryOperation $operation) use (&$failSave): void {
+            if ($failSave && $operation->status === DeliveryOperation::STATUS_DELIVERED) {
+                $failSave = false;
+                throw new \RuntimeException('Simulated operation save failure');
+            }
+        });
+        $job = new SendTelegramMirrorJob($botUser->id, $message->id, $message->text, 'mirror-retry-test');
+        try {
+            $job->handle();
+            $this->fail('The first operation completion must fail.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated operation save failure', $exception->getMessage());
+        }
+        $this->assertDatabaseHas('delivery_operations', ['message_id' => $message->id, 'status' => DeliveryOperation::STATUS_PROCESSING]);
+
+        unserialize(serialize($job))->handle();
+
+        Http::assertSentCount(1);
+        $this->assertDatabaseHas('delivery_operations', [
+            'message_id' => $message->id, 'status' => DeliveryOperation::STATUS_DELIVERED, 'external_message_id' => 903,
+        ]);
+    }
+
     public function test_mirror_is_idempotent_and_uses_dedicated_queue(): void
     {
         app(SettingsService::class)->set('telegram.group_id', '-100123456789');

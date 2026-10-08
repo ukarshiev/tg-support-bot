@@ -16,7 +16,7 @@ class TelegramMethods
      * @param string      $methodQuery    Telegram API method
      * @param array|null  $dataQuery      Telegram request payload
      * @param string|null $token          Bot token override
-     * @param string|null $idempotencyKey Stable operation key for multipart retries
+     * @param string|null $idempotencyKey Stable operation key for delivery retries
      *
      * @return TelegramAnswerDto
      */
@@ -33,6 +33,46 @@ class TelegramMethods
 
             $requests = app(TelegramOutgoingMessageLimiter::class)->prepare($methodQuery, $dataQuery ?? []);
             if (count($requests) === 1) {
+                $request = $requests[0];
+                $method = $request['method'];
+                if ($idempotencyKey !== null && (
+                    (str_starts_with($method, 'send') && $method !== 'sendChatAction')
+                    || in_array($method, ['copyMessage', 'forwardMessage'], true)
+                )) {
+                    $payload = json_encode($request['data'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+                    $cacheKey = 'telegram:request-single:' . hash('sha256', $idempotencyKey . '|' . $method . '|' . hash('sha256', $payload));
+                    $lock = Cache::lock($cacheKey . ':lock', 30);
+                    if ($lock->get() === false) {
+                        return self::answerFromData(['ok' => false, 'response_code' => 500], $method);
+                    }
+
+                    try {
+                        /** @var array<string, mixed>|null $checkpoint */
+                        $checkpoint = Cache::get($cacheKey);
+                        if ($checkpoint !== null) {
+                            return self::answerFromData($checkpoint, $method);
+                        }
+
+                        $response = self::sendSingleRequest($domainQuery, $method, $request['data']);
+                        if ($response->ok) {
+                            try {
+                                Cache::put($cacheKey, self::checkpointResponse($response), now()->addDay());
+                            } catch (\Throwable) {
+                                Log::channel('app')->warning('Telegram delivery checkpoint could not be saved', [
+                                    'source' => 'telegram_checkpoint_write_failed',
+                                    'method' => $method,
+                                ]);
+                            }
+                        } else {
+                            self::logOversizedRejection($response, $method, $request['data']);
+                        }
+
+                        return $response;
+                    } finally {
+                        $lock->release();
+                    }
+                }
+
                 $response = self::sendSingleRequest($domainQuery, $requests[0]['method'], $requests[0]['data']);
                 if (!$response->ok) {
                     self::logOversizedRejection($response, $requests[0]['method'], $requests[0]['data']);

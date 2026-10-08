@@ -10,6 +10,113 @@ use Tests\TestCase;
 
 class TelegramMethodsTest extends TestCase
 {
+    public function test_single_send_reuses_confirmed_response_for_same_key(): void
+    {
+        config(['cache.default' => 'array']);
+        Http::fakeSequence()->push(['ok' => true, 'result' => ['message_id' => 901]])
+            ->push(['ok' => true, 'result' => ['message_id' => 902]]);
+        $params = ['chat_id' => 123, 'text' => 'Hello'];
+        $first = TelegramMethods::sendQueryTelegram('sendMessage', $params, 'test-token', 'single-test');
+        $second = TelegramMethods::sendQueryTelegram('sendMessage', $params, 'test-token', 'single-test');
+
+        $this->assertTrue($first->ok);
+        $this->assertTrue($second->ok);
+        $this->assertSame(901, $second->message_id);
+        Http::assertSentCount(1);
+    }
+
+    public function test_single_send_without_key_is_not_deduplicated(): void
+    {
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => ['message_id' => 901]])]);
+        $params = ['chat_id' => 123, 'text' => 'Hello'];
+        TelegramMethods::sendQueryTelegram('sendMessage', $params, 'test-token');
+        TelegramMethods::sendQueryTelegram('sendMessage', $params, 'test-token');
+        Http::assertSentCount(2);
+    }
+
+    public function test_single_send_with_different_payload_is_not_deduplicated(): void
+    {
+        config(['cache.default' => 'array']);
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => ['message_id' => 901]])]);
+        TelegramMethods::sendQueryTelegram('sendMessage', ['chat_id' => 123, 'text' => 'First'], 'test-token', 'payload-test');
+        TelegramMethods::sendQueryTelegram('sendMessage', ['chat_id' => 123, 'text' => 'Second'], 'test-token', 'payload-test');
+        Http::assertSentCount(2);
+    }
+
+    public function test_checkpoint_write_failure_preserves_successful_response(): void
+    {
+        $lock = \Mockery::mock(\Illuminate\Contracts\Cache\Lock::class);
+        $lock->shouldReceive('get')->once()->andReturnTrue();
+        $lock->shouldReceive('release')->once()->andReturnTrue();
+        Cache::shouldReceive('lock')->once()->andReturn($lock);
+        Cache::shouldReceive('get')->once()->andReturnNull();
+        Cache::shouldReceive('put')->once()->andThrow(new \RuntimeException('Cache unavailable'));
+        Log::shouldReceive('channel')->with('app')->once()->andReturnSelf();
+        Log::shouldReceive('warning')->once()->withArgs(fn (string $message, array $context): bool =>
+            $context === ['source' => 'telegram_checkpoint_write_failed', 'method' => 'sendMessage']);
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => ['message_id' => 901]])]);
+
+        $response = TelegramMethods::sendQueryTelegram('sendMessage', ['chat_id' => 123, 'text' => 'Hello'], 'test-token', 'write-test');
+        $this->assertTrue($response->ok);
+        $this->assertSame(901, $response->message_id);
+        Http::assertSentCount(1);
+    }
+
+    public function test_busy_single_send_lock_prevents_http_request(): void
+    {
+        config(['cache.default' => 'array']);
+        $params = ['chat_id' => 123, 'text' => 'Hello'];
+        $lock = Cache::lock($this->singleRequestLockKey('lock-test', $params), 30);
+        $this->assertTrue($lock->get());
+        Http::fake();
+        try {
+            $response = TelegramMethods::sendQueryTelegram('sendMessage', $params, 'test-token', 'lock-test');
+            $this->assertFalse($response->ok);
+            $this->assertSame(500, $response->response_code);
+            Http::assertNothingSent();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function test_single_send_releases_lock_after_success(): void
+    {
+        config(['cache.default' => 'array']);
+        $params = ['chat_id' => 123, 'text' => 'Hello'];
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => ['message_id' => 901]])]);
+        $response = TelegramMethods::sendQueryTelegram('sendMessage', $params, 'test-token', 'release-test');
+        $this->assertTrue($response->ok);
+        $lock = Cache::lock($this->singleRequestLockKey('release-test', $params), 30);
+        try {
+            $this->assertTrue($lock->get());
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function test_single_send_releases_lock_after_sending_throws(): void
+    {
+        config(['cache.default' => 'array']);
+        $params = ['chat_id' => 123, 'text' => 'Hello'];
+        Http::fake(static function () {
+            throw new \RuntimeException('Simulated transport failure');
+        });
+        $response = TelegramMethods::sendQueryTelegram('sendMessage', $params, 'test-token', 'exception-test');
+        $this->assertFalse($response->ok);
+        $lock = Cache::lock($this->singleRequestLockKey('exception-test', $params), 30);
+        try {
+            $this->assertTrue($lock->get());
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @param array<string, mixed> $params */
+    private function singleRequestLockKey(string $key, array $params): string
+    {
+        return 'telegram:request-single:' . hash('sha256', $key . '|sendMessage|' . hash('sha256', json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR))) . ':lock';
+    }
+
     private int $chatId;
 
     protected function setUp(): void

@@ -97,6 +97,7 @@ return [
     */
 
     'waits' => [
+        'redis:broadcast' => 5,
         'redis:telegram-interactive' => 1,
         'redis:telegram-mirror' => 5,
         'redis:ai' => 15,
@@ -201,6 +202,18 @@ return [
     */
 
     'defaults' => [
+        'realtime' => [
+            'connection' => 'redis',
+            'queue' => ['broadcast'],
+            'balance' => 'simple',
+            'processes' => 1,
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
+            'memory' => 128,
+            'tries' => 3,
+            'timeout' => 10,
+            'nice' => 0,
+        ],
         'telegram-interactive' => [
             'connection' => 'redis',
             'queue' => ['telegram-interactive'],
@@ -239,19 +252,21 @@ return [
             'balanceCooldown' => 3,
             'memory' => 256,
             'tries' => 3,
-            'timeout' => 120,
+            'timeout' => 100,
             'nice' => 10,
         ],
     ],
 
     'environments' => [
         'production' => [
+            'realtime' => [],
             'telegram-interactive' => [],
             'telegram-mirror' => [],
             'background' => ['maxProcesses' => 6],
         ],
 
         'local' => [
+            'realtime' => [],
             'telegram-interactive' => [],
             'telegram-mirror' => [],
             'background' => ['maxProcesses' => 3],

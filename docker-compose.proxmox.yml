@@ -6,6 +6,8 @@ services:
     app:
         networks: [pet, telegram_egress]
     queue:
+        stop_signal: SIGTERM
+        stop_grace_period: 45s
         networks: [pet, telegram_egress]
     scheduler:
         networks: [pet, telegram_egress]
