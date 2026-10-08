@@ -234,6 +234,55 @@ class TgMessageServiceTest extends TestCase
         $this->assertNull($firstJob->queryParams->text);
     }
 
+    public function test_send_video_with_keyboard_from_supergroup(): void
+    {
+        $payload = $this->basicPayload;
+        unset($payload['message']['text']);
+        $payload['message']['chat']['type'] = 'supergroup';
+        $payload['message']['chat']['id'] = '-100000000000';
+        $payload['message']['video'] = ['file_id' => 'video_with_keyboard'];
+        $payload['message']['caption'] = "Видео с кнопкой\n[[Подробнее|url:https://example.com]]";
+
+        (new TgMessageService(TelegramUpdateDtoMock::getDto($payload)))->handleUpdate();
+
+        /** @phpstan-ignore-next-line */
+        $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $this->assertCount(1, $pushed);
+        $firstJob = $pushed[0]['job'];
+        $this->assertSame('sendVideo', $firstJob->queryParams->methodQuery);
+        $this->assertSame('video_with_keyboard', $firstJob->queryParams->video);
+        $this->assertSame('Видео с кнопкой', $firstJob->queryParams->caption);
+        $this->assertNotNull($firstJob->queryParams->reply_markup);
+        $this->assertSame([
+            'inline_keyboard' => [[['text' => 'Подробнее', 'url' => 'https://example.com']]],
+        ], $firstJob->queryParams->reply_markup);
+    }
+
+    public function test_send_video_with_formatted_caption_uses_markdown_v2(): void
+    {
+        $payload = $this->basicPayload;
+        unset($payload['message']['text']);
+        $payload['message']['chat']['type'] = 'supergroup';
+        $payload['message']['chat']['id'] = '-100000000000';
+        $payload['message']['video'] = ['file_id' => 'video_with_formatting'];
+        $payload['message']['caption'] = 'Bold video!';
+        $payload['message']['caption_entities'] = [
+            ['type' => 'bold', 'offset' => 0, 'length' => 4],
+        ];
+
+        (new TgMessageService(TelegramUpdateDtoMock::getDto($payload)))->handleUpdate();
+
+        /** @phpstan-ignore-next-line */
+        $pushed = Queue::pushedJobs()[SendTelegramMessageJob::class] ?? [];
+        $this->assertCount(1, $pushed);
+        $firstJob = $pushed[0]['job'];
+        $this->assertSame('sendVideo', $firstJob->queryParams->methodQuery);
+        $this->assertSame('video_with_formatting', $firstJob->queryParams->video);
+        $this->assertSame('*Bold* video\\!', $firstJob->queryParams->caption);
+        $this->assertSame('MarkdownV2', $firstJob->queryParams->parse_mode);
+        $this->assertNull($firstJob->queryParams->text);
+    }
+
     public function test_send_voice(): void
     {
         $payload = $this->basicPayload;

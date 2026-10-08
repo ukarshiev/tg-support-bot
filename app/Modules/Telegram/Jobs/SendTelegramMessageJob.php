@@ -460,7 +460,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
 
     private function beginDeliveryOperation(BotUser $botUser, string $method, array $params): ?DeliveryOperation
     {
-        if ($this->typeMessage !== 'outgoing' || !in_array($method, ['sendMessage', 'sendPhoto', 'sendDocument', 'sendVoice'], true)) {
+        if ($this->typeMessage !== 'outgoing' || !in_array($method, ['sendMessage', 'sendPhoto', 'sendDocument', 'sendVoice', 'sendVideo'], true)) {
             return null;
         }
 

@@ -123,6 +123,53 @@ class SendTelegramMessageJobTest extends TestCase
         ]);
     }
 
+    public function test_delivered_outgoing_video_is_not_sent_again_when_same_job_retries(): void
+    {
+        $this->botUser->update(['topic_id' => null]);
+        $response = TelegramAnswerDtoMock::getDto();
+
+        /** @var TelegramMethods&\Mockery\MockInterface $telegram */
+        $telegram = \Mockery::mock(TelegramMethods::class);
+        $telegram->shouldReceive('sendQueryTelegram')
+            ->once()
+            ->with('sendVideo', \Mockery::on(fn (array $params): bool =>
+                ($params['video'] ?? null) === 'IDEMPOTENT_VIDEO'), null, \Mockery::type('string'))
+            ->andReturn($response);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendVideo',
+            'chat_id' => $this->botUser->chat_id,
+            'video' => 'IDEMPOTENT_VIDEO',
+            'caption' => 'Видео оператора',
+        ]);
+        $job = new SendTelegramMessageJob(
+            $this->botUser->id,
+            $this->dto,
+            $params,
+            'outgoing',
+            $telegram,
+        );
+        $traceId = $job->traceId;
+
+        $job->handle();
+
+        $this->assertDatabaseHas('delivery_operations', [
+            'bot_user_id' => $this->botUser->id,
+            'trace_id' => $traceId,
+            'destination' => 'telegram-client',
+            'operation' => 'sendVideo',
+            'status' => DeliveryOperation::STATUS_DELIVERED,
+            'external_message_id' => $response->message_id,
+        ]);
+
+        $job->handle();
+
+        $this->assertSame($traceId, $job->traceId);
+        $this->assertSame(1, DeliveryOperation::where('trace_id', $traceId)
+            ->where('operation', 'sendVideo')
+            ->where('status', DeliveryOperation::STATUS_DELIVERED)
+            ->count());
+    }
+
     public function test_transient_failure_stays_retrying_and_later_delivery_succeeds(): void
     {
         $failed = new \App\Modules\Telegram\DTOs\TelegramAnswerDto(
