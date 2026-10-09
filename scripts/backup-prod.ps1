@@ -53,8 +53,17 @@ function Copy-ToRemote {
     #>
     param([string]$LocalPath, [string]$RemotePath)
     $target = "${VmHost}:$(& $quoteBash $RemotePath)"
-    & scp -q -O @sshOptions $LocalPath $target
-    if ($LASTEXITCODE -ne 0) { throw "Upload failed (exit $LASTEXITCODE)." }
+    $stderrPath = [IO.Path]::GetTempFileName()
+    try {
+        & scp -q -O @sshOptions $LocalPath $target 2> $stderrPath
+        if ($LASTEXITCODE -ne 0) {
+            $scpExitCode = $LASTEXITCODE
+            $diagnostics = (Get-Content -LiteralPath $stderrPath -Tail 5) -join "`n"
+            throw "Upload failed (exit $scpExitCode).`n$diagnostics"
+        }
+    } finally {
+        Remove-Item -LiteralPath $stderrPath -Force
+    }
 }
 
 function Copy-FromRemote {
@@ -63,8 +72,18 @@ function Copy-FromRemote {
     #>
     param([string]$RemotePath, [string]$LocalPath)
     $source = "${VmHost}:$(& $quoteBash $RemotePath)"
-    & scp -q -O @sshOptions $source $LocalPath
-    if ($LASTEXITCODE -ne 0) { throw "Download failed (exit $LASTEXITCODE)." }
+    $stderrPath = [IO.Path]::GetTempFileName()
+    try {
+        # Windows OpenSSH needs -T to accept filenames requested with shell quoting.
+        & scp -q -O -T @sshOptions $source $LocalPath 2> $stderrPath
+        if ($LASTEXITCODE -ne 0) {
+            $scpExitCode = $LASTEXITCODE
+            $diagnostics = (Get-Content -LiteralPath $stderrPath -Tail 5) -join "`n"
+            throw "Download failed (exit $scpExitCode).`n$diagnostics"
+        }
+    } finally {
+        Remove-Item -LiteralPath $stderrPath -Force
+    }
 }
 
 function Assert-Hash {
