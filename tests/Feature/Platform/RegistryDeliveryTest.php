@@ -11,6 +11,7 @@ use App\Modules\Feedback\Jobs\DeliverFeedbackFormJob;
 use App\Modules\Max\Api\MaxMethods;
 use App\Modules\Max\DTOs\MaxAnswerDto;
 use App\Platform\PlatformChannelRegistry;
+use Illuminate\Broadcasting\BroadcastEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -54,7 +55,12 @@ class RegistryDeliveryTest extends TestCase
         $this->assertEquals($botUser->id, $channel->aiAnswers[0]['botUser']->id);
         $this->assertEquals('Hello from Avito', $channel->aiAnswers[0]['text']);
 
-        Queue::assertNothingPushed();
+        // No core delivery job may be queued; the queued admin realtime
+        // notification for the saved message is the only job allowed.
+        $this->assertSame([], array_values(array_diff(
+            array_keys(Queue::pushedJobs()),
+            [BroadcastEvent::class],
+        )));
     }
 
     public function test_send_feedback_form_delegates_to_registered_channel_for_pluggable_platform(): void

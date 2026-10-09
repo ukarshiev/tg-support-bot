@@ -119,7 +119,12 @@ class SendTelegramMirrorJob implements ShouldQueue
             'attempt' => $this->attempts(),
         ]);
 
-        $response = (new TelegramMethods())->sendQueryTelegram($method, $params);
+        $response = (new TelegramMethods())->sendQueryTelegram(
+            $method,
+            $params,
+            null,
+            $operationKey . '|' . (string) ($params['chat_id'] ?? '') . '|' . (string) ($params['message_thread_id'] ?? ''),
+        );
 
         if ($response->ok) {
             $operation->update([

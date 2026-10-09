@@ -35,10 +35,43 @@ TELEGRAM_PROXY=socks5h://xray-egress:10808
 TRUSTED_PROXIES=127.0.0.1,192.168.0.101
 COMPOSE_PROJECT_NAME=tg-support-bot
 COMPOSE_FILE=docker-compose.yml:docker-compose.proxmox.yml
+REVERB_BROADCAST_HOST=reverb
+REVERB_BROADCAST_PORT=8080
+REVERB_BROADCAST_SCHEME=http
 ```
 
 Также нужны ключи `MAIN_DOMAIN`, `DB_DATABASE`, `DB_USERNAME` и остальные рабочие настройки приложения.
 Compose на ВМ автоматически использует оба файла благодаря `COMPOSE_FILE`.
+`REVERB_BROADCAST_*` задают внутренний адрес серверной трансляции в Reverb.
+Браузер продолжает использовать публичные `REVERB_HOST/PORT/SCHEME` и `VITE_*`.
+Если новые ключи отсутствуют, сервер использует прежние `REVERB_HOST/PORT/SCHEME`.
+События админки обслуживает отдельная очередь `broadcast` (супервизор `realtime`);
+сетевой таймаут Reverb — 3 с, воркера — 10 с. Миграций для TGSUPBOT-92 нет.
+
+## Обязательная подготовка перед обновлением работающего стека (TGSUPBOT-92)
+
+В согласованное окно на ВМ, из `/opt/tg-support-bot`, используя сервис `queue` текущей версии:
+
+1. Выполнить `php artisan horizon:pause` через `docker compose exec -T queue`.
+2. Опросить `php artisan horizon:supervisors` через тот же сервис раз в 2 с.
+   Дождаться, пока **все супервизоры текущей версии** покажут `paused`, не дольше 20 с.
+   Пустой список, ошибка команды или непонятный статус не подтверждают остановку.
+   При превышении срока отменить деплой и выполнить `php artisan horizon:continue`.
+3. После подтверждения паузы ждать пустых `reserved` у **всех очередей**, не дольше 150 с.
+   Проверять Redis sorted sets `queues:<queue>:reserved` с учётом фактического
+   `REDIS_PREFIX` и Redis DB из `config/queue.php` и `config/database.php` текущего релиза;
+   проверять все существующие очереди и все очереди супервизоров (включая `broadcast`).
+   Нужен нулевой `ZCARD` каждого reserved-набора, а не только пустая обычная очередь.
+   Опрос — раз в 2 с; ошибка чтения не считается нулём.
+   Если за 150 с reserved не опустели, отменить деплой и выполнить `php artisan horizon:continue`.
+4. Только после обеих проверок выполнить `.\deploy-proxmox.ps1` из чистого `main` на ПК.
+   Если деплой отменён или прерван, восстановить обработку текущей версии через
+   `php artisan horizon:continue` и проверить супервизоры.
+
+Эта процедура ручная: скрипт деплоя её не автоматизирует.
+Queue получает `SIGTERM` и до 45 с на штатное завершение вместо унаследованного `SIGQUIT`.
+Не очищать Redis/checkpoints между паузой и возобновлением незавершённых доставок:
+`cache:clear` может удалить подтверждение уже отправленного Telegram-сообщения.
 
 ## Команды деплоя с Windows-ПК
 

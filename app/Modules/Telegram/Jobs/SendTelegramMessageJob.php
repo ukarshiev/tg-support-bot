@@ -104,6 +104,12 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
 
             $deliveryOperation = $this->beginDeliveryOperation($botUser, $methodQuery, $params);
             if ($deliveryOperation?->status === DeliveryOperation::STATUS_DELIVERED) {
+                $message = $this->persistedMessage($botUser);
+                $this->queueOutgoingMirror($botUser, $message);
+                if (!empty($botUser->topic_id) && !$this->shouldSkipTopicIconUpdate()) {
+                    $this->updateTopic($botUser, $this->typeMessage);
+                }
+
                 return;
             }
 
@@ -485,6 +491,15 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
         );
 
         if ($operation->status !== DeliveryOperation::STATUS_DELIVERED) {
+            if ($this->attempts() > 1 && $operation->status === DeliveryOperation::STATUS_PROCESSING) {
+                Log::channel('app')->warning('Previous Telegram delivery attempt has an uncertain outcome', [
+                    'source' => 'telegram_delivery_previous_attempt_uncertain',
+                    'bot_user_id' => $botUser->id,
+                    'trace_id' => $this->traceId,
+                    'attempt' => $this->attempts(),
+                ]);
+            }
+
             $operation->update([
                 'status' => DeliveryOperation::STATUS_PROCESSING,
                 'attempts' => $operation->attempts + 1,

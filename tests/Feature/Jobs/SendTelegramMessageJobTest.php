@@ -15,6 +15,8 @@ use App\Modules\Telegram\Jobs\SendTelegramMirrorJob;
 use App\Modules\Telegram\Jobs\TopicCreateJob;
 use App\Services\Settings\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Tests\Mocks\Tg\Answer\TelegramAnswerDtoMock;
 use Tests\Mocks\Tg\TelegramUpdateDtoMock;
@@ -23,6 +25,73 @@ use Tests\TestCase;
 class SendTelegramMessageJobTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_serialized_retry_after_message_save_failure_does_not_send_twice(): void
+    {
+        config(['cache.default' => 'array']);
+        $this->botUser->update(['topic_id' => null]);
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => ['message_id' => 901]])]);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage', 'chat_id' => $this->botUser->chat_id,
+            'text' => 'Retry regression', 'token' => 'test-token',
+        ]);
+        $job = new SendTelegramMessageJob($this->botUser->id, $this->dto, $params, 'outgoing');
+        $serialized = serialize($job);
+        $failSave = true;
+        Message::saving(static function () use (&$failSave): void {
+            if ($failSave) {
+                $failSave = false;
+                throw new \RuntimeException('Simulated message save failure');
+            }
+        });
+        try {
+            $job->handle();
+            $this->fail('The first save must fail after Telegram confirms delivery.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated message save failure', $exception->getMessage());
+        }
+        $this->assertDatabaseCount('messages', 0);
+        $this->assertDatabaseHas('delivery_operations', ['trace_id' => $job->traceId, 'status' => DeliveryOperation::STATUS_PROCESSING]);
+        $retry = unserialize($serialized);
+        $queueJob = \Mockery::mock(\Illuminate\Contracts\Queue\Job::class);
+        $queueJob->shouldReceive('attempts')->andReturn(2);
+        $retry->setJob($queueJob);
+        Log::spy();
+        Log::shouldReceive('channel')->with('app')->andReturnSelf();
+        $retry->handle();
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/sendMessage'));
+        $this->assertDatabaseCount('messages', 1);
+        $this->assertDatabaseHas('messages', ['bot_user_id' => $this->botUser->id, 'to_id' => 901]);
+        $this->assertDatabaseHas('delivery_operations', ['trace_id' => $job->traceId, 'status' => DeliveryOperation::STATUS_DELIVERED]);
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool =>
+            ($context['source'] ?? null) === 'telegram_delivery_previous_attempt_uncertain'
+            && $context['bot_user_id'] === $this->botUser->id
+            && $context['trace_id'] === $job->traceId && $context['attempt'] === 2)->once();
+    }
+
+    public function test_already_delivered_retry_queues_mirror_without_client_request(): void
+    {
+        config(['cache.default' => 'array']);
+        app(SettingsService::class)->set('telegram.group_id', '-100123456789');
+        $this->botUser->update(['topic_id' => null]);
+        Http::fake(['*' => Http::response(['ok' => true, 'result' => ['message_id' => 902]])]);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage', 'chat_id' => $this->botUser->chat_id,
+            'text' => 'Mirror recovery', 'token' => 'test-token',
+        ]);
+        $job = new SendTelegramMessageJob($this->botUser->id, $this->dto, $params, 'outgoing');
+        $job->handle();
+        Queue::fake();
+        Http::fake();
+
+        unserialize(serialize($job))->handle();
+
+        Http::assertNothingSent();
+        Queue::assertPushed(SendTelegramMirrorJob::class, 1);
+        $this->assertDatabaseCount('messages', 1);
+    }
 
     private TelegramUpdateDto $dto;
 

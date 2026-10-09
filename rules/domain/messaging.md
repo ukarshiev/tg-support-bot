@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the core messaging domain — the routing of messages between users (Telegram, VK, External) and the support team.
 > **Context:** Read this file before modifying anything related to message sending, editing, routing, or platform integrations.
-> **Version:** 1.4
+> **Version:** 1.5
 
 ---
 
@@ -120,6 +120,8 @@ _Enforced in:_ `app/Modules/Telegram/Services/Tg/TgMessageService.php`
 - Inline keyboards are attached only to the final text part. The final part response is returned to the caller, while a media sequence returns the primary media response after all follow-up text succeeds.
 - `MESSAGE_TOO_LONG` is a deterministic error: log the Telegram method and actual content length, then do not retry.
 - Multipart sends checkpoint every successful part in the shared cache. A retry with the same operation key resumes at the first unconfirmed part; queue jobs must pass a stable key stored in their serialized payload or derived from a persisted draft.
+- Single sending requests (`send*` except `sendChatAction`, `copyMessage`, `forwardMessage`) with a stable operation key checkpoint successful responses for 24 hours. Include the method and request payload hash in the cache key. Acquire a 30-second lock without waiting; an occupied lock returns a retryable failure without HTTP. Release the lock on every exit. A checkpoint write failure must warn without exposing credentials or content and must preserve the successful response.
+- Admin realtime broadcasts must not execute inside delivery jobs. Queue `ConversationMessageCommitted` on `broadcast`; the dedicated `realtime` supervisor performs the network request. The observer only queues the event after commit. Keep `delivered` as completion of the existing delivery workflow, including message persistence.
 _Enforced in:_ `app/Modules/Telegram/Api/TelegramMethods.php`, `app/Modules/Telegram/Support/TelegramOutgoingMessageLimiter.php`, `app/Enums/TelegramError.php`
 
 **BR-016** — Main poller application-webhook rejections are attempted at approximately 0, 5, and 20 seconds. This spacing allows a short application restart to recover without quarantining a live client update, while the third deterministic rejection still moves a genuinely poisoned update to durable quarantine.
@@ -217,6 +219,7 @@ $keyboard = ['inline_keyboard' => [[['text' => 'Yes', 'callback_data' => 'yes']]
 
 ## Changelog
 
+- **1.5** — TGSUPBOT-92: added BR-015 single-request checkpoints and queued admin realtime broadcasts outside delivery jobs.
 - **1.4** — Added end-to-end ordinary Telegram video delivery, persistence, mirroring, and caption handling (TGSUPBOT-90).
 - **1.3** — Added multipart Telegram delivery checkpoints and spaced poller webhook retries.
 - **1.2** — Added BR-015: central Telegram text/caption limits, markup-safe splitting, full caption follow-up, and deterministic `MESSAGE_TOO_LONG` handling.

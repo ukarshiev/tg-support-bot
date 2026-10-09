@@ -4,14 +4,25 @@ namespace App\Events;
 
 use App\Models\Message;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class ConversationMessageCommitted implements ShouldBroadcastNow
+class ConversationMessageCommitted implements ShouldBroadcast
 {
     use Dispatchable;
     use SerializesModels;
+
+    public int $tries = 3;
+
+    /** @var list<int> */
+    public array $backoff = [1, 3];
+
+    /** Route realtime notifications to their dedicated worker. */
+    public function broadcastQueue(): string
+    {
+        return 'broadcast';
+    }
 
     public function __construct(
         public readonly int $conversationId,
