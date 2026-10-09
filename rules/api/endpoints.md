@@ -106,7 +106,7 @@ The generated JSON is the authoritative OpenAPI file. Do not write a separate `o
 
 | Method | Path | Middleware | Description |
 |---|---|---|---|
-| `GET` | `/api/files/{file_id}` | — | Stream file to client |
+| `GET` | `/api/files/{file_id}` | — | Stream file to client without storing it; supports one `Range: bytes=` (206/416), limit 20 MB, 240 req/min |
 | `POST` | `/api/files/{file_id}` | — | Download file |
 
 ### Web Routes

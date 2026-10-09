@@ -30,9 +30,14 @@
                 <source src="{{ $fileUrl }}">
             </audio>
         @elseif($isVideo)
-            <video controls class="{{ $attachment->file_type === 'video_note' ? 'max-w-[240px] max-h-[240px]' : 'max-w-[320px] max-h-[360px]' }} rounded-lg" @if($attachment->file_type === 'video') preload="metadata" @endif>
-                <source src="{{ $fileUrl }}">
-            </video>
+            <div x-data="{ failed: false }">
+                <video controls x-show="!failed" x-on:error.capture="failed = true" class="{{ $attachment->file_type === 'video_note' ? 'max-w-[240px] max-h-[240px]' : 'max-w-[320px] max-h-[360px]' }} rounded-lg" @if($attachment->file_type === 'video') preload="metadata" @endif>
+                    <source src="{{ $fileUrl }}">
+                </video>
+                <div x-show="failed" x-cloak class="text-xs text-text-secondary">
+                    Видео недоступно для просмотра (больше 20 МБ или не загрузилось). Откройте его в Telegram.
+                </div>
+            </div>
         @else
             <a
                 href="{{ $fileUrl }}"

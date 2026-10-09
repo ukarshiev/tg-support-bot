@@ -7,19 +7,32 @@ use App\Services\Settings\SettingsService;
 use App\Support\TelegramProxy;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Laravel\Telescope\Telescope;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+/**
+ * Proxy Telegram file bodies without storing them on the application server.
+ */
 class FileService
 {
     private string $botToken;
 
+    /** Resolve the active Telegram credential through runtime settings. */
     public function __construct()
     {
         $this->botToken = (string) app(SettingsService::class)->get('telegram.token');
     }
 
-    public function streamFile(string $fileId, string $disposition = 'inline'): StreamedResponse
+    /**
+     * Prepare a full file or single byte range from cached Telegram metadata.
+     *
+     * @throws FileProxyException When metadata is unavailable or exceeds the limit.
+     */
+    public function streamFile(string $fileId, string $disposition = 'inline', ?string $range = null): StreamedResponse
     {
         if ($fileId === '' || !in_array($disposition, ['inline', 'attachment'], true)) {
             throw new FileProxyException('invalid_request', 403);
@@ -34,136 +47,214 @@ class FileService
         }
 
         $maxBytes = (int) config('file_proxy.max_bytes', 20 * 1024 * 1024);
-        if (is_numeric($fileSize) && (int) $fileSize > $maxBytes) {
+        if (is_numeric($fileSize) && (float) $fileSize > $maxBytes) {
             throw new FileProxyException('file_too_large', 413);
         }
+        $size = is_numeric($fileSize) && (float) $fileSize >= 0 ? (int) $fileSize : null;
+        $range = $size !== null ? $this->singleRange($range) : null;
+        $status = 200;
+        $upstreamRange = null;
 
-        $temporaryPath = tempnam(sys_get_temp_dir(), 'tg-file-');
-        if ($temporaryPath === false) {
-            throw new FileProxyException('temporary_storage_failed', 502);
+        $headers = [
+            'Content-Type' => $this->getFileContentType($filePath),
+            'Content-Disposition' => $disposition . '; filename="' . $this->safeFilename($filePath) . '"',
+            'Accept-Ranges' => 'bytes',
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, no-store',
+            'Referrer-Policy' => 'no-referrer',
+            'X-Accel-Buffering' => 'no',
+        ];
+        if ($size !== null) {
+            $headers['Content-Length'] = (string) $size;
+        }
+        if ($range !== null && $size !== null) {
+            [$first, $last] = explode('-', substr($range, 6), 2);
+            $start = $first === '' ? max(0, $size - (int) $last) : (int) $first;
+            $end = $first === '' || $last === '' ? $size - 1 : min((int) $last, $size - 1);
+
+            if ($start >= $size) {
+                $status = 416;
+                $headers['Content-Range'] = 'bytes */' . $size;
+                $headers['Content-Length'] = '0';
+            } else {
+                $status = 206;
+                $headers['Content-Range'] = "bytes {$start}-{$end}/{$size}";
+                $headers['Content-Length'] = (string) ($end - $start + 1);
+                $upstreamRange = "bytes={$start}-{$end}";
+            }
         }
 
-        try {
-            $response = $this->downloadTelegramFile($filePath, $temporaryPath, $maxBytes);
-            $contentLength = (int) ($response->header('Content-Length') ?: filesize($temporaryPath));
-
-            if ($contentLength > $maxBytes || filesize($temporaryPath) > $maxBytes) {
-                throw new FileProxyException('file_too_large', 413);
+        return response()->stream(function () use ($filePath, $status, $upstreamRange): void {
+            if ($status === 416) {
+                return;
             }
 
-            $filename = $this->safeFilename($filePath);
-            $headers = [
-                'Content-Type' => $this->getFileContentType($filePath),
-                'Content-Disposition' => $disposition . '; filename="' . $filename . '"',
-                'Content-Length' => (string) filesize($temporaryPath),
-                'X-Content-Type-Options' => 'nosniff',
-                'Cache-Control' => 'private, no-store',
-                'Referrer-Policy' => 'no-referrer',
-            ];
-
-            register_shutdown_function(static function () use ($temporaryPath): void {
-                if (is_file($temporaryPath)) {
-                    @unlink($temporaryPath);
+            $out = null;
+            try {
+                $out = $this->openOutputStream();
+                $this->downloadTelegramFile($filePath, $out, $upstreamRange);
+            } catch (\Throwable $e) {
+                Log::channel('app')->warning('file_proxy_stream_failed', [
+                    'error_code' => $e instanceof FileProxyException ? $e->errorCode : 'upstream_error',
+                    'trace_id' => (string) Str::uuid(),
+                ]);
+            } finally {
+                if (is_resource($out)) {
+                    fclose($out);
                 }
-            });
-
-            return response()->stream(static function () use ($temporaryPath): void {
-                try {
-                    $stream = fopen($temporaryPath, 'rb');
-                    if ($stream !== false) {
-                        fpassthru($stream);
-                        fclose($stream);
-                    }
-                } finally {
-                    if (is_file($temporaryPath)) {
-                        @unlink($temporaryPath);
-                    }
-                }
-            }, 200, $headers);
-        } catch (\Throwable $e) {
-            if (is_file($temporaryPath)) {
-                @unlink($temporaryPath);
             }
-
-            throw $e;
-        }
+        }, $status, $headers);
     }
 
-    public function downloadFile(string $fileId): StreamedResponse
+    /** Stream a file as an attachment, optionally forwarding one byte range. */
+    public function downloadFile(string $fileId, ?string $range = null): StreamedResponse
     {
-        return $this->streamFile($fileId, 'attachment');
+        return $this->streamFile($fileId, 'attachment', $range);
     }
 
+    /**
+     * Cache successful Bot API metadata for ten minutes, scoped to the credential.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws FileProxyException When Telegram cannot resolve the file.
+     */
     public function getTelegramFile(string $fileId): array
     {
         if ($this->botToken === '') {
             throw new FileProxyException('upstream_unavailable', 502);
         }
 
-        try {
-            $url = "https://api.telegram.org/bot{$this->botToken}/getFile";
-            $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
-                ->timeout((int) config('file_proxy.timeout', 15))
-                ->withoutRedirecting();
-            $response = TelegramProxy::apply($client, $url)->get($url, [
-                'file_id' => $fileId,
-            ]);
-        } catch (ConnectionException $e) {
-            throw new FileProxyException('upstream_timeout', 504, $e);
-        }
+        $cacheKey = 'telegram-file-metadata:' . hash('sha256', hash('sha256', $this->botToken) . '|' . $fileId);
 
-        $this->assertTelegramResponse($response);
-        $json = $response->json();
+        return Cache::remember($cacheKey, 600, function () use ($fileId): array {
+            try {
+                $url = "https://api.telegram.org/bot{$this->botToken}/getFile";
+                $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
+                    ->timeout((int) config('file_proxy.timeout', 15))
+                    ->withoutRedirecting();
+                // Telescope records full request URLs, which contain the bot token.
+                $response = Telescope::withoutRecording(fn (): Response => TelegramProxy::apply($client, $url)->get($url, [
+                    'file_id' => $fileId,
+                ]));
+            } catch (ConnectionException) {
+                throw new FileProxyException('upstream_timeout', 504);
+            } catch (\Throwable) {
+                throw new FileProxyException('upstream_error', 502);
+            }
 
-        if (!is_array($json) || !array_key_exists('ok', $json)) {
-            throw new FileProxyException('upstream_invalid_response', 502);
-        }
+            $this->assertTelegramResponse($response);
+            $json = $response->json();
 
-        if ($json['ok'] !== true) {
-            throw new FileProxyException('file_not_found', 404);
-        }
+            if (!is_array($json) || !array_key_exists('ok', $json)) {
+                throw new FileProxyException('upstream_invalid_response', 502);
+            }
 
-        return $json;
+            if ($json['ok'] !== true || !is_string($json['result']['file_path'] ?? null) || $json['result']['file_path'] === '') {
+                throw new FileProxyException('file_not_found', 404);
+            }
+
+            return $json;
+        });
     }
 
-    protected function downloadTelegramFile(string $filePath, string $temporaryPath, int $maxBytes): Response
+    /**
+     * Let cURL write directly to the output sink, including through SOCKS proxies.
+     *
+     * @param resource $out The writable client output stream.
+     *
+     * @throws FileProxyException When the upstream cannot serve the file.
+     */
+    protected function downloadTelegramFile(string $filePath, $out, ?string $range = null): void
     {
-        $sizeExceeded = false;
-
         try {
             $url = "https://api.telegram.org/file/bot{$this->botToken}/{$filePath}";
             $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
-                ->timeout((int) config('file_proxy.timeout', 15))
+                ->timeout(0)
                 ->withoutRedirecting()
                 ->withOptions([
-                    'sink' => $temporaryPath,
-                    'progress' => static function (int $downloadSize, int $downloaded, int $uploadSize, int $uploaded) use ($maxBytes, &$sizeExceeded): void {
-                        if ($downloadSize > $maxBytes || $downloaded > $maxBytes) {
-                            $sizeExceeded = true;
-                            throw new \RuntimeException('file_size_limit_exceeded');
-                        }
-                    },
+                    'sink' => $out,
+                    'curl' => [
+                        CURLOPT_LOW_SPEED_LIMIT => 1024,
+                        CURLOPT_LOW_SPEED_TIME => (int) config('file_proxy.read_timeout', 30),
+                    ],
                 ]);
-            $response = TelegramProxy::apply($client, $url)->get($url);
-        } catch (ConnectionException $e) {
-            if ($sizeExceeded) {
-                throw new FileProxyException('file_too_large', 413, $e);
+            if ($range !== null) {
+                $client->withHeaders(['Range' => $range]);
             }
-
-            throw new FileProxyException('upstream_timeout', 504, $e);
-        } catch (\Throwable $e) {
-            if ($sizeExceeded) {
-                throw new FileProxyException('file_too_large', 413, $e);
-            }
-
-            throw new FileProxyException('upstream_error', 502, $e);
+            $response = Telescope::withoutRecording(fn (): Response => TelegramProxy::apply($client, $url)->get($url));
+        } catch (ConnectionException) {
+            throw new FileProxyException('upstream_timeout', 504);
+        } catch (\Throwable) {
+            throw new FileProxyException('upstream_error', 502);
         }
 
-        $this->assertTelegramResponse($response);
-
-        return $response;
+        try {
+            $this->assertTelegramResponse($response);
+            if (!in_array($response->status(), [200, 206], true)) {
+                throw new FileProxyException('upstream_invalid_response', 502);
+            }
+        } finally {
+            $response->close();
+        }
     }
 
+    /**
+     * Disable PHP buffering so the cURL sink reaches the client as data arrives.
+     *
+     * @return resource The client output, never a temporary file.
+     *
+     * @throws FileProxyException When client output cannot be opened.
+     */
+    protected function openOutputStream()
+    {
+        if (function_exists('set_time_limit')) {
+            set_time_limit(0);
+        }
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+
+        $out = fopen('php://output', 'wb');
+        if ($out === false) {
+            throw new FileProxyException('upstream_error', 502);
+        }
+
+        return $out;
+    }
+
+    /** Ignore malformed, multipart, overflowing, reversed or empty suffix ranges. */
+    private function singleRange(?string $range): ?string
+    {
+        if ($range === null || preg_match('/\Abytes=(?:[0-9]+-[0-9]*|-[0-9]+)\z/', $range) !== 1) {
+            return null;
+        }
+
+        [$start, $end] = explode('-', substr($range, 6), 2);
+        $maximum = (string) PHP_INT_MAX;
+        foreach ([$start, $end] as $value) {
+            $digits = ltrim($value, '0');
+            if (strlen($digits) > strlen($maximum) || (strlen($digits) === strlen($maximum) && strcmp($digits, $maximum) > 0)) {
+                return null;
+            }
+        }
+        if ($start === '') {
+            return ltrim($end, '0') !== '' ? $range : null;
+        }
+
+        // Compare decimal strings without overflowing PHP integers.
+        if ($end !== '') {
+            $start = ltrim($start, '0');
+            $end = ltrim($end, '0');
+            if (strlen($start) > strlen($end) || (strlen($start) === strlen($end) && strcmp($start, $end) > 0)) {
+                return null;
+            }
+        }
+
+        return $range;
+    }
+
+    /** Map Telegram HTTP failures to the existing safe proxy error codes. */
     private function assertTelegramResponse(Response $response): void
     {
         if ($response->status() === 429) {
@@ -179,6 +270,7 @@ class FileService
         }
     }
 
+    /** Strip unsafe characters from a filename used in Content-Disposition. */
     private function safeFilename(string $filePath): string
     {
         $filename = preg_replace('/[^A-Za-z0-9._-]/', '_', basename($filePath));
@@ -186,6 +278,7 @@ class FileService
         return is_string($filename) && $filename !== '' ? $filename : 'telegram-file';
     }
 
+    /** Resolve a safe content type from the Telegram file extension. */
     protected function getFileContentType(string $filePath): string
     {
         $mapping = [
