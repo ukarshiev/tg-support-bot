@@ -13,7 +13,7 @@
 
         $isImage = in_array($attachment->file_type, ['photo', 'sticker']);
         $isVoice = in_array($attachment->file_type, ['voice', 'audio_message']);
-        $isVideo = $attachment->file_type === 'video_note';
+        $isVideo = in_array($attachment->file_type, ['video', 'video_note'], true);
     @endphp
 
     <div class="mt-1">
@@ -30,7 +30,7 @@
                 <source src="{{ $fileUrl }}">
             </audio>
         @elseif($isVideo)
-            <video controls class="max-w-[240px] max-h-[240px] rounded-lg">
+            <video controls class="{{ $attachment->file_type === 'video_note' ? 'max-w-[240px] max-h-[240px]' : 'max-w-[320px] max-h-[360px]' }} rounded-lg" @if($attachment->file_type === 'video') preload="metadata" @endif>
                 <source src="{{ $fileUrl }}">
             </video>
         @else
