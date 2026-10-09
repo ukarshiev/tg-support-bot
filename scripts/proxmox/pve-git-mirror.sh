@@ -19,8 +19,45 @@ export GIT_ASKPASS=/bin/false
 export LC_ALL=C
 
 log() { printf '%s %s %s %s %s\n' "$(date '+%F %T')" "$1" "$2" "$3" "$4" >> "$LOG"; }
+# Best effort only: never expose the secret URL or change the backup result.
+heartbeat() (
+    set +x
+    trap - ERR
+    local result=$1 name=$2 conf=$3 mode key value url=''
+    if [ ! -f "$conf" ] || [ -L "$conf" ]; then
+        log WARN heartbeat 'not delivered' 0 || :
+        return 0
+    fi
+    mode=$(stat -c '%a' -- "$conf" 2>/dev/null) || {
+        log WARN heartbeat 'not delivered' 0 || :
+        return 0
+    }
+    if [[ ! "$mode" =~ ^[0-7]{3,4}$ ]] || (( (8#$mode & 077) != 0 )); then
+        log WARN heartbeat 'not delivered' 0 || :
+        return 0
+    fi
+    while IFS='=' read -r key value || [ -n "$key" ]; do
+        if [ "$key" = "$name" ]; then
+            url=$value
+            break
+        fi
+    done < "$conf"
+    if [[ ! "$url" =~ ^https://[A-Za-z0-9.-]+/[A-Za-z0-9/_-]+$ ]]; then
+        log WARN heartbeat 'not delivered' 0 || :
+        return 0
+    fi
+    [ "$result" = 0 ] || url="$url/fail"
+    # stdin config keeps the URL out of process arguments; ignore user curl config.
+    # The outer timeout also bounds retry delays (including server Retry-After).
+    if ! printf 'url = "%s"\n' "$url" | timeout -k 5 75 curl --disable --config - \
+        -fsS --max-time 20 --retry 2 --retry-delay 5 > /dev/null 2>&1; then
+        log WARN heartbeat 'not delivered' 0 || :
+    fi
+    return 0
+) > /dev/null 2>&1
 exec 9>/run/pve-git-mirror.lock || exit 1
 flock -n 9 || { log FAIL lock pve-git-mirror 0; exit 1; }
+trap 'rc=$?; trap - EXIT ERR; heartbeat "$rc" pve-git-mirror /etc/pve-backup/heartbeats.conf || :; exit "$rc"' EXIT
 
 WORK=''
 NFS_OWNED=0
@@ -44,6 +81,7 @@ cleanup() {
     if [ -n "$WORK" ]; then
         rm -rf -- "$WORK" || { log FAIL cleanup work 0; rc=1; }
     fi
+    heartbeat "$rc" pve-git-mirror /etc/pve-backup/heartbeats.conf || :
     exit "$rc"
 }
 trap cleanup EXIT

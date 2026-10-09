@@ -13,9 +13,46 @@ KEEP=30
 LOG=/var/log/pve-host-backup.log
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+# Best effort only: never expose the secret URL or change the backup result.
+heartbeat() (
+    set +x
+    trap - ERR
+    local result=$1 name=$2 conf=$3 mode key value url=''
+    if [ ! -f "$conf" ] || [ -L "$conf" ]; then
+        log "WARN heartbeat not delivered" || :
+        return 0
+    fi
+    mode=$(stat -c '%a' -- "$conf" 2>/dev/null) || {
+        log "WARN heartbeat not delivered" || :
+        return 0
+    }
+    if [[ ! "$mode" =~ ^[0-7]{3,4}$ ]] || (( (8#$mode & 077) != 0 )); then
+        log "WARN heartbeat not delivered" || :
+        return 0
+    fi
+    while IFS='=' read -r key value || [ -n "$key" ]; do
+        if [ "$key" = "$name" ]; then
+            url=$value
+            break
+        fi
+    done < "$conf"
+    if [[ ! "$url" =~ ^https://[A-Za-z0-9.-]+/[A-Za-z0-9/_-]+$ ]]; then
+        log "WARN heartbeat not delivered" || :
+        return 0
+    fi
+    [ "$result" = 0 ] || url="$url/fail"
+    # stdin config keeps the URL out of process arguments; ignore user curl config.
+    # The outer timeout also bounds retry delays (including server Retry-After).
+    if ! printf 'url = "%s"\n' "$url" | timeout -k 5 75 curl --disable --config - \
+        -fsS --max-time 20 --retry 2 --retry-delay 5 > /dev/null 2>&1; then
+        log "WARN heartbeat not delivered" || :
+    fi
+    return 0
+) > /dev/null 2>&1
 trap 'log "FAIL command at line $LINENO"' ERR
 exec 9>/run/pve-host-backup.lock
 flock -n 9 || { log "FAIL another host backup is running"; exit 1; }
+trap 'rc=$?; trap - EXIT ERR; heartbeat "$rc" pve-host-backup /etc/pve-backup/heartbeats.conf || :; exit "$rc"' EXIT
 # Never write a large backup into the host root when the ZFS pool is absent.
 mountpoint -q /superdata && [ "$(findmnt -rn -M /superdata -o FSTYPE)" = zfs ] \
     || { log "FAIL superdata is not mounted as ZFS"; exit 1; }
@@ -38,6 +75,7 @@ cleanup() {
     fi
     rm -rf -- "$WORK" "$LOCAL_DIR/$NAME.part" || rc=1
     [ "$rc" = 0 ] || log "FAIL run or cleanup; check NFS mount"
+    heartbeat "$rc" pve-host-backup /etc/pve-backup/heartbeats.conf || :
     exit "$rc"
 }
 trap cleanup EXIT
