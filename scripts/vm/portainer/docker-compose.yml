@@ -1,0 +1,19 @@
+# Portainer CE for the VM; install in /home/karshiev/portainer.
+# Start from that directory: docker compose up -d
+name: portainer
+
+services:
+  portainer:
+    image: portainer/portainer-ce:2.45.2
+    container_name: portainer
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "192.168.1.101:9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:
