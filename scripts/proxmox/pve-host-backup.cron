@@ -1,0 +1,4 @@
+# Proxmox host: nightly copy of GitHub code, operating system and settings to superdata and Synology
+0 1 * * * root /usr/local/sbin/pve-git-mirror.sh >/dev/null 2>&1
+30 1 * * * root /usr/local/sbin/pve-os-backup.sh >/dev/null 2>&1
+0 2 * * * root /usr/local/sbin/pve-host-backup.sh >/dev/null 2>&1
