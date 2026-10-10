@@ -8,8 +8,10 @@ use App\Modules\Api\Services\FileService;
 use App\Modules\Telegram\Actions\GetChat;
 use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -98,6 +100,74 @@ class EnrichBotUserProfileJobTest extends TestCase
     }
 
     // ── No photo field — still marks synced ────────────────────────────────────
+
+    /**
+     * Avatar connection failures must be logged without the bot credential.
+     */
+    public function test_avatar_download_failure_does_not_log_bot_token(): void
+    {
+        $token = '123456789:TEST_fake-token_for_unit_tests_0000000';
+        app(\App\Services\Settings\SettingsService::class)->set('telegram.token', $token);
+        $botUser = $this->makeBotUser('telegram');
+        $answer = new TelegramAnswerDto(
+            ok: true,
+            rawData: ['ok' => true, 'result' => ['photo' => ['small_file_id' => 'avatar_file']]],
+        );
+
+        $this->instance(GetChat::class, new class ($answer) extends GetChat {
+            /**
+             * Supply the fake Telegram response.
+             */
+            public function __construct(private TelegramAnswerDto $answer)
+            {
+            }
+
+            /**
+             * Return a profile with an avatar.
+             */
+            public function execute(int $chatId): TelegramAnswerDto
+            {
+                return $this->answer;
+            }
+        });
+        $this->instance(FileService::class, new class () extends FileService {
+            /**
+             * Avoid constructing external dependencies.
+             */
+            public function __construct()
+            {
+            }
+
+            /**
+             * Return fake avatar metadata.
+             *
+             * @return array<string, array<string, string>>
+             */
+            public function getTelegramFile(string $fileId): array
+            {
+                return ['result' => ['file_path' => 'photos/avatar.jpg']];
+            }
+        });
+        Http::fake([
+            'https://api.telegram.org/file/bot*' => function () use ($token): never {
+                throw new ConnectionException(
+                    'cURL error 28: SSL connection timeout for https://api.telegram.org/file/bot' . $token . '/photos/avatar.jpg',
+                );
+            },
+        ]);
+
+        Log::shouldReceive('channel')->once()->with('app')->andReturnSelf();
+        Log::shouldReceive('error')->once()->withArgs(function (string $message, array $context) use ($token): bool {
+            $this->assertSame('EnrichBotUserProfileJob failed', $message);
+            $this->assertStringNotContainsString($token, $context['error']);
+            $this->assertStringNotContainsString(explode(':', $token, 2)[1], $context['error']);
+            $this->assertStringContainsString('/file/bot[hidden]/photos/avatar.jpg', $context['error']);
+
+            return true;
+        });
+
+        (new EnrichBotUserProfileJob($botUser))->handle();
+    }
 
     public function test_no_photo_fallback(): void
     {

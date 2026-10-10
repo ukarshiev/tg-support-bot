@@ -117,6 +117,9 @@ DB::select("SELECT * FROM bot_users WHERE chat_id = '$chatId'");
 
 ## 5. Secrets Management Rules
 
+- Sanitize HTTP-client exception messages with `App\Support\SecretMasker::mask()` before logging; see [Sensitive Data Rules](observability.md#8-sensitive-data-rules).
+- The Monolog output tap does not protect Telescope or `failed_jobs`; explicit masking remains mandatory.
+
 - **Application access credentials (bot tokens, webhook secrets, AI provider keys) live in the DB `settings` table, NOT in `.env`/`config()`.** They are read via `SettingsService`, stored encrypted (`Crypt::encrypt()`) for `is_secret` keys, and edited in `/admin/settings/*`. There is no `config()` fallback for these keys (`config => null` in `SettingKeyRegistry`).
 - Only **infrastructure** secrets remain in environment variables (`.env`): `APP_KEY`, `DB_PASSWORD`, `MAIL_PASSWORD`, `AWS_*`, `TG_LOGGER_TOKEN`. Never commit `.env`.
 - Never hardcode API keys, tokens, or passwords in code or config files

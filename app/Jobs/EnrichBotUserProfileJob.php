@@ -7,6 +7,7 @@ use App\Modules\Api\Services\FileService;
 use App\Modules\Telegram\Actions\GetChat;
 use App\Modules\Vk\Api\VkMethods;
 use App\Services\Settings\SettingsService;
+use App\Support\SecretMasker;
 use App\Support\TelegramProxy;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -57,7 +58,7 @@ class EnrichBotUserProfileJob implements ShouldQueue
                 [
                     'bot_user_id' => $this->botUser->id,
                     'platform' => $this->botUser->platform,
-                    'error' => TelegramProxy::maskCredentials($e->getMessage()),
+                    'error' => SecretMasker::mask($e->getMessage()),
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
                 ]

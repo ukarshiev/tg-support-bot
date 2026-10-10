@@ -2,6 +2,7 @@
 
 namespace App\Modules\Telegram\Api;
 
+use App\Support\SecretMasker;
 use App\Support\TelegramProxy;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -199,12 +200,7 @@ class ParserMethods
 
     private static function logTransportFailure(string $operation, \Throwable $exception): void
     {
-        $message = preg_replace(
-            '~https://api\.telegram\.org/bot[^/\s]+~i',
-            'https://api.telegram.org/bot[hidden]',
-            $exception->getMessage(),
-        ) ?? 'Telegram transport failed';
-        $message = TelegramProxy::maskCredentials($message);
+        $message = SecretMasker::mask($exception->getMessage());
 
         Log::channel('app')->log(
             $exception->getCode() === 1 ? 'warning' : 'error',

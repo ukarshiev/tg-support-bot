@@ -162,6 +162,20 @@ The application must remain operable when checked by Docker/orchestration.
 
 Never expose private information in logs or error messages.
 
+Pass every HTTP-client exception message through `App\Support\SecretMasker::mask()` before logging it. Mask Telegram API/file URL tokens (including URL-encoded tokens), prefixed and bare bot tokens, and proxy credentials.
+
+The `App\Logging\MaskSecretsInLogs` tap on `single`, `daily`, `app`, `telegram`, and `stderr` wraps each supported handler's formatter and masks its final output, including formatted exceptions and nested string values. This safety net protects only Monolog output: Telescope and the `failed_jobs` table receive the original text. Explicit masking in application code remains mandatory.
+
+```php
+// ✅ Correct — sanitize before passing the exception message to the logger.
+Log::channel('app')->error('HTTP request failed', [
+    'error' => \App\Support\SecretMasker::mask($exception->getMessage()),
+]);
+
+// ❌ Incorrect — the output tap does not sanitize Telescope or failed_jobs.
+Log::channel('app')->error('HTTP request failed', ['error' => $exception->getMessage()]);
+```
+
 Forbidden in logs:
 - Channel access secrets from the DB `settings` table (`telegram.token`, `telegram.secret_key`, `telegram_ai.token`, `telegram_ai.secret`, `vk.token`, `vk.secret_key`, `max.token`, `max.secret_key`) — i.e. any key with `is_secret = true` in `SettingKeyRegistry`
 - AI provider credentials from settings (`ai.openai_api_key`, `ai.gigachat_client_secret`, `ai.deepseek_client_secret`, etc.)

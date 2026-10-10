@@ -26,7 +26,7 @@ class UploadFileVk
             $responseFile = Http::get($fullFilePath);
 
             if ($responseFile->failed()) {
-                throw new \Exception("Failed to download Telegram file: {$fullFilePath}");
+                throw new \Exception('Failed to download Telegram file: HTTP ' . $responseFile->status());
             }
 
             $stream = $responseFile->body();

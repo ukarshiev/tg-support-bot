@@ -55,6 +55,7 @@ return [
     'channels' => [
 
         'telegram' => [
+            'tap' => [App\Logging\MaskSecretsInLogs::class],
             'driver' => 'monolog',
             'handler' => ProgTime\TgLogger\TgHandler::class,
             'formatter' => ProgTime\TgLogger\TgFormatter::class,
@@ -68,6 +69,7 @@ return [
         ],
 
         'single' => [
+            'tap' => [App\Logging\MaskSecretsInLogs::class],
             'driver' => 'single',
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
@@ -75,6 +77,7 @@ return [
         ],
 
         'daily' => [
+            'tap' => [App\Logging\MaskSecretsInLogs::class],
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
@@ -104,6 +107,7 @@ return [
         ],
 
         'stderr' => [
+            'tap' => [App\Logging\MaskSecretsInLogs::class],
             'driver' => 'monolog',
             'level' => env('LOG_LEVEL', 'debug'),
             'handler' => StreamHandler::class,
@@ -141,6 +145,7 @@ return [
         // rotating file (storage/logs/app-YYYY-MM-DD.log) — tail it with
         // `php artisan pail` or browse in Telescope's Logs tab.
         'app' => [
+            'tap' => [App\Logging\MaskSecretsInLogs::class],
             'driver' => 'daily',
             'path' => storage_path('logs/app.log'),
             'level' => env('LOG_LEVEL', 'debug'),

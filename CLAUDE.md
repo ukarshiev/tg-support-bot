@@ -372,7 +372,7 @@ public static function execute(BotUser $botUser): TelegramAnswerDto
 - Never pass raw `Request` objects to Services or Actions — use DTOs
 - Never use raw SQL string concatenation — use Eloquent / query builder
 - Never commit `.env` files or hardcode secrets
-- Never log tokens, passwords, or API keys
+- Never log tokens, passwords, or API keys. HTTP-client exception messages carry the request URL (Telegram URLs contain the bot token) — pass them through `App\Support\SecretMasker::mask()` before logging. The `App\Logging\MaskSecretsInLogs` tap on the file channels is only a safety net: Telescope and `failed_jobs` receive the original text (see `rules/process/observability.md` §8)
 
 ---
 

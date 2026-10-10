@@ -116,9 +116,7 @@ final class TelegramPollingRuntime
 
     public function sanitize(string $message): string
     {
-        $message = preg_replace('/bot[0-9]+:[A-Za-z0-9_-]+/', 'bot[hidden]', $message) ?? $message;
-
-        return TelegramProxy::maskCredentials($message);
+        return SecretMasker::mask($message);
     }
 
     private function logThrottled(
