@@ -43,7 +43,8 @@ services:
             - .env
         working_dir: /var/www/
         command: >-
-            sh -lc 'rm -rf /var/www/public/* &&
+            sh -lc 'mkdir -p /var/www/storage/logs/php-fpm &&
+            rm -rf /var/www/public/* &&
             cp -a /var/www_public_image/. /var/www/public/ &&
             exec /usr/local/sbin/php-fpm'
         volumes:

@@ -2,7 +2,7 @@
 
 > **Purpose:** Guarantee that every feature is observable in production. Prevent "black box" systems that cannot be debugged after deployment.
 > **Context:** Read this file before implementing any endpoint, background job, integration, or infrastructure change.
-> **Version:** 1.0
+> **Version:** 1.1
 
 ---
 
@@ -155,6 +155,17 @@ The application must remain operable when checked by Docker/orchestration.
 - Nginx health is managed by Docker (`docker/nginx/` config)
 - PostgreSQL connectivity is verified on app startup
 - Do not add heavy database queries to health check endpoints
+
+### Изоляция и насыщение PHP-FPM (TGSUPBOT-88)
+
+- Оба точных webhook-пути обслуживать пулом `webhook` на 9001: 6 постоянных процессов, предел 30 секунд. Остальные запросы — `www` на 9000, максимум 14 процессов, прежний предел 120 секунд.
+- Проверять оба пула каждую минуту командой `php-fpm:pool-health`: сводный JSON через независимые `pm.status_listen` на `0.0.0.0:9101/9102` внутри контейнера. Узел и порты читать через `config()` из `config/php-fpm.php` (по умолчанию `app`, 9101/9102). Scheduler сохраняет собственную сеть, DNS и `extra_hosts`; status-порты на хост и nginx-маршруты статуса не публиковать.
+- При `webhook idle < 2`, `webhook listen queue > 0` или недоступности любого статуса возвращать код 1 и warning `php_fpm_pool_unhealthy` в канал `app` с пулом, причиной и доступными счётчиками.
+- Slowlog писать отдельно для каждого пула в `storage/logs/php-fpm/php-fpm-{www,webhook}.slow.log`, порог 5 секунд, глубина 60. До запуска FPM создавать подкаталог от `www-data`, без блокирующей проверки `test -w`; `logs:prune` не должен удалять открытые файлы slowlog. Full-статус и URI активных запросов не журналировать.
+- ✅ Правильно: зарезервировать webhook-процессы и читать статус через отдельные внутренние listeners.
+- ❌ Неправильно: отдавать файлы через webhook-пул или читать статус через занятый основной listener.
+
+Изменение правил 1.1: добавлены изоляция пулов, закрытый статус и минутный сигнал насыщения.
 
 ---
 

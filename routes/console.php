@@ -14,6 +14,7 @@ Artisan::command('inspire', function () {
 // `php artisan telescope:prune` manually.
 Schedule::command('telescope:prune --hours=24')->daily();
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
+Schedule::command('php-fpm:pool-health')->everyMinute()->withoutOverlapping();
 Schedule::command('queue:prune-failed --hours=168')->daily();
 Schedule::command('logs:prune --days=7')
     ->dailyAt('03:30')
