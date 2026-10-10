@@ -42,6 +42,12 @@ REVERB_BROADCAST_SCHEME=http
 
 Также нужны ключи `MAIN_DOMAIN`, `DB_DATABASE`, `DB_USERNAME` и остальные рабочие настройки приложения.
 Compose на ВМ автоматически использует оба файла благодаря `COMPOSE_FILE`.
+
+Контейнеры на ВМ используют DNS `192.168.1.1` (Cudy) и `192.168.0.1` (Keenetic): оба роутера резолвят по DoH.
+Открытые DNS `8.8.8.8` / `1.1.1.1` на ВМ не используются: `!override` заменяет список из общего Compose-файла.
+Если DoH на Keenetic откажет, контейнеры останутся без DNS до восстановления роутера;
+Telegram при этом работает, поскольку имя резолвит прокси.
+
 `REVERB_BROADCAST_*` задают внутренний адрес серверной трансляции в Reverb.
 Браузер продолжает использовать публичные `REVERB_HOST/PORT/SCHEME` и `VITE_*`.
 Если новые ключи отсутствуют, сервер использует прежние `REVERB_HOST/PORT/SCHEME`.
@@ -116,10 +122,13 @@ SSH-доступ должен работать без запроса парол�
 На ВМ, после `cd /opt/tg-support-bot`:
 ```bash
 docker compose ps
+docker compose exec -T queue cat /etc/resolv.conf
 docker compose logs -f app nginx queue scheduler telegram_poller ai_telegram_poller
 docker compose exec -T telegram_poller php artisan telegram:poller-health main --max-age=90
 docker compose exec -T ai_telegram_poller php artisan telegram:poller-health ai --max-age=90
 ```
+
+В строке `ExtServers` файла `/etc/resolv.conf` должны быть только `192.168.1.1` и `192.168.0.1`, в этом порядке.
 
 Ошибка проверки останавливает скрипт; автоматического отката нет.
 После запуска скрипт ждёт здоровья каждого поллера до 90 секунд: до 18 попыток с паузой 5 секунд.

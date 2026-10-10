@@ -2,18 +2,24 @@
 # Сохраняет внутреннюю сеть pet и добавляет доступ к Telegram через прокси.
 # Внешнюю сеть openclaw-proxy создаёт и обслуживает сторонний Compose-проект.
 # Перед запуском бота эта сеть и прокси xray-egress должны быть доступны.
+# Публичные DNS с ВМ теряют запросы; домашние роутеры резолвят по DoH.
 services:
     app:
+        dns: !override [192.168.1.1, 192.168.0.1]
         networks: [pet, telegram_egress]
     queue:
+        dns: !override [192.168.1.1, 192.168.0.1]
         stop_signal: SIGTERM
         stop_grace_period: 45s
         networks: [pet, telegram_egress]
     scheduler:
+        dns: !override [192.168.1.1, 192.168.0.1]
         networks: [pet, telegram_egress]
     telegram_poller:
+        dns: !override [192.168.1.1, 192.168.0.1]
         networks: [pet, telegram_egress]
     ai_telegram_poller:
+        dns: !override [192.168.1.1, 192.168.0.1]
         networks: [pet, telegram_egress]
 networks:
     telegram_egress:
