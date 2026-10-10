@@ -54,7 +54,7 @@ class FileServiceTest extends TestCase
                 $this->assertSame('socks5h://proxy.example.test:1080', $options['proxy']);
                 $this->assertIsResource($options['sink']);
                 $sink = $options['sink'];
-                $this->assertArrayNotHasKey('progress', $options);
+                $this->assertIsCallable($options['progress']);
 
                 // Client headers come from metadata, not upstream headers.
                 return Http::response('IMAGE_CONTENT', 200, ['Content-Length' => '999']);
@@ -272,6 +272,75 @@ class FileServiceTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    /** A transient connection failure is retried and the recovered metadata cached. */
+    public function test_retries_metadata_connection_failure_then_caches_success(): void
+    {
+        Http::fake(['*/getFile*' => Http::sequence()
+            ->pushFailedConnection('Sensitive upstream URL: ' . $this->tgToken)
+            ->push(['ok' => true, 'result' => ['file_path' => 'recovered.mp4', 'file_size' => 1]])]);
+
+        $file = $this->service->getTelegramFile('retry-metadata');
+
+        $this->assertSame('recovered.mp4', $file['result']['file_path']);
+        $this->assertSame($file, $this->service->getTelegramFile('retry-metadata'));
+        Http::assertSentCount(2);
+    }
+
+    /** A download may reconnect only before any bytes reach the output sink. */
+    public function test_retries_download_without_bytes_and_outputs_body_once(): void
+    {
+        $attempts = 0;
+        $ranges = [];
+        Log::spy();
+        Http::fake([
+            '*/getFile*' => Http::response(['ok' => true, 'result' => ['file_path' => 'retry.mp4', 'file_size' => 1000]]),
+            '*/retry.mp4' => function ($request, array $options) use (&$attempts, &$ranges) {
+                $attempts++;
+                $ranges[] = $request->header('Range');
+                ($options['progress'])(1000, 0, 0, 0);
+                if ($attempts === 1) {
+                    // Real cURL can release its sink when a connection fails.
+                    fclose($options['sink']);
+
+                    return (Http::failedConnection())($request);
+                }
+
+                return Http::response(str_repeat('v', 100));
+            },
+        ]);
+
+        $response = $this->service->streamFile('retry-download', 'inline', 'bytes=0-99');
+
+        $this->assertSame(str_repeat('v', 100), $this->streamedContent($response));
+        $this->assertSame(2, $attempts);
+        $this->assertSame([['bytes=0-99'], ['bytes=0-99']], $ranges);
+        Http::assertSentCount(3);
+        Log::shouldNotHaveReceived('warning');
+    }
+
+    /** Once progress reports bytes, a connection error must not duplicate them. */
+    public function test_does_not_retry_download_after_receiving_bytes(): void
+    {
+        $attempts = 0;
+        Http::fake([
+            '*/getFile*' => Http::response(['ok' => true, 'result' => ['file_path' => 'partial.mp4', 'file_size' => 1000]]),
+            '*/partial.mp4' => function ($request, array $options) use (&$attempts) {
+                $attempts++;
+                fwrite($options['sink'], 'PARTIAL');
+                ($options['progress'])(1000, 7, 0, 0);
+                // Progress must latch the fact that bytes arrived, even on reset.
+                ($options['progress'])(1000, 0, 0, 0);
+
+                return (Http::failedConnection('Sensitive upstream URL: ' . $this->tgToken))($request);
+            },
+        ]);
+        $this->expectSafeStreamWarning('upstream_timeout');
+
+        $this->assertSame('PARTIAL', $this->streamedContent($this->service->streamFile('partial-download')));
+        $this->assertSame(1, $attempts);
+        Http::assertSentCount(2);
+    }
+
     /** Late HTTP failures log only safe identifiers without changing headers. */
     #[DataProvider('upstreamStatusProvider')]
     public function test_logs_download_status_failures_without_rethrowing(int $telegramStatus, string $code, int $status): void
@@ -284,6 +353,7 @@ class FileServiceTest extends TestCase
         $response = $this->service->streamFile('failed-download');
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('', $this->streamedContent($response));
+        Http::assertSentCount(2);
     }
 
     /** Late connection failures cannot leak a token-bearing URL. */
@@ -296,6 +366,7 @@ class FileServiceTest extends TestCase
         $this->expectSafeStreamWarning('upstream_timeout');
         $response = $this->service->streamFile('timed-out-download');
         $this->assertSame('', $this->streamedContent($response));
+        Http::assertSentCount(4);
     }
 
     /** Unexpected late errors are reduced to a safe error code. */
@@ -348,6 +419,7 @@ class FileServiceTest extends TestCase
             $this->assertSame($code, $e->errorCode);
             $this->assertSame($status, $e->status);
         }
+        Http::assertSentCount(1);
     }
 
     /** @return array<string, array{0: int, 1: string, 2: int}> */
@@ -372,6 +444,7 @@ class FileServiceTest extends TestCase
             $this->assertSame(504, $e->status);
             $this->assertSame('upstream_timeout', $e->getMessage());
         }
+        Http::assertSentCount(3);
     }
 
     /** Capture the bytes emitted by the HTTP sink through the stream callback. */

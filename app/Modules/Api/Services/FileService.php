@@ -113,7 +113,7 @@ class FileService
     }
 
     /**
-     * Cache successful Bot API metadata for ten minutes, scoped to the credential.
+     * Cache successful metadata for ten minutes; retry connection failures only.
      *
      * @return array<string, mixed>
      *
@@ -128,21 +128,7 @@ class FileService
         $cacheKey = 'telegram-file-metadata:' . hash('sha256', hash('sha256', $this->botToken) . '|' . $fileId);
 
         return Cache::remember($cacheKey, 600, function () use ($fileId): array {
-            try {
-                $url = "https://api.telegram.org/bot{$this->botToken}/getFile";
-                $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
-                    ->timeout((int) config('file_proxy.timeout', 15))
-                    ->withoutRedirecting();
-                // Telescope records full request URLs, which contain the bot token.
-                $response = Telescope::withoutRecording(fn (): Response => TelegramProxy::apply($client, $url)->get($url, [
-                    'file_id' => $fileId,
-                ]));
-            } catch (ConnectionException) {
-                throw new FileProxyException('upstream_timeout', 504);
-            } catch (\Throwable) {
-                throw new FileProxyException('upstream_error', 502);
-            }
-
+            $response = $this->requestTelegramFile($fileId);
             $this->assertTelegramResponse($response);
             $json = $response->json();
 
@@ -159,35 +145,46 @@ class FileService
     }
 
     /**
-     * Let cURL write directly to the output sink, including through SOCKS proxies.
+     * Resolve metadata with at most three connection attempts.
      *
-     * @param resource $out The writable client output stream.
+     * @throws FileProxyException When the request fails after safe retries.
+     */
+    private function requestTelegramFile(string $fileId): Response
+    {
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                $url = "https://api.telegram.org/bot{$this->botToken}/getFile";
+                $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
+                    ->timeout((int) config('file_proxy.timeout', 15))
+                    ->withoutRedirecting();
+                // Telescope records full request URLs, which contain the bot token.
+                return Telescope::withoutRecording(fn (): Response => TelegramProxy::apply($client, $url)->get($url, [
+                    'file_id' => $fileId,
+                ]));
+            } catch (ConnectionException) {
+                if ($attempt >= 3) {
+                    throw new FileProxyException('upstream_timeout', 504);
+                }
+                usleep(150_000);
+            } catch (\Throwable) {
+                throw new FileProxyException('upstream_error', 502);
+            }
+        }
+
+        throw new FileProxyException('upstream_timeout', 504);
+    }
+
+    /**
+     * Let cURL write directly to the output sink, including through SOCKS proxies.
+     * Retry connection failures only until the first received byte.
+     *
+     * @param resource $out The output stream, replaced before a safe retry.
      *
      * @throws FileProxyException When the upstream cannot serve the file.
      */
-    protected function downloadTelegramFile(string $filePath, $out, ?string $range = null): void
+    protected function downloadTelegramFile(string $filePath, &$out, ?string $range = null): void
     {
-        try {
-            $url = "https://api.telegram.org/file/bot{$this->botToken}/{$filePath}";
-            $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
-                ->timeout(0)
-                ->withoutRedirecting()
-                ->withOptions([
-                    'sink' => $out,
-                    'curl' => [
-                        CURLOPT_LOW_SPEED_LIMIT => 1024,
-                        CURLOPT_LOW_SPEED_TIME => (int) config('file_proxy.read_timeout', 30),
-                    ],
-                ]);
-            if ($range !== null) {
-                $client->withHeaders(['Range' => $range]);
-            }
-            $response = Telescope::withoutRecording(fn (): Response => TelegramProxy::apply($client, $url)->get($url));
-        } catch (ConnectionException) {
-            throw new FileProxyException('upstream_timeout', 504);
-        } catch (\Throwable) {
-            throw new FileProxyException('upstream_error', 502);
-        }
+        $response = $this->requestTelegramDownload($filePath, $out, $range);
 
         try {
             $this->assertTelegramResponse($response);
@@ -197,6 +194,54 @@ class FileService
         } finally {
             $response->close();
         }
+    }
+
+    /**
+     * Return the download response, retrying only before any bytes arrive.
+     *
+     * @param resource $out The output stream, replaced before a safe retry.
+     *
+     * @throws FileProxyException When downloading cannot safely continue.
+     */
+    private function requestTelegramDownload(string $filePath, &$out, ?string $range): Response
+    {
+        $received = false;
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                $url = "https://api.telegram.org/file/bot{$this->botToken}/{$filePath}";
+                $client = Http::connectTimeout((int) config('file_proxy.connect_timeout', 3))
+                    ->timeout(0)
+                    ->withoutRedirecting()
+                    ->withOptions([
+                        'sink' => $out,
+                        'progress' => static function ($dlTotal, $dlNow, $ulTotal, $ulNow) use (&$received): void {
+                            $received = $received || $dlNow > 0;
+                        },
+                        'curl' => [
+                            CURLOPT_LOW_SPEED_LIMIT => 1024,
+                            CURLOPT_LOW_SPEED_TIME => (int) config('file_proxy.read_timeout', 30),
+                        ],
+                    ]);
+                if ($range !== null) {
+                    $client->withHeaders(['Range' => $range]);
+                }
+                return Telescope::withoutRecording(fn (): Response => TelegramProxy::apply($client, $url)->get($url));
+            } catch (ConnectionException) {
+                if ($received || $attempt >= 3) {
+                    throw new FileProxyException('upstream_timeout', 504);
+                }
+                usleep(150_000);
+                // Give each attempt its own resource, independent of Guzzle's cleanup.
+                if (is_resource($out)) {
+                    fclose($out);
+                }
+                $out = $this->openOutputStream();
+            } catch (\Throwable) {
+                throw new FileProxyException('upstream_error', 502);
+            }
+        }
+
+        throw new FileProxyException('upstream_timeout', 504);
     }
 
     /**

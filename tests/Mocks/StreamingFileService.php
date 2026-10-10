@@ -23,13 +23,15 @@ class StreamingFileService extends FileService
      *
      * @param resource $out The test-only output stream.
      */
-    protected function downloadTelegramFile(string $filePath, $out, ?string $range = null): void
+    protected function downloadTelegramFile(string $filePath, &$out, ?string $range = null): void
     {
         try {
             parent::downloadTelegramFile($filePath, $out, $range);
         } finally {
-            rewind($out);
-            fpassthru($out);
+            if (is_resource($out)) {
+                rewind($out);
+                fpassthru($out);
+            }
         }
     }
 }
