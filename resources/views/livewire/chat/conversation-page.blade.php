@@ -704,17 +704,17 @@
                                                 <p class="text-xs text-white opacity-80">Не удалось перевести</p>
                                                 <button type="button" wire:click="retryMessageTranslation({{ $message->id }})" class="mt-1 rounded bg-white/15 px-2 py-1 text-xs text-white" title="Повторить перевод сообщения">Повторить</button>
                                             @else
-                                                <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $operatorText }}</p>
+                                                <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{!! app(\App\Support\Html\LinkifiedText::class)->toHtml($operatorText, 'text-white') !!}</p>
                                             @endif
                                         </div>
                                         <div class="rounded-lg bg-white/10 p-2"
                                              x-show="!window.matchMedia('(max-width: 1023px)').matches || translationMobileView !== 'ru'">
                                             <div class="mb-1 text-[11px] font-semibold text-white opacity-70">Выбранный язык</div>
-                                            <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $clientText }}</p>
+                                            <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{!! app(\App\Support\Html\LinkifiedText::class)->toHtml($clientText, 'text-white') !!}</p>
                                         </div>
                                     </div>
                                 @elseif($messageText)
-                                    <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $messageText }}</p>
+                                    <p class="text-sm text-white" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{!! app(\App\Support\Html\LinkifiedText::class)->toHtml($messageText, 'text-white') !!}</p>
                                 @elseif($message->attachments->isEmpty())
                                     <p class="text-xs text-white opacity-70 italic">Вложение</p>
                                 @endif
@@ -821,17 +821,17 @@
                                                 <p class="text-xs text-red-500">Не удалось перевести</p>
                                                 <button type="button" wire:click="retryMessageTranslation({{ $message->id }})" class="mt-1 rounded border border-border-light px-2 py-1 text-xs text-text-primary" title="Повторить перевод сообщения">Повторить</button>
                                             @else
-                                                <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $operatorText ?: 'Перевод пока не готов' }}</p>
+                                                <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{!! app(\App\Support\Html\LinkifiedText::class)->toHtml($operatorText ?: 'Перевод пока не готов') !!}</p>
                                             @endif
                                         </div>
                                         <div class="rounded-lg bg-bg-primary/60 p-2"
                                              x-show="!window.matchMedia('(max-width: 1023px)').matches || translationMobileView !== 'ru'">
                                             <div class="mb-1 text-[11px] font-semibold text-text-secondary">Выбранный язык</div>
-                                            <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $clientText }}</p>
+                                            <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{!! app(\App\Support\Html\LinkifiedText::class)->toHtml($clientText) !!}</p>
                                         </div>
                                     </div>
                                 @elseif($messageText)
-                                    <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{{ $messageText }}</p>
+                                    <p class="text-sm text-text-primary" style="font-size:14px; line-height:1.4; white-space:pre-wrap; overflow-wrap:anywhere;">{!! app(\App\Support\Html\LinkifiedText::class)->toHtml($messageText) !!}</p>
                                 @elseif($message->attachments->isEmpty())
                                     <p class="text-xs text-text-secondary italic opacity-60">Вложение</p>
                                 @endif

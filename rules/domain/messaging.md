@@ -2,7 +2,7 @@
 
 > **Purpose:** This file defines business rules, state machines, and invariants for the core messaging domain — the routing of messages between users (Telegram, VK, External) and the support team.
 > **Context:** Read this file before modifying anything related to message sending, editing, routing, or platform integrations.
-> **Version:** 1.5
+> **Version:** 1.6
 
 ---
 
@@ -132,6 +132,18 @@ _Enforced in:_ `app/Helpers/TelegramHelper.php`, `app/Modules/Telegram/Services/
 
 ---
 
+**BR-018** — Expand incoming Telegram `text_link` entities to `{anchor} ({url})` before storing text or media captions. Preserve the complete URL, including query parameters, and use UTF-16 code-unit offsets. Skip invalid, out-of-bounds and overlapping link entities, and do not append a URL already present in its anchor. Mirror the expanded persisted text. Keep the DTO text and operator-to-client entity offsets unchanged.
+_Enforced in:_ `app/Modules/Telegram/Support/IncomingTextLinkExpander.php`, `SendTelegramMessageJob::incomingText()`, `TelegramBotController::persistIncomingTelegramMessage()`
+
+- ✅ Correct: store and mirror `Ashoo.cz (https://ashoo.cz/?utm_source=telegram)` from a hidden link on `Ashoo.cz`.
+- ❌ Incorrect: discard `entity.url` or expand the shared DTO text before processing outgoing formatting entities.
+
+**BR-019** — Render message text and translations in all six admin chat bubble locations through `LinkifiedText`. Escape all untrusted text and link only HTTP(S) URLs, with escaped hrefs, `target="_blank"` and `rel="noopener noreferrer nofollow"`. Keep trailing sentence punctuation outside links, preserve whitespace and fallback labels, and use white links in outgoing blue bubbles.
+_Enforced in:_ `app/Support/Html/LinkifiedText.php`, `resources/views/livewire/chat/conversation-page.blade.php`
+
+- ✅ Correct: render escaped text with a clickable `https://example.test/?a=1&amp;utm_source=x` and a trailing period outside the anchor.
+- ❌ Incorrect: output raw message HTML, link `javascript:` URLs, or add `<br>` to text already displayed with `white-space:pre-wrap`.
+
 ## 5. Message Type State Machine
 
 ```mermaid
@@ -219,6 +231,7 @@ $keyboard = ['inline_keyboard' => [[['text' => 'Yes', 'callback_data' => 'yes']]
 
 ## Changelog
 
+- **1.6** — TGSUPBOT-101: added BR-018 for incoming hidden-link expansion and BR-019 for safe HTTP(S) links in web chat bubbles.
 - **1.5** — TGSUPBOT-92: added BR-015 single-request checkpoints and queued admin realtime broadcasts outside delivery jobs.
 - **1.4** — Added end-to-end ordinary Telegram video delivery, persistence, mirroring, and caption handling (TGSUPBOT-90).
 - **1.3** — Added multipart Telegram delivery checkpoints and spaced poller webhook retries.

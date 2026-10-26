@@ -202,6 +202,57 @@ class SendTelegramMessageJobIncomingMediaTest extends TestCase
         $this->assertSame('Подпись к видео клиента', $mirrorJob->text);
     }
 
+    /** Hidden links must reach persistence and the mirror without mutating DTO offsets. */
+    public function test_incoming_text_links_are_saved_and_mirrored(): void
+    {
+        Queue::fake();
+        $botUser = $this->makeBotUser();
+        $url = 'https://ashoo.cz/?a=1&utm_source=telegram&utm_campaign=test';
+        $dto = $this->incomingDtoWith([
+            'text' => '❗️ Ashoo.cz',
+            'entities' => [['type' => 'text_link', 'offset' => 3, 'length' => 8, 'url' => $url]],
+        ], $botUser);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendMessage',
+            'chat_id' => '-100123456',
+            'text' => $dto->text,
+        ]);
+
+        (new SendTelegramMessageJob($botUser->id, $dto, $params, 'incoming', $this->mockTelegram()))->handle();
+
+        $expected = '❗️ Ashoo.cz (' . $url . ')';
+        $this->assertDatabaseHas('messages', ['bot_user_id' => $botUser->id, 'text' => $expected]);
+        $this->assertSame($expected, $this->chainedMirrorJob()->text);
+        $this->assertSame('❗️ Ashoo.cz', $dto->text);
+    }
+
+    /** Media caption entities use the same expansion for the DB and mirror job. */
+    public function test_incoming_caption_links_are_saved_and_mirrored(): void
+    {
+        Queue::fake();
+        $botUser = $this->makeBotUser();
+        $url = 'https://ashoo.cz/?a=1&utm_source=caption';
+        $dto = $this->incomingDtoWith([
+            'photo' => [['file_id' => 'PHOTO_LINK_CAPTION']],
+            'caption' => 'Ashoo.cz',
+            'caption_entities' => [['type' => 'text_link', 'offset' => 0, 'length' => 8, 'url' => $url]],
+        ], $botUser);
+        $params = TGTextMessageDto::from([
+            'methodQuery' => 'sendPhoto',
+            'chat_id' => '-100123456',
+            'photo' => 'PHOTO_LINK_CAPTION',
+            'caption' => $dto->caption,
+        ]);
+
+        (new SendTelegramMessageJob($botUser->id, $dto, $params, 'incoming', $this->mockTelegram()))->handle();
+
+        $expected = 'Ashoo.cz (' . $url . ')';
+        $this->assertDatabaseHas('messages', ['bot_user_id' => $botUser->id, 'text' => $expected]);
+        $this->assertSame($expected, $this->chainedMirrorJob()->text);
+        $this->assertNull($dto->text);
+        $this->assertSame('Ashoo.cz', $dto->caption);
+    }
+
     public function test_incoming_plain_text_still_saved(): void
     {
         Queue::fake();

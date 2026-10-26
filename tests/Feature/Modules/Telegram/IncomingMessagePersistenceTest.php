@@ -117,6 +117,73 @@ class IncomingMessagePersistenceTest extends TestCase
         ]);
     }
 
+    /** Group-OFF persistence must preserve hidden URLs in message text. */
+    public function test_telegram_hidden_links_are_persisted_without_group(): void
+    {
+        Queue::fake();
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+        $botUser = $this->selectTelegramLanguage(BotUser::create([
+            'chat_id' => 112235,
+            'platform' => 'telegram',
+        ]));
+        $url = 'https://ashoo.cz/?a=1&utm_source=telegram';
+        $entity = ['type' => 'text_link', 'offset' => 0, 'length' => 8, 'url' => $url];
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'text' => 'Ashoo.cz',
+            'entities' => [$entity],
+        ]))->assertOk();
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'from_id' => 555,
+            'message_type' => 'incoming',
+            'text' => 'Ashoo.cz (' . $url . ')',
+        ]);
+    }
+
+    /** Use a separate request lifecycle so the route cannot reuse the first DTO. */
+    public function test_telegram_hidden_caption_links_are_persisted_without_group(): void
+    {
+        Queue::fake();
+        $this->seedSettings([
+            'telegram.token' => 'bot:TOKEN',
+            'telegram.secret_key' => 'test-secret',
+        ]);
+        $this->clearGroupId();
+        $botUser = $this->selectTelegramLanguage(BotUser::create([
+            'chat_id' => 112235,
+            'platform' => 'telegram',
+        ]));
+        $url = 'https://ashoo.cz/?a=1&utm_source=telegram';
+        $entity = ['type' => 'text_link', 'offset' => 0, 'length' => 8, 'url' => $url];
+
+        $this->postTgWebhook($this->telegramPayload($botUser, [
+            'message_id' => 556,
+            'text' => null,
+            'photo' => [['file_id' => 'PHOTO_LINK_CAPTION']],
+            'caption' => 'Ashoo.cz',
+            'caption_entities' => [$entity],
+        ]))->assertOk();
+
+        $this->assertDatabaseHas('messages', [
+            'bot_user_id' => $botUser->id,
+            'from_id' => 556,
+            'message_type' => 'incoming',
+            'text' => 'Ashoo.cz (' . $url . ')',
+        ]);
+        $message = Message::where('bot_user_id', $botUser->id)->where('from_id', 556)->firstOrFail();
+        $this->assertDatabaseHas('message_attachments', [
+            'message_id' => $message->id,
+            'file_type' => 'photo',
+            'file_id' => 'PHOTO_LINK_CAPTION',
+        ]);
+    }
+
     public function test_any_private_incoming_message_atomically_clears_unavailable_state(): void
     {
         Queue::fake();

@@ -12,6 +12,7 @@ use App\Modules\Telegram\DTOs\TelegramAnswerDto;
 use App\Modules\Telegram\DTOs\TelegramUpdateDto;
 use App\Modules\Telegram\DTOs\TGTextMessageDto;
 use App\Modules\Telegram\Services\SupportLanguageService;
+use App\Modules\Telegram\Support\IncomingTextLinkExpander;
 use App\Modules\Telegram\Support\TelegramPipelineTrace;
 use App\Modules\Translation\Support\TelegramMarkupSanitizer;
 use App\Services\Settings\SettingsService;
@@ -329,7 +330,7 @@ class SendTelegramMessageJob extends AbstractSendMessageJob
             ?? null;
 
         if (is_string($text) && trim($text) !== '') {
-            return $text;
+            return IncomingTextLinkExpander::expand($text, $this->updateDto->entities);
         }
 
         if ($this->queryParams->latitude !== null && $this->queryParams->longitude !== null) {

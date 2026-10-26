@@ -33,6 +33,7 @@ use App\Modules\Telegram\Services\TgExternal\TgExternalMessageService;
 use App\Modules\Telegram\Services\TgMax\TgMaxMessageService;
 use App\Modules\Telegram\Services\TgVk\TgVkEditService;
 use App\Modules\Telegram\Services\TgVk\TgVkMessageService;
+use App\Modules\Telegram\Support\IncomingTextLinkExpander;
 use App\Modules\Telegram\Support\TelegramPipelineTrace;
 use App\Services\Settings\SettingsService;
 use Illuminate\Http\Request;
@@ -526,7 +527,10 @@ class TelegramBotController
                 'from_id' => $this->dataHook->messageId ?? 0,
                 'to_id' => 0,
                 // Capture caption for media messages (photo / document / video) per BR-002a.
-                'text' => $this->dataHook->text ?? $this->dataHook->caption ?? null,
+                'text' => IncomingTextLinkExpander::expand(
+                    $this->dataHook->text ?? $this->dataHook->caption ?? null,
+                    $this->dataHook->entities,
+                ),
             ]);
 
             // Persist any media attachment so the admin can preview it.
